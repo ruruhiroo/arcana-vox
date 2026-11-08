@@ -1,4 +1,4 @@
 node_modules/
-dist/
+/dist/
 *.log
 .claude/settings.local.json

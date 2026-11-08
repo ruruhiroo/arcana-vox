@@ -1,0 +1,39 @@
+# v0.1.2 のようなタグを push すると、Windows 版の exe を作ってリリースに載せる
+name: Release app
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build portable exe
+        run: npm run dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 詠唱迷宮 ARCANA VOX ${{ github.ref_name }}
+          files: dist/*.exe
+          body: |
+            ## 遊び方
+            1. 下の **Assets** から `ArcanaVox-*.exe` をダウンロード(「Source code」は不要)
+            2. ダブルクリックで起動(インストール不要・Windows)
+            3. 「Windows によって PC が保護されました」と出たら「詳細情報 → 実行」
+
+            ブラウザで遊ぶなら: https://ruruhiroo.github.io/arcana-vox/

@@ -9,7 +9,7 @@
     "start": "electron .",
     "server": "node server.js",
     "setup-voice": "node tools/fetch-voice-model.js",
-    "dist": "electron-builder --win portable",
+    "dist": "electron-builder --win portable --publish never",
     "build-web": "node tools/build-web.js",
     "predist": "node tools/vendor.js"
   },

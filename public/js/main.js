@@ -97,6 +97,8 @@ document.querySelectorAll('.mode').forEach(el => el.onclick = () => {
 });
 const canOnline = location.protocol.startsWith('http');
 // Web 公開版(サーバー無し)では LAN 直接接続は使えないので選択肢から外す
+// アプリの中ではダウンロードの案内は要らない
+if (window.desktop) document.getElementById('dlApp')?.remove();
 if (!window.desktop && !/^(localhost|127\.|192\.168\.|10\.)/.test(location.hostname)) document.querySelector('#netSel option[value="lan"]')?.remove();
 // 仲間に伝える自分の部屋のアドレス(デスクトップ版はLANのIPを表示)
 let hostHint = '';

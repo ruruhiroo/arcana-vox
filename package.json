@@ -9,7 +9,7 @@
     "start": "electron .",
     "server": "node server.js",
     "setup-voice": "node tools/fetch-voice-model.js",
-    "dist": "electron-builder --win nsis",
+    "dist": "electron-builder --win portable",
     "build-web": "node tools/build-web.js"
   },
   "devDependencies": {
@@ -48,21 +48,17 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ],
       "signAndEditExecutable": false,
-      "artifactName": "ArcanaVox-Setup-${version}.${ext}"
+      "artifactName": "ArcanaVox-${version}.${ext}"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "shortcutName": "詠唱迷宮 ARCANA VOX",
-      "perMachine": false
+    "portable": {
+      "unpackDirName": "ArcanaVox"
     }
   }
 }

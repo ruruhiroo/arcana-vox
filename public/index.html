@@ -101,6 +101,9 @@
   .eitem button { padding: 3px 10px; background: rgba(0,0,0,.4); border: 1px solid var(--panel-edge); color: var(--ink); font: inherit; font-size: 15.5px; cursor: pointer; }
   .eitem button:hover { border-color: var(--gold); color: var(--gold); }
   @media (max-width: 760px) { #inv .equip { grid-template-columns: repeat(2, 1fr); } }
+  .dlapp { margin: 10px 0 0; font-size: 15px; }
+  .dlapp a { color: var(--gold); }
+  .dlapp span { color: var(--ink-dim); font-size: 13px; margin-left: 6px; }
   .startrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   #tut { position: absolute; top: 90px; left: 24px; width: 400px; padding: 14px 18px; background: rgba(12,8,18,.82); border: 1px solid var(--panel-edge); border-left: 3px solid var(--gold); pointer-events: auto; transition: .3s; }
   #tut.ok { border-left-color: #8dffb0; box-shadow: 0 0 24px rgba(141,255,176,.25); }
@@ -302,6 +305,7 @@
     </div>
     <div class="note" id="netNote"></div>
     <div class="startrow"><button class="btn" id="startBtn">迷宮へ降りる</button><button class="btn ghost" id="tutBtn">手ほどき(はじめての方)</button></div>
+    <p class="dlapp" id="dlApp"><a href="https://github.com/ruruhiroo/arcana-vox/releases/latest" target="_blank" rel="noopener">⬇ アプリ版(Windows)をダウンロード</a> <span>インストール不要・オフライン音声認識つき</span></p>
     <div class="keys">
       <kbd>V</kbd><span>押している間 声で詠唱</span><kbd>C</kbd><span>常時詠唱 切替(ハンズフリー)</span>
       <kbd>右クリック</kbd><span>魔導書を掲げて頁を読む</span><kbd>ホイール</kbd><span>頁をめくる(F/R でも)</span>

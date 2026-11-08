@@ -34,7 +34,7 @@ export class Net {
   async enableVoice(players, audioCtx, masterOut) {
     this.audioCtx = audioCtx; this.masterOut = masterOut;
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      this.stream = window.G?.micStream || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch (e) { console.warn('VC unavailable', e); return false; }
     for (const p of players) if (p.id !== this.id) this.call(p.id);
     return true;

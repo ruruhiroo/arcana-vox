@@ -40,7 +40,11 @@ export function initVoice(h) {
     active = false;
     if (wantActive) { try { rec.start(); } catch {} } else handlers.state('idle');
   };
-  rec.onerror = e => { handlers.state('error:' + e.error); if (e.error === 'not-allowed') wantActive = false; };
+  rec.onerror = e => {
+    if (e.error === 'aborted') return; // 自分で止めた時
+    handlers.state('error:' + e.error);
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed' || e.error === 'audio-capture') wantActive = false;
+  };
   return true;
 }
 

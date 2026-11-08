@@ -151,6 +151,12 @@ async function startGame({ tutorial = false } = {}) {
   G.stats = { moved: 0, looked: 0, read: 0, flips: 0, kills: 0, chests: 0, eloquent: 0 };
   initAudio(); applySettings();
   loadBook();
+  if (!window.desktop && navigator.mediaDevices?.getUserMedia && !G.micStream) {
+    $('netNote').textContent = 'マイクの使用を許可してください(声の詠唱とボイスチャットに使います)';
+    try { G.micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); G.micOk = true; }
+    catch (e) { G.micOk = false; G.micError = e?.name || 'error'; }
+    $('netNote').textContent = '';
+  }
   const name = $('nameIn').value.trim() || '漆黒の詠唱者';
   try { localStorage.setItem('arcana_name', name); } catch {}
   G.mode = chosenMode;
@@ -461,11 +467,23 @@ function setupVoice() {
     state: s => {
       if (s === 'listening') UI.micState(isContinuous() ? '🔴 常時詠唱中 (C で解除)' : '🔴 聴取中… 唱えよ');
       else if (s === 'loading') UI.micState('🎙 音声認識を準備中…')
-      else if (s.startsWith('error')) UI.micState('🎙 マイクエラー: ' + s.slice(6) + ' — Enter で文字詠唱');
+      else if (s.startsWith('error')) {
+        const code = s.slice(6);
+        const MSG = {
+          'not-allowed': 'マイクがブロックされています。アドレスバー左の🔒(サイト情報)→「マイク」を許可して、ページを再読み込みしてください',
+          'service-not-allowed': 'マイクがブロックされています。アドレスバー左の🔒→「マイク」を許可して再読み込みしてください',
+          'audio-capture': 'マイクが見つかりません。マイクの接続と、Windows の「マイクへのアクセス」設定を確認してください',
+          'network': '音声認識サーバーにつながりません(Chrome の音声認識はネット接続が必要です)',
+          'no-speech': '声が聞こえませんでした。もう一度 V を押しながら唱えてください',
+        };
+        UI.micState('🎙 ' + (MSG[code] || 'マイクエラー: ' + code) + (code === 'no-speech' ? '' : ' — 声が使えない間は Enter で文字詠唱'));
+        if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') opts.typedChant = true; // 文字詠唱を自動で使えるように
+      }
       else UI.micState('🎙 V 長押しで詠唱 / C で常時詠唱');
     },
   });
   UI.micState('🎙 V 長押しで詠唱 / C で常時詠唱');
+  if (G.micOk === false) { UI.micState('🎙 マイクが使えません(' + G.micError + ')。アドレスバー左の🔒→「マイク」を許可して再読み込み — それまでは Enter で文字詠唱'); opts.typedChant = true; }
 }
 
 function beginOrUpdateChant(text) {

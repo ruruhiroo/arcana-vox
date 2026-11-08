@@ -124,7 +124,7 @@ export class P2PNet {
   async enableVoice(_players, audioCtx) {
     this.audioCtx = audioCtx;
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      this.stream = window.G?.micStream || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     } catch (e) { console.warn('VC unavailable', e); return false; }
     this.room?.addStream(this.stream);
     return true;

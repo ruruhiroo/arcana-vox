@@ -87,6 +87,13 @@ export const WORDS = [
   { id: 'swift', text: '迅', ruby: 'はやて', cat: 'mod', val: 'swift', cost: 3,
     alias: ['迅', 'はやて', 'ハヤテ', '疾風', 'しっぷう'],
     hint: '「速さは、重さを削って得る」', meaning: '修飾:弾速×1.8・雨の遅延短縮。威力×0.8。' },
+  // 呪いの頁: 宝箱からだけ見つかる、強いが代償のある言霊
+  { id: 'blood', text: '血誓', ruby: 'けっせい', cat: 'mod', val: 'blood', cost: 0, cursed: true,
+    alias: ['血誓', 'けっせい', '血の誓い', 'ちのちかい'],
+    hint: '「力は流れる血の量に等しい」', meaning: '呪い:威力×2。唱えるたびに生命の上限の12%を失う。' },
+  { id: 'ruin', text: '崩壊', ruby: 'ほうかい', cat: 'mod', val: 'ruin', cost: 6, cursed: true,
+    alias: ['崩壊', 'ほうかい', '崩れ去れ', 'くずれされ'],
+    hint: '「壊すことにかけて、これに勝る言葉はない」', meaning: '呪い:壁を砕く力×2.2、威力×1.3。消費×1.5。着弾地点の近くにいると自分も巻き込まれる。' },
 
   { id: 'release', text: '放て', ruby: 'はなて', cat: 'trigger', val: 'release', cost: 0,
     alias: ['解き放て', '放て', 'はなて', 'ハナテ', '顕現せよ', '顕現', 'けんげん', 'リリース', 'りりーす', '発動'],
@@ -116,6 +123,8 @@ const PHRASES_RUBY = {
   "eternal": "{永劫|えいごう}に{続|つづ}く",
   "rune": "{地|ち}に{刻印|こくいん}を{刻|きざ}み",
   "swift": "{迅|はやて}の{如|ごと}く",
+  "blood": "{我|わ}が{血|ち}を{贄|にえ}とし、{血誓|けっせい}を{結|むす}ぶ",
+  "ruin": "{天地|あめつち}よ{崩壊|ほうかい}せよ、{全|すべ}て{崩|くず}れ{去|さ}れ",
   "release": "{今|いま}こそ{解|と}き{放|はな}て",
   "light": "{灯火|ともしび}よ、{冥|くら}き{路|みち}を{照|て}らし{出|だ}せ"
 };
@@ -143,7 +152,9 @@ for (const w of WORDS) {
   w.need = Math.max(1, Math.ceil(w.parts.length * 0.5));
   w.vocab = [...new Set(segs.flatMap(g => [g.k, g.k + g.okuri, g.r, g.ext]).filter(x => x.length >= 2 || /[一-龯]/.test(x)))];
 }
-const partHeard = (s, g) => s.includes(g.k) || (g.r.length >= 2 && s.includes(g.r)) || (g.ext.length >= 2 && s.includes(g.ext));
+const partHeard = (s, g) => s.includes(g.k) || (g.r.length >= 2 && s.includes(g.r)) || (g.ext.length >= 2 && s.includes(g.ext))
+  || (g.k.length >= 2 && s.includes(g.k[0]) && s.includes(g.k[1])) // 漢字の取り違え(業火→豪華 など)をある程度許す
+  || (g.r.length >= 3 && s.includes(g.r.slice(0, 2)));
 // 詠唱文を「ふりがな付きの断片」に分ける (頁に描くため): [{ t: '紅蓮', r: 'グレン' }, { t: 'の' }, ...]
 const RUBY_SRC = WORDS.map(w => ({ t: w.text, src: PHRASES_RUBY[w.id] }))
   .concat(WORDS.map(w => ({ t: w.core, src: '{' + w.core + '|' + w.ruby + '}' })))
@@ -165,7 +176,7 @@ export function rubyPieces(text) {
 // grace: 装備(栞)による詠唱の補助。必要な節の割合が下がる
 export function chantGaps(rawText, ids, grace = 0) {
   const s = toHira(normalize(rawText));
-  const ratio = Math.max(0.2, 0.5 - grace);
+  const ratio = Math.max(0.15, 0.34 - grace);
   return ids.filter(id => {
     const w = WORD_BY_ID[id];
     if (s.includes(normalize(w.text))) return false;
@@ -183,7 +194,7 @@ export function eloquence(rawText, known) {
   const complete = ws.every(w => s.includes(normalize(w.text)) || w.parts.every(g => partHeard(s, g)));
   let ordered = true;
   for (let i = 1; i < ws.length; i++) if (ORDER[ws[i].cat] < ORDER[ws[i - 1].cat]) ordered = false;
-  const closed = ws[ws.length - 1].cat === 'trigger';
+  const closed = ws[ws.length - 1].cat === 'trigger' || compile(rawText, known).calledByName;
   const marks = [complete && '完唱', ordered && '語順', closed && '結句'].filter(Boolean);
   const tier = marks.length === 3 ? '名詠' : marks.length === 2 ? '整詠' : null;
   return { tier, bonus: tier === '名詠' ? 0.3 : tier === '整詠' ? 0.12 : 0, marks, complete, ordered, closed };
@@ -295,6 +306,26 @@ export function canonicalize(text) {
   return { text: out.map(t => WORD_BY_ID[t.id].text).join(' '), tokens: out, fuzzy: out.some(t => t.fuzzy) };
 }
 
+// ---- 魔法の名(結句) ----
+// 属性(または効果)と形から決まる。詠唱の最後にこの名を呼ぶと術が完成する
+const CALL_EL = { fire: ['ファイア', 'ファイヤ', 'ファイヤー', 'ファイアー'], ice: ['アイス', 'アイスー'], thunder: ['サンダー', 'サンダ'], holy: ['ホーリー', 'ホーリ', 'ホリー'], void: ['ダーク', 'ダアク'], wind: ['ウィンド', 'ウインド', 'ウィンドー'] };
+const CALL_FORM = { lance: ['ランス', 'ランスー'], nova: ['ノヴァ', 'ノバ', 'ノーヴァ'], rain: ['レイン', 'レーン'], wall: ['ウォール', 'ウオール', 'ウォル'] };
+const CALL_EFF = { heal: ['ヒーリング', 'ヒール', 'ヒーリン'], ward: ['プロテクション', 'プロテクト'], haste: ['ヘイスト', 'ヘースト'], light: ['ライト', 'ライトー'] };
+function callParts(spell) {
+  if (spell.elements.length) return [CALL_EL[spell.elements[0]], spell.form ? CALL_FORM[spell.form] : null];
+  if (spell.effects.length) return [CALL_EFF[spell.effects[0]], spell.form && spell.form !== 'nova' ? CALL_FORM[spell.form] : null];
+  return null;
+}
+export function callName(spell) { const p = callParts(spell); return p ? p[0][0] + (p[1] ? p[1][0] : '') : ''; }
+// 魔法の名が唱えられたか(音声認識の揺れ「ファイヤー」なども許す)
+function calledByName(text, spell) {
+  const p = callParts(spell); if (!p) return false;
+  const t = normalize(text);
+  const has = list => list.some(a => t.includes(normalize(a)));
+  return has(p[0]) && (!p[1] || has(p[1]));
+}
+export const CALL_WORDS = [...Object.values(CALL_EL), ...Object.values(CALL_FORM), ...Object.values(CALL_EFF)].flat();
+
 // ---- 呪文コンパイラ ----
 export function compile(text, known) {
   const toks = tokenize(text, known);
@@ -319,16 +350,30 @@ export function compile(text, known) {
   }
   let p = 1;
   if (spell.max) p *= 1.8;
+  if (spell.blood) p *= 2;
+  if (spell.ruin) p *= 1.3;
   if (spell.swift) p *= 0.8;
   if (!spell.released) p *= 0.7;
   if (spell.elements.length > 1) p *= 1 + 0.15 * (spell.elements.length - 1); // 属性融合
+  // 位階: 言霊の数と修飾で 初級・中級・上級 が決まる。上の位階ほど強く、魔力も多く要る
+  const score = used.length + (spell.max ? 1 : 0) + (spell.dual ? 1 : 0) + (spell.eternal ? 1 : 0);
+  spell.tier = score >= 6 ? 2 : score >= 4 ? 1 : 0;
+  spell.tierName = ['初級', '中級', '上級'][spell.tier];
+  p *= [0.58, 1, 1.6][spell.tier];
+  const KIND = { fire: '炎', ice: '氷', thunder: '雷', holy: '聖', void: '闇', wind: '風' };
+  const EFF = { heal: '治癒', ward: '守護', haste: '加速', light: '灯火' };
+  spell.school = spell.elements.length > 1 ? '複合' : spell.elements.length ? KIND[spell.elements[0]] : spell.effects.length ? EFF[spell.effects[0]] : '';
+  spell.title = spell.school ? `${spell.tierName}${spell.school}魔術` : '';
   spell.power = p;
-  let mult = 1;
+  let mult = [0.8, 1, 1.25][spell.tier];
   if (spell.max) mult *= 2;
+  if (spell.ruin) mult *= 1.5;
   if (spell.dual) mult *= 2;
   spell.cost = Math.round(spell.cost * mult);
 
   if (spell.rune && !spell.form) spell.form = 'nova';
+  spell.callName = callName(spell);
+  if (!spell.released && calledByName(text || '', spell)) { spell.released = true; spell.calledByName = true; spell.power /= 0.7; } // 魔法の名で締めた
   if (!used.length) spell.error = '言霊が一つも宿っていない';
   else if (!spell.elements.length && !spell.effects.length) spell.error = '力の源(属性か効果)が無い';
   else if (!spell.form && !spell.effects.length && !spell.target) spell.error = '魔力が形を成さなかった(形か対象が必要)';
@@ -341,6 +386,7 @@ export function compile(text, known) {
 export function formula(spell) {
   if (!spell.words.length) return '—';
   const parts = [];
+  if (spell.title) parts.push(`《${spell.title}》${spell.callName ? '「' + spell.callName + '」' : ''}`);
   const tgt = { enemy: '敵', self: '自己', ally: '味方' };
   if (spell.target) parts.push(`対象[${tgt[spell.target]}]`);
   if (spell.elements.length) parts.push(spell.elements.map(e => ELEMENTS[e].name).join('+'));

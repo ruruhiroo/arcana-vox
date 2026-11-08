@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { G, rand } from './state.js';
 import { compile, tokenize, WORD_BY_ID, speakable, ELEMENTS } from './lexicon.js';
-import { flowDir, lineOfSight, moveWithCollision, bfs, cellOf, CELL } from './dungeon.js';
+import { flowDir, lineOfSight, moveWithCollision, bfs, cellOf, CELL, settleY } from './dungeon.js';
 import { speakChant } from './voice.js';
 
 const CHANTS = {
@@ -163,7 +163,7 @@ export class BotBrain {
       else if (lineOfSight(m.pos, g)) dir = g.clone().sub(m.pos).setY(0).normalize();
       else {
         const [gx, gz] = cellOf(g); const key = gx + ',' + gz;
-        if (this.fieldKey !== key) { this.fieldKey = key; this.goalField = bfs(G.dungeon.grid, gx, gz); }
+        if (this.fieldKey !== key) { this.fieldKey = key; this.goalField = bfs(G.dungeon.grid, gx, gz, G.dungeon.hgt); }
         dir = flowDir(this.goalField, m.pos);
       }
     }
@@ -178,5 +178,6 @@ export class BotBrain {
     if (m.pushV) { v.add(m.pushV); m.pushV.multiplyScalar(Math.max(0, 1 - dt * 5)); if (m.pushV.length() < 0.2) m.pushV = null; }
     m.vel.lerp(v, Math.min(1, dt * 8));
     moveWithCollision(m.pos, m.vel.x * dt, m.vel.z * dt, m.radius, m.team);
+    settleY(m.pos, dt);
   }
 }

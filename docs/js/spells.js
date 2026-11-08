@@ -2,11 +2,13 @@
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
 import { ELEMENTS, compile, WORD_BY_ID } from './lexicon.js';
-import { isWallAt, raycastGrid, CELL } from './dungeon.js';
+import { isWallAt, raycastGrid, CELL, heightAt } from './dungeon.js';
 import { glowSprite, runeCircleTex } from './textures.js';
 import { sfx } from './audio.js';
+import { bigImpact, updateVfx } from './vfx.js';
 
-const BASE = { fire: 20, ice: 17, thunder: 24, holy: 18, void: 19, wind: 13 };
+// 中級(威力1.0)で与える基本ダメージ。初級は約0.58倍、上級は約1.6倍
+const BASE = { fire: 60, ice: 55, thunder: 66, holy: 58, void: 58, wind: 45 };
 let GLOW = null, RUNE = null;
 
 // ---------- 粒子 ----------
@@ -157,7 +159,7 @@ function applyPayload(spell, caster, t, pl, mult = 1, dir = null) {
   if (!t.alive) return false;
   let did = false;
   if (pl.dmg > 0 && affects(spell, caster, t, 'harm') && !(t.isMage && t.downed)) {
-    FX.damage(t, pl.dmg * mult, spell.elements, caster, { dir, power: spell.power }); did = true;
+    FX.damage(t, pl.dmg * mult, spell.elements, caster, { dir, power: spell.power, tier: spell.tier || 0 }); did = true;
   }
   if (affects(spell, caster, t, 'help') && t.isMage) {
     if (pl.heal) { FX.heal(t, pl.heal * mult, caster); did = true; }
@@ -284,6 +286,9 @@ export const FX = {
 
   nova(caster, spell, pl, center, radius, color, local) {
     ring(center, color, radius, 0.55);
+    bigImpact(center.clone().setY(0.6), color, spell.power * 1.2, spell.elements);
+    G.onBlast?.(center.clone(), radius, spell, local);
+    G.onImpact?.(center.clone(), spell, local, caster);
     flash(center.clone().setY(1.2), color, 40, 0.35, radius * 3);
     for (let i = 0; i < 90; i++) { const a = Math.random() * Math.PI * 2; const v = new THREE.Vector3(Math.cos(a), rand(0, 0.4), Math.sin(a)).multiplyScalar(radius * 2.2); G.particles.emit(center.clone().setY(0.6), v, color, 0.6, 0.5); }
     sfx.impact(spell.elements, center);
@@ -306,6 +311,8 @@ export const FX = {
           G.particles.emit(p, new THREE.Vector3(rand(-0.5, 0.5), -18, rand(-0.5, 0.5)), color, 0.45, 0.28);
         }
         burst(center.clone().setY(0.3), color, 30, { speed: radius * 1.4, life: 0.4 });
+        bigImpact(center.clone().add(new THREE.Vector3(rand(-radius, radius) * 0.6, 0.3, rand(-radius, radius) * 0.6)), color, spell.power * 0.7, spell.elements);
+        if (pulse === 0) G.onImpact?.(center.clone(), spell, local, caster);
         flash(center.clone().setY(2), color, 30, 0.2, radius * 3);
         sfx.impact(spell.elements, center);
         if (!local) return;
@@ -342,15 +349,22 @@ export const FX = {
       if (e === 'holy' && t.undead) a *= 1.35;
     }
     if (elements.length) a /= Math.max(1, elements.length * 0.6); // 多属性の相性補正をならす
+    if (t.resistElem && elements.includes(t.resistElem)) a *= 0.35; // 鏡の魔導師: 写し取った属性
+    if (t.vulnUntil > (G.time || 0)) a *= 1.6; // 鐘の余韻
+    if (t.status?.stigma) a *= 1.25; // 聖痕
+    if (src?.status?.erosion) a *= 0.75; // 侵蝕された者の攻撃は弱まる
     if (t.isMage && t.downed) return;
     // 状態異常
     const pw = opts.power || 1;
+    // 炎=燃焼(じわじわ焼く) / 氷=鈍足、中級以上は凍結 / 雷=麻痺 / 聖=聖痕(受けるダメージ増) / 闇=侵蝕(与えるダメージ減)+吸収 / 風=吹き飛ばし
+    const tier = opts.tier || 0, tag = (txt, col) => { if (!opts.silent) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.5, 0)), txt, col); };
     for (const e of elements) {
-      if (e === 'fire') t.status.burn = { t: 3, dps: 4 * pw, src };
-      if (e === 'ice') t.status.slow = { t: 3 * pw };
-      if (e === 'thunder' && !t.isMage) t.stun = 0.35;
-      if (e === 'wind' && opts.dir) { const k = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar(11 * pw); if (t.knock) t.knock.add(k); else if (t.vel) t.pushV = k; }
-      if (e === 'void' && src && src.alive && opts.silent !== true) FX.heal(src, a * 0.35, src, true);
+      if (e === 'fire') { if (!t.status.burn) tag('燃焼', '#ff9a50'); t.status.burn = { t: 4, dps: (5 + 3 * tier) * pw, src }; }
+      if (e === 'ice') { t.status.slow = { t: 3 * pw }; if (tier >= 1 && !t.isMage) { t.stun = Math.max(t.stun || 0, 0.8 + 0.5 * tier); t.status.frozen = { t: 0.8 + 0.5 * tier }; tag('凍結', '#9fe4ff'); } else tag('鈍足', '#9fe4ff'); }
+      if (e === 'thunder' && !t.isMage) { t.stun = Math.max(t.stun || 0, 0.5 + 0.2 * tier); tag('麻痺', '#d8c8ff'); }
+      if (e === 'holy') { if (!t.status.stigma) tag('聖痕', '#fff0b0'); t.status.stigma = { t: 4 + tier }; }
+      if (e === 'void') { if (!t.status.erosion) tag('侵蝕', '#c080ff'); t.status.erosion = { t: 4 + tier }; if (src && src.alive && opts.silent !== true) FX.heal(src, a * 0.35, src, true); }
+      if (e === 'wind' && opts.dir) { const k = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar((13 + 4 * tier) * pw); if (t.knock) t.knock.add(k); else if (t.vel) t.pushV = k; tag('吹き飛ばし', '#9effc8'); }
     }
     // 守護
     if (t.isMage && t.shield > 0) {
@@ -368,6 +382,8 @@ export const FX = {
       burst(t.pos.clone().setY(1.1), 0x8a0a0a, 8, { speed: 2, grav: 9, size: 0.25 });
       if (t === G.player) G.ui?.hurt(a);
     }
+    if (!t.isMage && a >= 8) t.interrupt?.();
+    if (!t.isMage && src) t.lastSrc = src;
     if (!t.isMage) { t.aggro = true; if (src && src.alive && (!t.target || Math.random() < 0.3)) t.target = src; t.updateHpBar(); }
     if (t.hp <= 0) FX.kill(t, src);
     else if (t.isMage && t.kind === 'player') G.net?.send({ t: 'hp', hp: t.hp });
@@ -411,6 +427,7 @@ export const FX = {
   // ---------- 毎フレーム更新 ----------
   update(dt) {
     G.particles.update(dt);
+    updateVfx(dt);
     updateLumens(dt);
     // 弾
     for (let i = G.projectiles.length - 1; i >= 0; i--) {
@@ -421,7 +438,7 @@ export const FX = {
       const sub = 4;
       for (let s = 0; s < sub && !hit && !end; s++) {
         p.pos.addScaledVector(step, 1 / sub);
-        if (isWallAt(p.pos.x, p.pos.z) || p.pos.y < 0 || p.pos.y > 5.2) { end = true; break; }
+        if (isWallAt(p.pos.x, p.pos.z) || p.pos.y < heightAt(p.pos.x, p.pos.z) || p.pos.y > 5.2) { end = true; break; }
         for (const o of G.obstacles) {
           if (o.team === p.team) continue;
           const dx = p.pos.x - o.pos.x, dz = p.pos.z - o.pos.z;
@@ -445,8 +462,12 @@ export const FX = {
       p.mesh.position.copy(p.pos);
       for (let k = 0; k < 3; k++) G.particles.emit(p.pos.clone().add(rv(0.08)), rv(0.4), p.color, 0.5, 0.35);
       if (hit || end) {
-        burst(p.pos, p.color, 40, { speed: 5 });
-        flash(p.pos, p.color, 35, 0.25);
+        const pw = p.team === 'monster' ? 0.45 : p.spell.power;
+        bigImpact(p.pos.clone(), p.color, pw, p.spell.elements);
+        flash(p.pos, p.color, 30 + pw * 20, 0.32, 14 + pw * 4);
+        // 壁に当たった: 強い術なら壁を砕く(判定は術者の端末で)
+        if (end && !hit && p.team !== 'monster' && isWallAt(p.pos.x, p.pos.z)) G.onWallHit?.(p.pos.clone(), p.spell, p.local);
+        G.onImpact?.(p.pos.clone(), p.spell, p.local, p.caster);
         sfx.impact(p.spell.elements, p.pos);
         if (hit && p.local) {
           if (p.team === 'monster') FX.damage(hit, p.pl.dmg, ['void'], p.caster, {});
@@ -534,6 +555,7 @@ export class LightPool {
     for (const p of G.projectiles) cands.push({ pos: p.pos, color: p.color, intensity: 12, dist: 10, score: p.pos.distanceTo(camPos) - 20 });
     for (const e of G.effects) if (e.kind === 'flash') { const k = e.t / e.dur; cands.push({ pos: e.pos, color: e.color, intensity: e.intensity * k, dist: e.dist, score: e.pos.distanceTo(camPos) - 30 }); }
     for (const l of G.lumens) { const k = Math.min(1, l.t / 3); cands.push({ pos: l.pos, color: l.color, intensity: (7 + 2 * l.power) * k, dist: 18 + 4 * l.power, score: l.pos.distanceTo(camPos) - 40 }); }
+    if (G.sanctuary) { const fp = G.sanctuary.firePos; cands.push({ pos: fp, color: 0xffa050, intensity: 10 + Math.random() * 1.5, dist: 18, score: fp.distanceTo(camPos) - 15 }); }
     if (G.portalObj) cands.push({ pos: G.portalObj.position.clone().setY(1.5), color: 0x8a6bff, intensity: 14, dist: 14, score: G.portalObj.position.distanceTo(camPos) - 5 });
     for (const pk of G.pickups) if (pk.kind === 'scroll' && pk.mesh) cands.push({ pos: pk.mesh.position, color: 0xffe6a0, intensity: 3, dist: 5, score: pk.mesh.position.distanceTo(camPos) + 5 });
     cands.sort((a, b) => a.score - b.score);

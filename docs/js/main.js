@@ -19,6 +19,17 @@ import { Net } from './net.js';
 import { P2PNet, makeRoomCode } from './p2p.js';
 import { buildViewModel } from './viewmodel.js';
 import { startTutorial } from './tutorial.js';
+import { makePickupMesh } from './props.js';
+import { setupGoals, updateGoals } from './goals.js';
+import { SPIRITS, BOND_NAMES, bondMul, bondLevel, gainBond, scold, forgive, spiritsOf } from './spirits.js';
+import { offerQuest, questEvent } from './quests.js';
+import { hazardImpact, trigger as triggerHazard, updateHazards } from './hazards.js';
+import { onPlayerCast, updateBosses, clearBosses, BOSS_NAMES } from './bosses.js';
+import { pickMutator, mutatePower } from './mutators.js';
+import { rubbleBurst, clearVfx } from './vfx.js';
+import { rebuildStructure, breakable, FINAL_FLOOR, heightAt, STEP } from './dungeon.js';
+import { pickSanctuaryRoom, buildSanctuary, inSanctuary, updateSanctuary } from './sanctuary.js';
+G.inSanctuary = inSanctuary;
 import { ENEMY_TYPES } from './entities.js';
 import { SLOTS, RARITY, rollItem, statLines, totals } from './equipment.js';
 import { ACTIONS, binds, opts, actionOf, rebind, resetControls, saveControls, keyName, keyOf } from './controls.js';
@@ -41,7 +52,7 @@ scene.fog = new THREE.FogExp2(0x060403, 0.042);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 120);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
-scene.add(new THREE.HemisphereLight(0x3a3550, 0x120c08, 0.6));
+const hemi = new THREE.HemisphereLight(0x3a3550, 0x120c08, 0.6); scene.add(hemi);
 Object.assign(G, { scene, camera, renderer });
 
 const composer = new EffectComposer(renderer);
@@ -65,7 +76,7 @@ function renderBookPages() {
   const s = BOOK.spells[G.page];
   const sp = s ? compile(s.text, G.known) : null;
   const el = s ? eloquence(s.text, G.known) : null;
-  VM.renderPages(s, G.page, BOOK.spells.length, { formula: sp ? formula(sp) : '', cost: sp?.cost ?? 0, tier: el?.tier });
+  VM.renderPages(s, G.page, BOOK.spells.length, { formula: sp ? formula(sp) + (spiritsOf(sp).length ? ' ・ ' + spiritsOf(sp).map(id => `${SPIRITS[id].name}:${BOND_NAMES[bondLevel((BOOK.bonds || {})[id] || 0)]}`).join(' ') : '') : '', cost: sp?.cost ?? 0, tier: el?.tier });
 }
 document.fonts?.ready.then(() => { if (G.player) renderBookPages(); });
 G.held = 'grimoire';
@@ -136,6 +147,7 @@ let lootCounter = 0;
 const keys = {};
 
 async function startGame({ tutorial = false } = {}) {
+  G.run = { keys: 0, done: false }; G.FINAL_FLOOR = FINAL_FLOOR;
   G.stats = { moved: 0, looked: 0, read: 0, flips: 0, kills: 0, chests: 0, eloquent: 0 };
   initAudio(); applySettings();
   loadBook();
@@ -175,7 +187,7 @@ async function startGame({ tutorial = false } = {}) {
   G.mages = [G.player];
   if (!G.net && !tutorial) {
     const defs = G.mode === 'coop'
-      ? [{ id: 'b1', name: 'リリス', color: 0x5a2a6a }, { id: 'b2', name: 'カイン', color: 0x2a4a3a }]
+      ? [] // 協力探索をひとりで遊ぶときは仲間のNPCを付けない
       : [{ id: 'b1', name: 'ヴァルグ', color: 0x6a1a1a }, { id: 'b2', name: 'セレネ', color: 0x1a3a6a }];
     for (const d of defs) {
       const m = new Mage({ ...d, kind: 'bot', team: G.mode === 'coop' ? 'hero' : 'T' + d.id, pos: new THREE.Vector3() });
@@ -204,7 +216,7 @@ async function startGame({ tutorial = false } = {}) {
   }
   if (G.roomCode) UI.log(`部屋コード: ${G.roomCode} — 仲間に伝えればネット越しに参加できる`, '#ffe08a');
   UI.banner(`第${floor}層`, G.mode === 'coop' ? '仲間と共に最奥の転移陣を目指せ' : '魔導師たちの詠唱に耳を澄ませ — 狩るか、狩られるか', 4);
-  setTimeout(() => UI.log('V を押しながら「紅蓮の業火よ、燃え盛れ 一条の穿槍となりて貫け 今こそ解き放て」と唱え切れ。手元の魔導書の頁に詠唱文が書いてある(右クリックで掲げて読む・ホイールで頁をめくる)', '#ffe08a'), 1500);
+  setTimeout(() => UI.log('V を押しながら「仇なす汝に 紅蓮の業火よ、燃え盛れ 一条の穿槍となりて貫け ファイアランス」と唱え切れ。最後に魔法の名を呼ぶと術が完成する。手元の魔導書の頁に詠唱文が書いてある(右クリックで掲げて読む・ホイールで頁をめくる)', '#ffe08a'), 1500);
   setTimeout(() => UI.log('Tab で魔導書を開く(呪文の書き記し・言霊辞典・心得)。古文書(金色の光)から新しい言霊を得る', '#ffe08a'), 4500);
   last = performance.now(); requestAnimationFrame(loop);
 }
@@ -214,8 +226,12 @@ function clearFloor() {
   if (dungeonGroup) scene.remove(dungeonGroup);
   for (const e of G.enemies) e.dispose();
   for (const k of G.pickups) if (k.mesh) scene.remove(k.mesh);
+  for (const m of G.openChests || []) scene.remove(m); G.openChests = [];
   for (const arr of [G.projectiles, G.effects, G.obstacles, G.runes]) { for (const o of arr) if (o.mesh) scene.remove(o.mesh); arr.length = 0; }
   clearLumens();
+  clearVfx();
+  clearBosses();
+  if (G.sanctuary) { scene.remove(G.sanctuary.grp); G.sanctuary = null; }
   if (portal) scene.remove(portal);
   G.enemies = []; G.pickups = [];
 }
@@ -226,7 +242,24 @@ function setupFloor(seed, floor, reset = false) {
   const d = G.dungeon = generate(seed, floor);
   dungeonGroup = buildMeshes(d); scene.add(dungeonGroup);
   G.explored = new Uint8Array(W * H);
-  G.enemies = d.spawns.map((s, i) => new Enemy(`e${floor}_${i}`, s.type, s.pos, floor, s.boss));
+  G.enemies = d.spawns.map((s, i) => {
+    const e = new Enemy(`e${floor}_${i}`, s.type, s.pos, floor, s.boss);
+    if (s.bossKind) { e.bossKind = s.bossKind; e.name = BOSS_NAMES[s.bossKind]; e.maxHp = e.hp = Math.round(e.maxHp * (s.bossKind === 'mirror' ? 2.6 : 1.3)); }
+    if (s.final) { e.final = true; e.name = '【書庫の番人】'; e.maxHp = e.hp = Math.round(e.maxHp * 1.8); e.dmg *= 1.2; }
+    return e;
+  });
+  if (reset) G.run = { keys: 0, done: false };
+  if (G.mode === 'coop') {
+    const people = G.net ? Math.max(1, G.net.players?.size || 1) : 1;
+    // ひとりなら控えめに、人数が増えるほど手強く
+    const hpMul = people > 1 ? 1.5 * (1 + 0.35 * (people - 1)) : 1.15, dmgMul = people > 1 ? 1.35 : 1.15;
+    for (const e of G.enemies) { e.maxHp = e.hp = Math.round(e.maxHp * hpMul); e.dmg *= dmgMul; e.keen = true; }
+  }
+  // 聖域(休息所)。中に湧いた魔物は消す
+  const sroom = pickSanctuaryRoom(d);
+  G.sanctuary = sroom ? buildSanctuary(sroom) : null;
+  G.sanctuaryGreeted = false;
+  if (G.sanctuary) G.enemies = G.enemies.filter(e => { if (inSanctuary(e.pos, 2) && !e.boss) { e.dispose(); return false; } return true; });
   let kid = 0;
   for (const p of d.scrolls) addPickup(`k${kid++}`, 'scroll', p);
   for (const p of d.herbs) addPickup(`k${kid++}`, 'herb', p);
@@ -252,6 +285,25 @@ function setupFloor(seed, floor, reset = false) {
     m.status = {}; m.shield = 0; m.setChant('');
   }
   if (reset) G.inv = { herb: 1, crystal: 1, bone: 0, iron: 0, potion: 1, ether: 1, amulet: 0, flash: 0, lantern: 0 };
+  // 層の変異
+  G.mut = pickMutator(seed, floor);
+  scene.fog.density = G.mut?.id === 'dark' ? 0.075 : 0.042; hemi.intensity = G.mut?.id === 'dark' ? 0.18 : 0.6;
+  if (G.mut?.id === 'frenzy') for (const e of G.enemies) { e.dmg *= 1.2; e.T = { ...e.T, speed: e.T.speed * 1.25 }; }
+  if (G.mut?.id === 'plenty') { const rooms = d.rooms.filter(r => r !== d.start && r !== d.sanctRoom); for (let i = 0; i < 3 && rooms.length; i++) { const rm = rooms[Math.floor(Math.random() * rooms.length)]; addPickup(`kx${i}`, 'chest', new THREE.Vector3((rm.cx + 0.5) * CELL + (Math.random() - 0.5) * 2, d.hgt?.[rm.cy * W + rm.cx] || 0, (rm.cy + 0.5) * CELL + (Math.random() - 0.5) * 2)); } }
+  if (G.mut) setTimeout(() => UI.banner(`層の変異 — ${G.mut.name}`, G.mut.desc, 4), 4200);
+  // この層の課題
+  setupGoals(floor, {
+    onGoal: g => { UI.log(`課題達成: ${g.text}`, '#b8f0c0'); sfx.pickup(); },
+    onAllDone: () => {
+      const it = rollItem(G.floor + 1); BOOK.bag.push(it); saveBook();
+      G.inv.ether = (G.inv.ether || 0) + 1; UI.renderHotbar();
+      UI.banner('層の課題をすべて達成', `褒美: ${it.name}〔${RARITY[it.rarity].name}〕と魔力薬 — ${keyOf('inventory')} で確かめよ`, 5);
+      sfx.learn();
+    },
+  });
+  clearTimeout(G.questTimer); G.quest = null;
+  G.questTimer = setTimeout(() => { if (!G.tutorial) offerQuest(QUEST_HOOKS); }, 12000);
+  if ([3, 5, 8, 10, 15, 20].includes(floor) && !reset) setTimeout(() => UI.log(`第${floor}層に到達した — 目指す深さを越えた!`, '#ffe08a'), 4500);
   G.gameOverT = null;
   p.yaw = 0; p.pitch = 0;
   // 最初に開けた方向を向く
@@ -287,41 +339,9 @@ function makePortal(pos) {
 // ---------- 拾える物 ----------
 const MAT_COLORS = { herb: 0x6aff7a, crystal: 0x6ab0ff, bone: 0xe8dcc0, iron: 0xa0a0b0, scroll: 0xffe08a, potion: 0xff6a6a };
 function addPickup(id, kind, pos, data = {}) {
-  const g = new THREE.Group();
-  if (kind === 'scroll') {
-    const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.38, 0.9, 8), new THREE.MeshStandardMaterial({ color: 0x5a5248, roughness: 0.9 }));
-    ped.position.y = 0.45; ped.castShadow = true;
-    const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 12), new THREE.MeshStandardMaterial({ color: 0xe8d6a8, roughness: 0.8, emissive: 0x3a2a10 }));
-    roll.rotation.z = Math.PI / 2; roll.position.y = 1.2;
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color: 0xffd070, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.7 }));
-    glow.position.y = 1.2; glow.scale.setScalar(1.4);
-    g.add(ped, roll, glow); g.userData.spin = roll; g.userData.glow = glow;
-  } else if (kind === 'herb') {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x2a6a2a, emissive: 0x1a6a2a, emissiveIntensity: 0.6, roughness: 0.6, side: THREE.DoubleSide });
-    for (let i = 0; i < 6; i++) { const l = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.5, 4), mat); l.position.y = 0.22; l.rotation.set(rand(-0.6, 0.6), 0, rand(-0.6, 0.6)); g.add(l); }
-    const bud = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xaaffaa })); bud.position.y = 0.5; g.add(bud);
-  } else if (kind === 'crystal') {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x6ab0ff, emissive: 0x2a70ff, emissiveIntensity: 1.6, roughness: 0.05, metalness: 0.1 });
-    for (let i = 0; i < 4; i++) { const c = new THREE.Mesh(new THREE.OctahedronGeometry(rand(0.1, 0.2), 0), mat); c.scale.y = 2.2; c.position.set(rand(-0.15, 0.15), rand(-0.1, 0.2), rand(-0.15, 0.15)); c.rotation.set(rand(-0.5, 0.5), rand(0, 3), rand(-0.5, 0.5)); g.add(c); }
-  } else if (kind === 'chest') {
-    const wood = new THREE.MeshStandardMaterial({ color: 0x4a2c14, roughness: 0.8 });
-    const metal = new THREE.MeshStandardMaterial({ color: 0x8a7040, metalness: 0.9, roughness: 0.35 });
-    const box = new THREE.Mesh(new THREE.BoxGeometry(1, 0.55, 0.65), wood); box.position.y = 0.28; box.castShadow = true;
-    const lid = new THREE.Group(); const lm = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 1, 12, 1, false, 0, Math.PI), wood); lm.rotation.z = Math.PI / 2; lm.rotation.y = Math.PI / 2;
-    lm.position.z = 0.0; lid.add(lm); lid.position.set(0, 0.55, 0);
-    for (const x of [-0.35, 0.35]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.58, 0.67), metal); b.position.set(x, 0.28, 0); g.add(b); }
-    // 錠前と、隙間から漏れる光 (開けるまで光る)
-    const lock = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.04), metal); lock.position.set(0, 0.5, 0.34);
-    const seep = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color: 0xffc860, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.55 }));
-    seep.position.set(0, 0.62, 0); seep.scale.set(1.3, 0.5, 1);
-    g.add(box, lid, lock, seep); g.userData.lid = lid; g.userData.seep = seep; g.rotation.y = rand(0, Math.PI * 2);
-  } else { // 戦利品
-    const c = MAT_COLORS[data.mat] || 0xffffff;
-    const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14, 0), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.6 }));
-    orb.position.y = 0.5;
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color: c, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.35 })); glow.position.y = 0.5; glow.scale.setScalar(0.6);
-    g.add(orb, glow); g.userData.spin = orb;
-  }
+  // 見た目は props.js (古文書・霊草・魔晶・宝箱・戦利品)
+  const g = makePickupMesh(kind, data, MAT_COLORS);
+  if (kind === 'chest' || kind === 'herb' || kind === 'crystal') g.rotation.y = rand(0, Math.PI * 2);
   g.position.copy(pos);
   if (kind === 'crystal' && data.dir) g.position.add(new THREE.Vector3(-data.dir[0] * 0.25, 0, -data.dir[1] * 0.25));
   scene.add(g);
@@ -332,24 +352,29 @@ function pickUp(k, fromNet = false) {
   const i = G.pickups.indexOf(k); if (i < 0) return;
   if (k.kind === 'chest') {
     if (k.opened) return;
-    k.opened = true; k.mesh.userData.lid.rotation.x = -1.6; // 開いた箱は残す
-    if (k.mesh.userData.seep) k.mesh.userData.seep.visible = false;
+    k.opened = true; k.mesh.userData.open?.(); // 蓋が開く。開いた箱は残す
+    (G.openChests ||= []).push(k.mesh);
     G.pickups.splice(i, 1);
   } else { scene.remove(k.mesh); G.pickups.splice(i, 1); }
   if (fromNet) return;
   if (k.kind !== 'scroll') G.net?.send({ t: 'pick', id: k.id });
   sfx.pickup();
   const add = (m, n) => { G.inv[m] = (G.inv[m] || 0) + n; UI.log(`${({ herb: '霊草', crystal: '魔晶', bone: '骨片', iron: '鉄屑', potion: '回復薬', ether: '魔力薬' })[m]} ×${n}`, '#cfe8ff'); };
-  if (k.kind === 'scroll') learnRandomWord();
+  if (k.kind === 'scroll') { learnRandomWord(); if (G.floorStats) G.floorStats.scrolls++; }
   else if (k.kind === 'herb') add('herb', 1 + (Math.random() < 0.4));
   else if (k.kind === 'crystal') add('crystal', 1 + (Math.random() < 0.4));
   else if (k.kind === 'chest') {
-    G.stats.chests++;
+    G.stats.chests++; if (G.floorStats) G.floorStats.chests++;
+    const curses = WORDS.filter(w => w.cursed && !G.known.has(w.id));
+    if (curses.length && Math.random() < 0.15 && !G.tutorial) {
+      const w = curses[Math.floor(Math.random() * curses.length)]; G.known.add(w.id); saveBook();
+      setTimeout(() => UI.banner(`呪いの頁『${w.core}』`, `「${w.text}」 — ${w.meaning}`, 7), 1500);
+    }
     if (Math.random() < 0.75 || G.tutorial) {
       const it = rollItem(G.floor);
       BOOK.bag.push(it); saveBook();
       const rr = RARITY[it.rarity];
-      UI.banner(`宝箱 — ${it.name}`, `〔${rr.name}〕${SLOTS.find(s => s.id === it.slot).name} ・ ${statLines(it).join(' / ')}  (I で装備)`, 5);
+      UI.banner(`宝箱 — ${it.name}`, `〔${rr.name}〕${SLOTS.find(s => s.id === it.slot).name} ・ ${statLines(it).join(' / ')}  (${keyOf("inventory")} で装備)`, 5);
       UI.log(`装備を得た: ${it.name}〔${rr.name}〕`, rr.color);
       G.fx.burst(k.pos.clone().setY(1), parseInt(rr.color.slice(1), 16), 40 + it.rarity * 30, { speed: 4, up: 2 });
       if (it.rarity >= 2) sfx.learn();
@@ -363,7 +388,7 @@ function pickUp(k, fromNet = false) {
 }
 
 function learnRandomWord() {
-  const unknown = WORDS.filter(w => !G.known.has(w.id));
+  const unknown = WORDS.filter(w => !G.known.has(w.id) && !w.cursed);
   if (!unknown.length) { G.inv.crystal = (G.inv.crystal || 0) + 2; UI.log('古文書は既知の言霊ばかりだった(魔晶×2を得た)', '#ffe08a'); return; }
   // 属性と形を優先して見つけやすくする
   const weight = w => ({ element: 3, form: 3, effect: 2, mod: 1.5, target: 1, trigger: 1 })[w.cat];
@@ -371,13 +396,26 @@ function learnRandomWord() {
   for (const w of unknown) { r -= weight(w); if (r <= 0) { pick = w; break; } }
   G.known.add(pick.id); saveBook();
   sfx.learn();
-  UI.banner(`新たな言霊『${pick.core}』`, `「${pick.text}」 ${pick.ruby} ・ ${CAT[pick.cat]} — ${pick.hint}`, 6);
+  if (SPIRITS[pick.id]) UI.banner(`精霊と出会った — ${SPIRITS[pick.id].name}`, `真名の言霊『${pick.core}』(${pick.ruby}) を得た。教本(B)の「精霊」で伝承を読める`, 6);
+  else UI.banner(`新たな言霊『${pick.core}』`, `「${pick.text}」 ${pick.ruby} ・ ${CAT[pick.cat]} — ${pick.hint}`, 6);
   UI.log(`言霊『${pick.text}』を魔導書に記した。真意は唱えて確かめよ (Tab)`, '#ffe08a');
   UI.renderHotbar();
 }
 
 G.onEnemyKilled = e => {
   if (G.stats) G.stats.kills++;
+  if (G.floorStats) { G.floorStats.kills++; if (e.boss) G.floorStats.boss = true; }
+  if (e.lastSrc === G.player && G.player.lastSpell) questEvent('kill', { spell: G.player.lastSpell });
+  // 大目標: 第3・6・9層の主は「封印の鍵頁」を落とし、第10層の番人を倒すと迷宮踏破
+  if (e.boss && G.run && !G.run.done) {
+    if (e.final) {
+      if (G.run.keys >= 3) setTimeout(victory, 1200);
+      else UI.banner('番人は倒れた — だが封印は解けない', `封印の鍵頁が足りない (${G.run.keys}/3)。転移陣の先で、主たちから集めよ`, 6);
+    } else if (G.floor % 3 === 0 && G.run.keys < 3) {
+      G.run.keys++; sfx.learn();
+      UI.banner(`封印の鍵頁 (${G.run.keys}/3)`, G.run.keys >= 3 ? `すべて揃った。第${FINAL_FLOOR}層の書庫の番人のもとへ` : '主の亡骸から、封印を解く頁を得た', 6);
+    }
+  }
   const drops = e.T.drops;
   const items = [];
   const n = 1 + (Math.random() < 0.5) + (e.boss ? 3 : 0);
@@ -391,21 +429,34 @@ G.onEnemyKilled = e => {
 // ---------- 詠唱 ----------
 let typed = null;          // 文字詠唱/スロット詠唱の進行
 let voiceText = '';        // 音声詠唱の途中経過
+let chantBuf = '';         // 間を挟んで唱えた分をつなげたもの
+let pttHeld = false, commitAt = 0, lastSpeech = 0;
+const joinChant = t => (chantBuf ? chantBuf + ' ' : '') + (t || '').trim();
+// つなげた詠唱を確定して術にする
+function commitChant() {
+  commitAt = 0;
+  const raw = chantBuf.trim(); chantBuf = '';
+  if (!raw) return;
+  const a = heard(raw);
+  if (!tokenize(a, G.known).some(t => t.known)) { if (isContinuous()) clearChant(); return; }
+  voiceText = raw;
+  finishChant(a, raw);
+}
 let voiceDeadline = 0;
 let netChantT = 0;
 
 function setupVoice() {
   if (!voiceSupported) { UI.micState('🎙 音声認識非対応 — Enter で文字詠唱'); return; }
   initVoice({
-    interim: text => { if (!G.player.alive || G.player.downed) return; beginOrUpdateChant(text); },
+    // 間を挟んでも詠唱は続く: 区切りごとの認識結果をつなげ、V を離すまで(常時詠唱は無音が続くまで)待つ
+    interim: text => { if (!G.player.alive || G.player.downed) return; lastSpeech = performance.now(); beginOrUpdateChant(joinChant(text)); },
     final: raw => {
-      const alts = raw.map(heard);
-      // 言霊を最も多く含む候補を採用
+      // 候補のうち、これまでの分とつなげて言霊を最も多く含むものを採用
       let bi = 0, bc = -1;
-      alts.forEach((a, i) => { const c = tokenize(a, G.known).filter(t => t.known).length * 10 - chantGaps(raw[i], tokenize(a).map(t => t.id)).length; if (c > bc) { bc = c; bi = i; } });
-      if (bc <= 0) { if (isContinuous()) { clearChant(); return; } }
-      voiceText = raw[bi];
-      finishChant(alts[bi], raw[bi]);
+      raw.forEach((r, i) => { const j = joinChant(r), a = heard(j); const c = tokenize(a, G.known).filter(t => t.known).length * 10 - chantGaps(j, tokenize(a).map(t => t.id)).length; if (c > bc) { bc = c; bi = i; } });
+      chantBuf = joinChant(raw[bi]); lastSpeech = performance.now();
+      if (pttHeld || isContinuous()) { if (G.player.alive && !G.player.downed) beginOrUpdateChant(chantBuf); return; }
+      commitChant();
     },
     state: s => {
       if (s === 'listening') UI.micState(isContinuous() ? '🔴 常時詠唱中 (C で解除)' : '🔴 聴取中… 唱えよ');
@@ -422,13 +473,23 @@ function beginOrUpdateChant(text) {
   const p = G.player;
   if (!p.chanting) { p.chantInterrupted = false; sfx.chantStart(); }
   const n = tokenize(heard(text), G.known).filter(t => t.known).length;
-  p.setChant(text, Math.max(1, n));
+  // 唱え切った節の数 = 魔法陣の段。段が上がるたびに陣が広がり、和音が鳴る
+  const ids = tokenize(heard(text), G.known).filter(t => t.known).map(t => t.id);
+  const stage = ids.length - chantGaps(text, ids, G.eqT?.grace || 0).length;
+  if (stage > (p.chantStage || 0)) {
+    sfx.stage(stage); VM.kick();
+    G.fx.burst(p.pos.clone().setY(0.2), 0xffd27a, 18 + stage * 10, { speed: 2 + stage, up: 0.5 });
+  }
+  p.chantStage = stage;
+  p.chantTier = compile(heard(text), G.known).tier || 0;
+  p.setChant(text, Math.max(1, stage + 1));
   UI.setChantDisplay(text);
   G.hearChant(p, heard(text));
   if (G.net && G.time - netChantT > 0.15) { netChantT = G.time; G.net.send({ t: 'chant', id: p.id, text, n }); }
 }
 
 function clearChant() {
+  G.player.chantStage = 0;
   G.player.setChant(''); UI.setChantDisplay('');
   G.net?.send({ t: 'chant', id: G.player.id, text: '', n: 0 });
 }
@@ -450,7 +511,7 @@ function finishChant(text, raw = text) {
   clearChantSoft();
   if (!p.alive || p.downed) return;
   if (interrupted) { p.mp = Math.max(0, p.mp - spell.cost * 0.3); fizzle('詠唱が乱され、術が霧散した'); return; }
-  if (!spell.valid) { fizzle(spell.error || '術にならなかった'); return; }
+  if (!spell.valid) { fizzle(spell.error || '術にならなかった'); sulkCheck(spell); return; }
   equipSpell(spell);
   // 名詠: 文章として成立していれば威力が上がる
   const el = eloquence(raw, G.known);
@@ -459,12 +520,41 @@ function finishChant(text, raw = text) {
     UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.6, 0)), `${el.tier}! 威力+${Math.round(el.bonus * 100)}%`, el.tier === '名詠' ? '#ffd76a' : '#cfe0ff');
     UI.log(`${el.tier} — ${el.marks.join('・')} が揃った(威力+${Math.round(el.bonus * 100)}%)`, el.tier === '名詠' ? '#ffd76a' : '#cfe0ff');
     G.stats.eloquent = (G.stats.eloquent || 0) + (el.tier === '名詠' ? 1 : 0);
+    if (el.tier === '名詠') { // 名詠が決まった瞬間: 一瞬時が緩み、画面が揺れ、金の閃光
+      G.slowmo = 0.35; G.shake = 0.5; sfx.meiei();
+      const fx = $('meieiFx'); fx.classList.remove('on'); void fx.offsetWidth; fx.classList.add('on');
+      G.fx.burst(p.pos.clone().setY(1.2), 0xffd76a, 120, { speed: 7, up: 2 });
+    }
   }
   // 核の語だけでは発動しない。詠唱文を唱え切ること
   const gaps = chantGaps(raw, spell.words, G.eqT?.grace || 0);
-  if (gaps.length) { p.mp = Math.max(0, p.mp - spell.cost * 0.2); fizzle(`詠唱が足りない —「${WORD_BY_ID[gaps[0]].text}」と唱え切れ`); return; }
+  if (gaps.length) { p.mp = Math.max(0, p.mp - spell.cost * 0.2); fizzle(`詠唱が足りない —「${WORD_BY_ID[gaps[0]].text}」と唱え切れ`); sulkCheck(spell); return; }
   if (p.mp < spell.cost) { fizzle(`魔力が足りない (必要${spell.cost})`); return; }
-  castSpell(p, spell, playerAim(spell));
+  if (spell.title) UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.9, 0)), spell.title, '#ffe8b0');
+  spell.breakPower = spell.power; // 壁を砕く力は弱められない
+  BOOK.bonds ||= {};
+  spell.power *= bondMul(spell, BOOK.bonds) * mutatePower(G.mut, spell);
+  const chorus = findChorus(p, spell);
+  if (chorus) {
+    spell.power *= 2.2; spell.breakPower = (spell.breakPower || spell.power) * 2;
+    UI.banner('合唱詠唱', `${chorus.name}と声が重なった — 威力が跳ね上がる`, 3);
+    G.slowmo = 0.3; G.shake = 0.6; sfx.meiei?.();
+    const fx = $('meieiFx'); fx.classList.remove('on'); void fx.offsetWidth; fx.classList.add('on');
+  }
+  p.lastChorus = !!chorus;
+  if (castSpell(p, spell, playerAim(spell))) {
+    p.lastSpell = spell;
+    if (spell.blood) { const cost = p.maxHp * 0.12; p.hp = Math.max(1, p.hp - cost); UI.floatText(p.pos, '-' + Math.round(cost) + ' 血誓', '#ff4040'); UI.hurt?.(cost); }
+    questEvent('cast', { spell, tier: el.tier });
+    onPlayerCast(spell);
+    forgive(spiritsOf(spell));
+    for (const u of gainBond(spell, BOOK.bonds, el.tier, G.mut?.id === 'feast' ? 2 : 1)) {
+      const sp = SPIRITS[u.id];
+      UI.banner(`${sp.name}との縁が深まった`, `縁: ${BOND_NAMES[u.level]} — ${sp.name}の力を借りる術が強くなる`, 4);
+      sfx.learn();
+    }
+    saveBook();
+  }
 }
 function clearChantSoft() { G.player.setChant(''); G.net?.send({ t: 'chant', id: G.player.id, text: '', n: 0 }); }
 
@@ -480,7 +570,8 @@ G.castSpell = function castSpell(m, spell, aim) {
   if (m.mp < spell.cost) return false;
   m.mp -= spell.cost;
   G.fx.cast(m, spell, aim);
-  G.net?.send({ t: 'cast', id: m.id, words: spell.words, aim });
+  noteCast(m.id, spell.words);
+  G.net?.send({ t: 'cast', id: m.id, words: spell.words, aim, chorus: m === G.player && !!m.lastChorus });
   if (m === G.player) {
     VM.kick();
     for (const id of spell.words) if (!BOOK.understood.includes(id)) {
@@ -538,30 +629,46 @@ function useItem(k) {
 }
 
 // ---------- 入力 ----------
-// ポインタロックが使えない環境(アプリ内ブラウザ等)では「フリールック」:
-// ボタンを押さずにマウスを動かすだけで視点が回る
+// 視点はポインタロック(カーソルを画面に固定)で動かす。固定できていれば回転に限りはない。
+// 固定が外れた/失敗したときは「クリックで操作開始」を出し、クリックで固定し直す。
+// 何度クリックしても固定できない環境(一部の埋め込みブラウザ)だけ「フリールック」に切り替える。
 let freeLook = false, mouseX = 0.5, mouseIn = false, dragging = false;
+let lockFails = 0, lockPending = false;
+function showClickToPlay() {
+  if (!G.player || G.uiOpen || freeLook) return;
+  $('clickToPlay').textContent = 'クリックで操作開始';
+  $('clickToPlay').classList.remove('hidden');
+}
 function enableFreeLook() {
-  // デスクトップ版はポインタロックが必ず使える。失敗は「ジェスチャー無しの再ロック」等の一時的なものなので、
-  // フリールック(画面端で回転が止まる)には切り替えず、クリックで再ロックしてもらう
-  if (window.desktop) { if (G.player && !G.uiOpen) { $('clickToPlay').textContent = 'クリックで操作開始'; $('clickToPlay').classList.remove('hidden'); } return; }
-  if (freeLook) return;
+  if (window.desktop || freeLook) return; // アプリ版は必ず固定できるので切り替えない
   freeLook = true; canvas.style.cursor = 'none';
-  $('clickToPlay').textContent = 'マウスで視点操作中(カーソルを固定できない環境です。デスクトップ版推奨)';
+  $('clickToPlay').textContent = 'マウスで視点操作中(カーソルを固定できない環境です。アプリ版推奨)';
+  $('clickToPlay').classList.remove('hidden');
   setTimeout(() => $('clickToPlay').classList.add('hidden'), 2500);
 }
-function requestLock() {
-  if (G.uiOpen || !G.player || freeLook) return;
+function requestLock(fromClick = false) {
+  if (G.uiOpen || !G.player || G.typing || document.pointerLockElement === canvas || lockPending) return;
+  lockPending = true;
+  const failed = () => {
+    if (!lockPending) return; lockPending = false;
+    if (document.pointerLockElement === canvas) return;
+    if (fromClick && ++lockFails >= 3) enableFreeLook(); else showClickToPlay();
+  };
   try {
     const r = canvas.requestPointerLock();
-    if (r?.catch) r.catch(enableFreeLook);
-  } catch { enableFreeLook(); }
-  // ロックが黙って失敗する環境もあるので少し待って確認
-  setTimeout(() => { if (document.pointerLockElement !== canvas) enableFreeLook(); }, 400);
+    if (r?.then) r.then(() => { lockPending = false; }, failed);
+  } catch { failed(); }
+  // 結果を知らせない環境もあるので少し待って確認
+  setTimeout(() => { if (document.pointerLockElement === canvas) lockPending = false; else failed(); }, 700);
 }
-canvas.addEventListener('click', requestLock);
-document.addEventListener('pointerlockerror', enableFreeLook);
-document.addEventListener('pointerlockchange', () => { if (!freeLook) $('clickToPlay').classList.toggle('hidden', document.pointerLockElement === canvas); });
+canvas.addEventListener('click', () => requestLock(true));
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === canvas) {
+    lockFails = 0; lockPending = false;
+    if (freeLook) { freeLook = false; canvas.style.cursor = ''; }
+    $('clickToPlay').classList.add('hidden');
+  } else if (!freeLook) showClickToPlay();
+});
 canvas.addEventListener('mousedown', () => { dragging = true; });
 addEventListener('mouseup', () => { dragging = false; });
 canvas.addEventListener('mouseenter', () => { mouseIn = true; });
@@ -569,7 +676,7 @@ canvas.addEventListener('mouseleave', () => { mouseIn = false; });
 document.addEventListener('mousemove', e => {
   mouseX = e.clientX / innerWidth;
   if (!G.player || G.uiOpen || G.typing) return;
-  if (document.pointerLockElement !== canvas && !freeLook && !dragging) return;
+  if (document.pointerLockElement !== canvas && !freeLook) return;
   const s = 0.0022 * (opts.sens || 1);
   if (G.stats) G.stats.looked += Math.abs(e.movementX * s) + Math.abs(e.movementY * s);
   G.player.yaw -= e.movementX * s;
@@ -579,7 +686,7 @@ document.addEventListener('mousemove', e => {
 const typeBox = $('typeBox'), typeIn = $('typeIn');
 function openTypeBox() {
   if (!canCast()) return; releaseKeys(); G.typing = true; typeBox.classList.remove('hidden'); typeIn.value = ''; typeIn.focus(); document.exitPointerLock?.(); }
-function closeTypeBox() { typeBox.classList.add('hidden'); typeIn.blur(); G.typing = false; if (!freeLook) requestLock(); }
+function closeTypeBox() { typeBox.classList.add('hidden'); typeIn.blur(); G.typing = false; requestLock(); }
 typeIn.addEventListener('keydown', e => {
   e.stopPropagation();
   if (e.key === 'Enter') { const t = typeIn.value; closeTypeBox(); if (t.trim()) startTypedChant(t); }
@@ -594,7 +701,7 @@ function pressAction(act, e) {
     case 'grimoire': e?.preventDefault(); openBook('grimoire'); return;
     case 'textbook': e?.preventDefault(); openBook('words'); return; // 教本の章(言霊辞典・心得・調合書)を開く
     case 'inventory': e?.preventDefault(); openInventory(); return;
-    case 'voice': if (voiceSupported && !isContinuous()) { if (!canCast()) return; startListening(); voiceDeadline = 0; } return;
+    case 'voice': if (voiceSupported && !isContinuous()) { if (!canCast()) return; chantBuf = ''; pttHeld = true; commitAt = 0; startListening(); voiceDeadline = 0; } return;
     case 'continuous': if (voiceSupported) { setContinuous(!isContinuous()); UI.log(isContinuous() ? '常時詠唱: ON — 言霊を含む発話を詠唱とみなす' : '常時詠唱: OFF'); } return;
     case 'typed':
       if (voiceSupported && !opts.typedChant) { UI.log(`声に出して唱えよ — ${keyOf('voice')} を押しながら頁の文を読み上げる`); return; }
@@ -603,13 +710,14 @@ function pressAction(act, e) {
     case 'pageNext': flipPage(1); return;
     case 'pagePrev': flipPage(-1); return;
     case 'interact': interact(); return;
+    case 'jump': { const p = G.player; if (p.onGround && p.alive && !p.downed) { p.vy = 7.4; p.onGround = false; sfx.step(null); } return; }
     case 'ambience': settings.ambience = cycleAmbience(); saveSettings(); UI.log('環境音: ' + ['OFF', '小', '中'][settings.ambience]); return;
     case 'tts': settings.npcVoice = !ttsOn(); setTTS(settings.npcVoice); saveSettings(); UI.log('NPC詠唱の読み上げ: ' + (ttsOn() ? 'ON' : 'OFF')); return;
   }
   if (act?.startsWith('item')) useItem(ITEM_KEYS[+act.slice(4) - 1]);
 }
 function releaseAction(act) {
-  if (act === 'voice' && voiceSupported && !isContinuous()) { stopListening(); voiceDeadline = G.time + 2.5; }
+  if (act === 'voice' && voiceSupported && !isContinuous()) { pttHeld = false; stopListening(); commitAt = performance.now() + 1100; voiceDeadline = G.time + 3; } // 離した後の最後の区切りを少し待ってから確定
   if (act === 'read') G.reading = false;
 }
 addEventListener('keydown', e => {
@@ -657,6 +765,106 @@ addEventListener('blur', releaseKeys);
 document.addEventListener('visibilitychange', releaseKeys);
 G.onUiOpen = releaseKeys;
 
+// ---------- 地形の仕掛け ----------
+const hazardHooks = src => ({ src, dig: (pos, r, max) => applyDig(digCells(pos, r, max)), log: (t, c) => UI.log(t, c) });
+G.onImpact = (pos, spell, local, caster) => {
+  hazardImpact(pos, spell, local, hazardHooks(caster));
+  if (spell.ruin && local && caster === G.player && G.player.pos.distanceTo(pos) < 4) G.fx.damage(G.player, 14, [], null, { silent: false });
+};
+G.solidsRemove = h => { if (h.solid) G.dungeon.solids = G.dungeon.solids.filter(s => s !== h.solid); };
+
+// ---------- 精霊の頼みごと ----------
+const QUEST_HOOKS = {
+  onOffer: (sp, line) => { UI.banner(`${sp.name}の頼み`, `「${line}」`, 5); sfx.learn(); },
+  onDone: (sp, q) => {
+    BOOK.bonds ||= {}; BOOK.bonds[q.sid] = (BOOK.bonds[q.sid] || 0) + 15; saveBook();
+    UI.banner(`${sp.name}の頼みを果たした`, '縁が大きく深まった。精霊から言霊を授かる', 5);
+    setTimeout(learnRandomWord, 1800);
+    clearTimeout(G.questTimer); G.questTimer = setTimeout(() => offerQuest(QUEST_HOOKS), 60000);
+  },
+};
+
+// ---------- 合唱詠唱 ----------
+G.recentCasts = [];
+function noteCast(id, words) {
+  const key = [...words].sort().join(',');
+  G.recentCasts.push({ id, key, t: G.time });
+  G.recentCasts = G.recentCasts.filter(c => G.time - c.t < 2);
+}
+function findChorus(p, spell) {
+  if (!spell.elements.length && !spell.effects.length) return null;
+  const key = [...spell.words].sort().join(',');
+  const c = G.recentCasts.find(c => c.key === key && c.id !== p.id && G.time - c.t < 1.6);
+  if (c) return findMage(c.id) || { name: '仲間' };
+  // ひとりの時は、近くの仲間(NPC)がときどき声を合わせてくれる
+  if (!G.net && G.mode === 'coop' && Math.random() < 0.3) {
+    const bot = G.bots.map(b => b.mage).find(m => m.alive && !m.downed && !m.chanting && m.pos.distanceTo(p.pos) < 14 && m.mp >= spell.cost * 0.5);
+    if (bot) {
+      bot.mp -= spell.cost * 0.5; bot.setChant(spell.text?.slice(0, 40) || '', 2); setTimeout(() => bot.setChant(''), 900);
+      G.fx.cast(bot, compile(spell.text, null), playerAim(spell));
+      return bot;
+    }
+  }
+  return null;
+}
+
+// ---------- 迷宮踏破 ----------
+function victory() {
+  G.run.done = true;
+  let it = null; for (let i = 0; i < 60 && (!it || it.rarity < 3); i++) it = rollItem(FINAL_FLOOR + 5);
+  BOOK.bag.push(it); BOOK.cleared = (BOOK.cleared || 0) + 1; saveBook();
+  G.slowmo = 0.6; G.shake = 0.6; sfx.meiei?.();
+  const ov = $('victory');
+  ov.querySelector('.vstats').innerHTML = `到達: 第${G.floor}層 ・ 討伐: ${G.stats?.kills || 0}体 ・ 名詠: ${G.stats?.eloquent || 0}回<br>褒美: <b style="color:${RARITY[it.rarity].color}">${it.name}</b>〔${RARITY[it.rarity].name}〕`;
+  ov.classList.remove('hidden'); G.uiOpen = true; document.exitPointerLock?.();
+}
+$('vContinue').onclick = () => { $('victory').classList.add('hidden'); G.uiOpen = false; resumeLock(); UI.log('さらに深く — 迷宮はまだ続いている', '#ffe08a'); };
+$('vTitle').onclick = () => location.reload();
+
+// 言い損じが続いた精霊は、しばらくそっぽを向く(その精霊の術が弱まる)
+function sulkCheck(spell) {
+  questEvent('miss');
+  for (const id of scold(spiritsOf(spell))) UI.log(`${SPIRITS[id].name}がそっぽを向いた — しばらく力が弱まる。正しく唱え切れば機嫌は直る`, '#ff9a8a');
+}
+// 魔法の成長: 第1層は本来の6割、層を進むごとに強まり第9層で本来の威力
+const spellGrowth = () => Math.min(1, 0.6 + 0.05 * ((G.floor || 1) - 1));
+G.spellGrowth = spellGrowth;
+
+// ---------- 地形破壊 ----------
+// 強い術(極大・名詠・属性の融合など)は壁を砕く。外周の壁は壊れない
+function digCells(pos, radius, max) {
+  const cells = [];
+  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+    const cx = Math.floor(pos.x / CELL) + dx, cy = Math.floor(pos.z / CELL) + dy;
+    if (!breakable(cx, cy) || G.dungeon.grid[cy * W + cx]) continue;
+    const d = Math.hypot((cx + 0.5) * CELL - pos.x, (cy + 0.5) * CELL - pos.z);
+    if (d <= radius + CELL * 0.55) cells.push([cx, cy, d]);
+  }
+  return cells.sort((a, b) => a[2] - b[2]).slice(0, max).map(([x, y]) => [x, y]);
+}
+function applyDig(cells, fromNet = false) {
+  if (!cells.length) return;
+  for (const [x, y] of cells) G.dungeon.grid[y * W + x] = 1;
+  rebuildStructure(G.dungeon, dungeonGroup);
+  for (const [x, y] of cells) rubbleBurst(new THREE.Vector3((x + 0.5) * CELL, 0, (y + 0.5) * CELL));
+  sfx.crumble?.(new THREE.Vector3((cells[0][0] + 0.5) * CELL, 1, (cells[0][1] + 0.5) * CELL));
+  for (const m of G.mages) m._fc = null; // 魔物の経路を引き直す
+  if (!fromNet) G.net?.send({ t: 'dig', cells });
+}
+const breakPower = spell => (G.mut?.id === 'brittle' ? 1.4 : 1) * (spell.breakPower ?? spell.power) * (spell.max ? 1.15 : 1) * (spell.dual ? 1.1 : 1) * (spell.ruin ? 2.2 : 1);
+G.onWallHit = (pos, spell, local) => {
+  if (!local) return;
+  const p = breakPower(spell);
+  if (p < 1.25) return; // 弱い術では崩れない(ひびの演出だけ)
+  applyDig(digCells(pos, p >= 1.9 ? CELL * 0.9 : 0, p >= 1.9 ? 3 : 1));
+};
+G.onBlast = (pos, radius, spell, local) => {
+  if (!local) return;
+  const p = breakPower(spell);
+  if (p < 1.5) return;
+  applyDig(digCells(pos, radius * 0.6, p >= 2 ? 4 : 2));
+};
+
 // ---------- 照準した敵の情報 ----------
 const ELEM_WORD = Object.fromEntries(WORDS.filter(w => w.cat === 'element').map(w => [w.val, w.core]));
 let targetShown = null;
@@ -677,7 +885,7 @@ function updateTargetInfo() {
   if (targetShown === key) return;
   targetShown = key;
   const weak = (T.weak || []).map(x => ELEM_WORD[x]).join('・'), res = (T.resist || []).map(x => ELEM_WORD[x]).join('・');
-  el.innerHTML = `<b class="${best.boss ? 'boss' : ''}">${best.name}</b><div class="hp"><i style="width:${pct}%"></i></div><div class="wk">${weak ? '弱点 <em>' + weak + '</em>' : ''}${res ? '　耐性 <s>' + res + '</s>' : ''}</div>`;
+  el.innerHTML = `${best.boss ? '<b class="boss">主</b>' : ''}<div class="hp"><i style="width:${pct}%"></i></div><div class="wk">${weak ? '弱点 <em>' + weak + '</em>' : ''}${res ? '　耐性 <s>' + res + '</s>' : ''}</div>`;
   el.style.setProperty('--rim', '#' + (({ skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a })[best.type]).toString(16).padStart(6, '0'));
   el.classList.remove('hidden');
 }
@@ -788,7 +996,7 @@ function openMenu() {
   $('mFull').classList.toggle('hidden', !window.desktop);
 }
 function closeMenu() { menu.classList.add('hidden'); G.uiOpen = false; resumeLock(); }
-function resumeLock() { if (!freeLook) requestLock(); }
+function resumeLock() { requestLock(); }
 $('mResume').onclick = closeMenu;
 $('mGrimoire').onclick = () => { menu.classList.add('hidden'); openBook('grimoire'); };
 $('mInv').onclick = () => { menu.classList.add('hidden'); openInventory(); };
@@ -836,6 +1044,8 @@ document.addEventListener('pointerlockchange', () => {
 function interact() {
   const p = G.player;
   if (!p.alive || p.downed) return;
+  // 聖域の書見台: 魔導書を広げて呪文を書き直せる
+  if (G.sanctuary && p.pos.distanceTo(G.sanctuary.lecternPos) < 2.2) { openBook('grimoire'); return; }
   if (portal && p.pos.distanceTo(portal.position) < 2.4) {
     if (G.isHost) nextFloor(); else { G.net.send({ t: 'portalReq', to: G.hostId }); UI.log('部屋の主に転移を要請した'); }
     return;
@@ -862,14 +1072,14 @@ function onNet(m) {
       let r = findMage(m.id);
       if (!r) {
         r = new Mage({ id: m.id, name: m.name, kind: 'remote', team: G.mode === 'coop' ? 'hero' : 'T' + m.from, color: REMOTE_COLORS[m.from % REMOTE_COLORS.length], pos: new THREE.Vector3(m.x, 0, m.z) });
-        r.netId = m.from; r.netPos = new THREE.Vector3(m.x, 0, m.z); G.mages.push(r);
+        r.netId = m.from; r.netPos = new THREE.Vector3(m.x, m.y || 0, m.z); G.mages.push(r);
       }
-      r.netPos.set(m.x, 0, m.z); r.yaw = m.yaw; r.hp = m.hp; r.shield = m.sh; r.downed = m.downed; r.alive = m.alive; r.kills = m.kills;
+      r.netPos.set(m.x, m.y || 0, m.z); r.yaw = m.yaw; r.hp = m.hp; r.shield = m.sh; r.downed = m.downed; r.alive = m.alive; r.kills = m.kills;
       if (m.chant !== r.chantText) r.setChant(m.chant, m.n);
       break;
     }
     case 'chant': { const r = findMage(m.id); if (r) { r.setChant(m.text, m.n); if (m.text) G.hearChant(r, m.text); } break; }
-    case 'cast': { const r = findMage(m.id); if (r) G.fx.cast(r, G.fx.spellFromIds(m.words), m.aim); break; }
+    case 'cast': { const r = findMage(m.id); if (r) { G.fx.cast(r, G.fx.spellFromIds(m.words), m.aim); noteCast(r.id, m.words); if (m.chorus) UI.log(`${r.name}と合唱詠唱!`, '#ffd76a'); } break; }
     case 'dmg': G.fx.damage(G.player, m.amount, m.elements, findAny(m.src), { melee: m.opts?.melee, dir: m.opts?.dir }); break;
     case 'heal': G.fx.heal(G.player, m.amount, findAny(m.src)); break;
     case 'shield': G.fx.shield(G.player, m.amount, m.dur, m.thorns); break;
@@ -885,6 +1095,9 @@ function onNet(m) {
     case 'ekill': { const e = G.enemies.find(o => o.id === m.id); if (e && e.alive) { e.hp = 0; G.fx.kill(e, null); } break; }
     case 'loot': for (const l of m.items) addPickup(l.id, 'loot', new THREE.Vector3(l.x, 0, l.z), { mat: l.mat }); break;
     case 'pick': { const k = G.pickups.find(o => o.id === m.id); if (k) pickUp(k, true); break; }
+    case 'dig': applyDig(m.cells, true); break;
+    case 'hz': triggerHazard(m.i, false, hazardHooks(null), {}, m.mode); break;
+    case 'ecast': { const e = G.enemies.find(x => x.id === m.eid || x.id === m.id); if (e) G.fx.cast(e, G.fx.spellFromIds(m.words), m.aim); break; }
     case 'floor': if (m.sync && m.floor === G.floor && m.seed === G.dungeon.seed) break; setupFloor(m.seed, m.floor, !!m.reset); sfx.portal(); UI.banner(`第${m.floor}層`, '迷宮は形を変えた', 3); break;
     case 'portalReq': if (G.isHost) nextFloor(); break;
     case 'flash': if (G.isHost) for (const e of G.enemies) if (e.alive && Math.hypot(e.pos.x - m.x, e.pos.z - m.z) < 10) e.stun = 2.5; break;
@@ -899,7 +1112,7 @@ function netTick(dt) {
   const p = G.player;
   if (netT <= 0) {
     netT = 1 / 12;
-    G.net.send({ t: 'st', id: p.id, name: p.name, x: +p.pos.x.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +p.yaw.toFixed(3), hp: Math.round(p.hp), sh: Math.round(p.shield), chant: p.chantText, n: p.chantWords || 0, downed: p.downed, alive: p.alive, kills: p.kills });
+    G.net.send({ t: 'st', id: p.id, name: p.name, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +p.yaw.toFixed(3), hp: Math.round(p.hp), sh: Math.round(p.shield), chant: p.chantText, n: p.chantWords || 0, downed: p.downed, alive: p.alive, kills: p.kills });
   }
   if (G.isHost && esT <= 0) {
     esT = 0.1;
@@ -912,7 +1125,10 @@ function netTick(dt) {
 let last = 0, exploreT = 0, stepT = 0, bob = 0;
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const realDt = Math.min(0.05, (now - last) / 1000); last = now;
+  // 名詠の瞬間は時の流れが緩む
+  const dt = G.slowmo > 0 ? realDt * 0.3 : realDt;
+  if (G.slowmo > 0) G.slowmo -= realDt;
   if (!G.net && G.uiOpen) { composer.render(); return; } // ひとり探索中は魔導書を開くと時が止まる
   G.time += dt;
   const p = G.player;
@@ -931,9 +1147,11 @@ function loop(now) {
 
   // 拾い物・転移陣の演出
   for (const k of G.pickups) {
-    if (k.mesh.userData.spin) { k.mesh.userData.spin.rotation.y += dt * 1.5; k.mesh.userData.spin.position.y = (k.kind === 'scroll' ? 1.2 : 0.5) + Math.sin(G.time * 2 + k.pos.x) * 0.08; }
+    k.mesh.userData.animate?.(dt, G.time);
     if (k.kind === 'loot' && p.alive && !p.downed && k.pos.distanceTo(p.pos) < 1.3) pickUp(k);
   }
+  // 開けた宝箱(蓋が開く動き・中の輝き)
+  for (const m of G.openChests || []) m.userData.animate?.(dt, G.time);
   if (portal) {
     portal.userData.disc.rotation.z += dt * 1.2; portal.userData.floorRune.rotation.z -= dt * 0.4;
     if (Math.random() < dt * 30) G.particles.emit(portal.position.clone().add(new THREE.Vector3(rand(-1.2, 1.2), 0.1, rand(-1.2, 1.2))), new THREE.Vector3(0, rand(1, 2.5), 0), 0x8a6bff, 0.25, 1.5);
@@ -954,8 +1172,9 @@ function loop(now) {
 
   // 操作ヒント
   let hint = '';
-  if (portal && p.pos.distanceTo(portal.position) < 2.4) hint = 'E: 転移陣に触れて次の層へ';
-  else for (const k of G.pickups) if (!k.opened && k.pos.distanceTo(p.pos) < 2.6) { hint = 'E: ' + ({ scroll: '古文書を読む', herb: '霊草を摘む', crystal: '魔晶を砕き取る', chest: '宝箱を開ける', loot: '拾う' })[k.kind]; break; }
+  if (G.sanctuary && p.pos.distanceTo(G.sanctuary.lecternPos) < 2.2) hint = `${keyOf('interact')}: 書見台で魔導書を整える`;
+  else if (portal && p.pos.distanceTo(portal.position) < 2.4) hint = `${keyOf('interact')}: 転移陣に触れて次の層へ`;
+  else for (const k of G.pickups) if (!k.opened && k.pos.distanceTo(p.pos) < 2.6) { hint = keyOf('interact') + ': ' + ({ scroll: '古文書を読む', herb: '霊草を摘む', crystal: '魔晶を砕き取る', chest: '宝箱を開ける', loot: '拾う' })[k.kind]; break; }
   UI.prompt(hint);
 
   // 全滅判定(協力)
@@ -1000,7 +1219,11 @@ function updatePlayer(dt) {
     if (!p.alive || p.downed) { typed = null; clearChant(); }
     else if (typed.t >= typed.dur) { const t = typed.text; typed = null; finishChant(t); }
   }
-  if (voiceDeadline && G.time > voiceDeadline) { voiceDeadline = 0; if (p.chanting && !typed) clearChant(); }
+  // 押し終えた詠唱の確定 / 常時詠唱は2.2秒黙ったら確定
+  const nowMs = performance.now();
+  if (commitAt && nowMs > commitAt) commitChant();
+  if (isContinuous() && chantBuf && nowMs - lastSpeech > 2200) commitChant();
+  if (voiceDeadline && G.time > voiceDeadline) { voiceDeadline = 0; if (p.chanting && !typed && !chantBuf) clearChant(); }
 
   // 移動
   const canMove = p.alive && !p.downed && !G.uiOpen && !G.typing;
@@ -1015,12 +1238,36 @@ function updatePlayer(dt) {
     if (isDown('forward')) move.add(fwd); if (isDown('back')) move.sub(fwd);
     if (isDown('right')) move.add(right); if (isDown('left')) move.sub(right);
   }
-  const sprint = isDown('sprint') && !p.chanting && !G.reading ? 1.55 : G.reading ? 0.6 : 1;
+  const chantSlow = p.chanting ? [0.8, 0.58, 0.36][p.chantTier || 0] : 1; // 上級の詠唱ほど重い
+  const sprint = (isDown('sprint') && !p.chanting && !G.reading ? 1.55 : G.reading ? 0.6 : 1) * chantSlow * (G.mut?.id === 'frenzy' ? 1 : 1);
+  const vg = $('chantVignette'); if (vg) vg.style.opacity = p.chanting ? [0.18, 0.4, 0.68][p.chantTier || 0] : 0;
   if (move.lengthSq()) move.normalize().multiplyScalar(4.4 * sprint * p.speedMul * (1 + (G.eqT?.speed || 0)));
   if (p.pushV) { move.add(p.pushV); p.pushV.multiplyScalar(Math.max(0, 1 - dt * 5)); if (p.pushV.length() < 0.2) p.pushV = null; }
   p.vel.lerp(move, Math.min(1, dt * 28)); // 入力に素早く追従させ、滑る感じを無くす
   if (!move.lengthSq() && p.vel.lengthSq() < 0.05) p.vel.set(0, 0, 0);
   moveWithCollision(p.pos, p.vel.x * dt, p.vel.z * dt, p.radius, p.team);
+  {
+    const ground = heightAt(p.pos.x, p.pos.z);
+    p.vy = (p.vy || 0) - 20 * dt;
+    p.pos.y += p.vy * dt;
+    if (p.pos.y <= ground) {
+      if (!p.onGround && p.vy < -9) { G.shake = Math.min(1, (G.shake || 0) + 0.15); sfx.step(null); } // 高い所から着地
+      p.pos.y = ground; p.vy = 0; p.onGround = true;
+    } else if (p.pos.y > ground + 0.05) p.onGround = false;
+    // 跳んでいる間に前へ押すと、目の前の縁(足元より1.3mまで)によじ登る
+    if (!p.onGround && isDown('forward') && !p.mantle) {
+      const f = new THREE.Vector3(-Math.sin(p.yaw), 0, -Math.cos(p.yaw));
+      const ax = p.pos.x + f.x * (p.radius + 0.55), az = p.pos.z + f.z * (p.radius + 0.55);
+      const hA = heightAt(ax, az);
+      if (!isWall(ax, az) && hA - p.pos.y > 0.15 && hA - p.pos.y <= 1.3) p.mantle = { to: hA, t: 0, f };
+    }
+    if (p.mantle) {
+      p.mantle.t += dt; p.vy = 0;
+      p.pos.y += (p.mantle.to + 0.02 - p.pos.y) * Math.min(1, dt * 14);
+      if (p.mantle.t > 0.12) { p.pos.addScaledVector(p.mantle.f, dt * 3); }
+      if (p.mantle.t > 0.3) { p.pos.y = Math.max(p.pos.y, heightAt(p.pos.x, p.pos.z)); p.mantle = null; p.onGround = true; G.shake = Math.min(1, (G.shake || 0) + 0.06); }
+    }
+  }
 
   // カメラ
   const speed = p.vel.length();
@@ -1028,11 +1275,18 @@ function updatePlayer(dt) {
   if (G.reading) G.stats.read += dt;
   G.tutorial?.update(dt);
   updateTargetInfo();
+  updateSanctuary(dt);
+  updateHazards(dt);
+  updateBosses(dt);
+  if (G.mut?.id === 'silence' && p.chanting && G.isHost) for (const e of G.enemies) if (e.alive && !e.aggro && e.pos.distanceTo(p.pos) < 26) { e.aggro = true; e.target = p; }
+  updateGoals();
+  if (G.sanctuary && !G.sanctuaryGreeted && inSanctuary(p.pos)) { G.sanctuaryGreeted = true; UI.banner('聖域', '魔物はここに入れない。焚き火のそばで傷と魔力が癒える', 4); sfx.heal(p.pos); }
   bob += dt * speed * 2.2;
   stepT -= dt * speed; if (stepT <= 0 && speed > 1) { stepT = 2.2; sfx.step(null); }
   const eye = p.downed || !p.alive ? 0.4 : 1.62 + (opts.headBob ? Math.sin(bob) * 0.04 * Math.min(1, speed / 4) : 0);
-  camera.position.set(p.pos.x, eye, p.pos.z);
+  camera.position.set(p.pos.x, p.pos.y + eye, p.pos.z);
   camera.rotation.set(p.pitch, p.yaw, p.downed ? 0.4 : 0);
+  if (G.shake > 0) { G.shake = Math.max(0, G.shake - dt * 1.6); const k = G.shake * 0.035; camera.rotation.x += (Math.random() - 0.5) * k; camera.rotation.y += (Math.random() - 0.5) * k; }
 
   // 手元の書物
   VM.update(dt, { bob, chanting: p.chanting, chantWords: p.chantWords, reading: G.reading && G.held === 'grimoire', alive: p.alive && !p.downed, time: G.time });

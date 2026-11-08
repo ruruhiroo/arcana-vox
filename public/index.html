@@ -104,6 +104,49 @@
   .dlapp { margin: 10px 0 0; font-size: 15px; }
   .dlapp a { color: var(--gold); }
   .dlapp span { color: var(--ink-dim); font-size: 13px; margin-left: 6px; }
+  .keysbox { margin-top: 14px; }
+  .keysbox summary { cursor: pointer; color: var(--gold-dim); font-size: 15px; }
+  .keysbox[open] summary { margin-bottom: 8px; }
+  @media (max-height: 820px) { #lobby .card { padding: 22px 32px; } #lobby h1 { font-size: 40px; } #lobby .sub { margin: 2px 0 12px; } #lobby .tag { font-size: 15px; margin-bottom: 12px; } #lobby .row { margin: 8px 0; } }
+  #meieiFx { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 55%, rgba(255,230,160,.55), rgba(255,200,90,.15) 45%, rgba(0,0,0,0) 70%); }
+  #chantVignette { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .5s; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(10,0,20,.85) 100%); }
+  #goals .mut { font-size: 13px; color: #c8a8ff; margin-bottom: 6px; }
+  #meieiFx.on { animation: meiei 0.9s ease-out; }
+  @keyframes meiei { 0% { opacity: 0; } 12% { opacity: 1; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { #meieiFx.on { animation-duration: .3s; } }
+  #goals { margin-top: 12px; width: 300px; padding: 10px 14px; background: rgba(10,7,14,.55); border-left: 2px solid var(--gold-dim); font-size: 15px; color: #e8dcc0; text-shadow: 0 0 4px #000; pointer-events: none; transition: box-shadow .4s; }
+  #goals.fresh { box-shadow: 0 0 24px rgba(216,180,106,.35); }
+  #goals .gh { color: var(--gold); letter-spacing: .15em; font-size: 14px; margin-bottom: 4px; }
+  #goals .gh b { color: #8dffb0; font-weight: 700; margin-left: 6px; }
+  #goals .gi { line-height: 1.75; }
+  #goals .gi i { font-style: normal; display: inline-block; width: 20px; color: var(--gold-dim); }
+  #goals .gi.ok { color: #9ad8a8; } #goals .gi.ok i { color: #8dffb0; }
+  #goals .gi span { color: var(--gold); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  #goals .gi.next { color: var(--ink-dim); }
+  #goals .quest { margin: 6px 0 2px; font-size: 14px; line-height: 1.5; }
+  #goals .quest span { color: var(--gold); margin-left: 4px; }
+  #goals .gd { margin-top: 4px; font-size: 13px; color: var(--ink-dim); }
+  @media (max-height: 700px) { #goals { font-size: 13px; } }
+  #victory { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: radial-gradient(circle, rgba(60,40,10,.75), rgba(0,0,0,.92)); }
+  #victory .vcard { width: min(560px, calc(100vw - 32px)); text-align: center; padding: 36px 32px; border: 1px solid var(--gold); background: var(--panel); box-shadow: 0 0 80px rgba(216,180,106,.35); }
+  #victory .vsub { font-family: 'Cinzel', serif; letter-spacing: .4em; color: var(--gold-dim); font-size: 14px; }
+  #victory h2 { margin: 8px 0 14px; font-size: 48px; letter-spacing: .3em; color: #fff3cf; text-shadow: 0 0 30px rgba(216,180,106,.8); }
+  #victory p { color: var(--ink); line-height: 1.9; font-size: 17px; }
+  #victory .vstats { margin: 16px 0 22px; color: var(--ink-dim); line-height: 1.9; }
+  #goals .big { color: #ffe08a; font-size: 15px; margin-bottom: 2px; }
+  #goals .keys { font-size: 14px; color: var(--ink-dim); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(216,180,106,.2); }
+  #goals .keys b { color: #ffd76a; letter-spacing: .2em; margin-left: 4px; }
+  #goals .keys span { font-size: 12px; }
+  .spirits { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .spcard { padding: 12px 14px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.25); }
+  .spcard.unmet { opacity: .5; }
+  .spcard h4 { margin: 0 0 2px; font-size: 19px; }
+  .spcard h4 rt { font-size: 10px; color: var(--ink-dim); }
+  .spcard .word { font-size: 13px; color: var(--ink-dim); }
+  .spcard .lore { font-size: 14px; line-height: 1.7; margin: 6px 0; }
+  .spcard .bond { font-size: 13px; color: var(--gold); }
+  .spcard .bar { height: 5px; background: rgba(255,255,255,.1); margin-top: 4px; }
+  .spcard .bar i { display: block; height: 100%; }
   .startrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   #tut { position: absolute; top: 90px; left: 24px; width: 400px; padding: 14px 18px; background: rgba(12,8,18,.82); border: 1px solid var(--panel-edge); border-left: 3px solid var(--gold); pointer-events: auto; transition: .3s; }
   #tut.ok { border-left-color: #8dffb0; box-shadow: 0 0 24px rgba(141,255,176,.25); }
@@ -130,7 +173,9 @@
   .slot.book .k { top: 50%; transform: translateY(-50%); }
   .slot.item .n { overflow: visible; text-overflow: clip; padding-right: 0; }
   .slot.book.held { border-color: var(--gold); box-shadow: 0 0 14px rgba(216,180,106,.35); }
-  #chantBox { position: absolute; left: 50%; bottom: 112px; transform: translateX(-50%); text-align: center; min-width: 420px; max-width: 80vw; }
+  #chantBox { position: absolute; left: 41%; bottom: 112px; transform: translateX(-50%); text-align: center; min-width: 420px; max-width: min(48vw, 860px); } /* 右下の魔導書に重ならないよう少し左寄せ */
+  #chantText .ph { display: inline-block; white-space: nowrap; margin: 0 .2em; }
+  #chantText.long { font-size: 25px; }
   #chantText { font-size: 32.5px; font-weight: 800; letter-spacing: .08em; color: #fff3cf; text-shadow: 0 0 18px rgba(255,200,120,.8), 0 0 4px #000; min-height: 40px; }
   #chantText .w { padding: 0 4px; } #chantText .w.ok { color: #ffe08a; } #chantText .w.unk { color: #888; text-decoration: line-through; }
   #chantText .w.trig { color: #ff9a6a; }
@@ -246,6 +291,7 @@
   .editor label { display: block; color: var(--gold); font-size: 16px; margin: 10px 0 4px; }
   .editor input[type=text], .editor textarea { width: 100%; }
   .editor textarea { height: 90px; }
+  .editor textarea.chanttext { height: auto; min-height: 84px; resize: vertical; line-height: 1.7; font-size: 17px; }
   .formula { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--gold-dim); background: rgba(0,0,0,.3); font-size: 17px; color: #e8f0ff; min-height: 44px; line-height: 1.6; }
   .chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
   .chip { font-size: 16px; padding: 3px 8px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.3); color: var(--ink); cursor: pointer; }
@@ -298,7 +344,7 @@
       </div>
     </div>
     <div class="row" id="onlineRow"><label>接続</label>
-      <select id="netSel"><option value="solo">ひとりで(NPC魔導師と共に)</option><option value="host">ネット: 部屋を作る</option><option value="join">ネット: 部屋に入る</option><option value="lan">LAN: 直接接続</option></select>
+      <select id="netSel"><option value="solo">ひとりで</option><option value="host">ネット: 部屋を作る</option><option value="join">ネット: 部屋に入る</option><option value="lan">LAN: 直接接続</option></select>
       <input type="text" id="roomIn" placeholder="部屋コード" maxlength="12" autocomplete="off" class="hidden" style="width:160px">
       <button id="copyCode" class="hidden" type="button">コピー</button>
       <input type="text" id="hostIn" placeholder="接続先(空欄=自分が部屋)" class="hidden" style="width:220px">
@@ -306,23 +352,25 @@
     <div class="note" id="netNote"></div>
     <div class="startrow"><button class="btn" id="startBtn">迷宮へ降りる</button><button class="btn ghost" id="tutBtn">手ほどき(はじめての方)</button></div>
     <p class="dlapp" id="dlApp"><a href="https://github.com/ruruhiroo/arcana-vox/releases/latest" target="_blank" rel="noopener">⬇ アプリ版(Windows)をダウンロード</a> <span>インストール不要・オフライン音声認識つき</span></p>
+    <details class="keysbox"><summary>操作一覧(Esc → 操作設定 で変更できる)</summary>
     <div class="keys">
       <kbd>V</kbd><span>押している間 声で詠唱</span><kbd>C</kbd><span>常時詠唱 切替(ハンズフリー)</span>
-      <kbd>右クリック</kbd><span>魔導書を掲げて頁を読む</span><kbd>ホイール</kbd><span>頁をめくる(F/R でも)</span>
-      <kbd>WASD</kbd><span>移動 / Shift 走る</span><kbd>E</kbd><span>調べる・拾う・転移</span>
+      <kbd>右クリック</kbd><span>魔導書を掲げて頁を読む</span><kbd>ホイール</kbd><span>頁をめくる(X/Z でも)</span>
+      <kbd>WASD</kbd><span>移動 / Shift 走る / Space ジャンプ</span><kbd>F</kbd><span>調べる・拾う・転移</span>
       <kbd>Tab</kbd><span>魔導書を開く(呪文・言霊辞典・心得・調合)</span>
-      <kbd>I</kbd><span>所持品・装備</span><kbd>1-5</kbd><span>道具を使う</span><kbd>Esc</kbd><span>メニュー・操作設定(キー変更)</span>
+      <kbd>E</kbd><span>所持品・装備</span><kbd>1-5</kbd><span>道具を使う</span><kbd>Esc</kbd><span>メニュー・操作設定(キー変更)</span>
       <kbd>F11</kbd><span>全画面(デスクトップ版)</span>
       <kbd>T</kbd><span>NPC詠唱の読み上げ 切替</span>
       <kbd>マウス</kbd><span>視点(ドラッグ / 矢印キーでも可)</span><kbd>M</kbd><span>環境音 OFF/小/中</span>
     </div>
+    </details>
     <p class="note" id="voiceNote"></p>
   </div>
 </div>
 
 <div id="hud" class="hidden">
   <div id="crosshair"><i></i></div>
-  <div id="topLeft"><div id="floorLabel">第1層</div><div id="modeLabel"></div><div id="party"></div></div>
+  <div id="topLeft"><div id="floorLabel">第1層</div><div id="modeLabel"></div><div id="party"></div><div id="goals" class="hidden"></div></div>
   <canvas id="minimap" width="210" height="210"></canvas>
   <div id="log"></div>
   <div id="prompt"></div>
@@ -335,6 +383,8 @@
     <div class="bar" id="mpBar"><div style="width:100%"></div><span></span></div>
   </div>
   <div id="target" class="hidden"></div>
+  <div id="meieiFx"></div>
+  <div id="chantVignette"></div>
   <div id="hotbar"></div>
   <div id="tut" class="hidden"></div>
   <div id="vignette"></div>
@@ -351,7 +401,7 @@
 
 <div id="inv" class="hidden">
   <div class="icard">
-    <div class="ihead"><h2>所持品</h2><span class="muted">I / Esc で閉じる</span></div>
+    <div class="ihead"><h2>所持品</h2><span class="muted">E / Esc で閉じる</span></div>
     <div class="books">
       <div class="bookitem grimoire" data-book="grimoire"><span class="cover"><b>魔導書</b><i>GRIMOIRE</i></span><span class="bdesc">常に手にしている、あなただけの魔導書。開いた頁の詠唱文を読み上げて術を放つ。呪文の書き記し・頁の並べ替え、言霊辞典・心得・調合書もここに。<span class="bbtns"><button data-open="grimoire">開く <kbd>Tab</kbd></button></span></span></div>
     </div>
@@ -362,13 +412,23 @@
   </div>
 </div>
 
+<div id="victory" class="hidden">
+  <div class="vcard">
+    <div class="vsub">ARCANUM PRIMORDIALE</div>
+    <h2>迷宮踏破</h2>
+    <p>封印の鍵頁が書庫の扉を開いた。<br>最奥の書見台で、あなたは『原初の魔導書』を手にした。</p>
+    <div class="vstats"></div>
+    <div class="mrow2"><button class="btn" id="vContinue">さらに深く潜る</button><button class="btn ghost" id="vTitle">タイトルへ</button></div>
+  </div>
+</div>
+
 <div id="menu" class="hidden">
   <div class="mcard">
     <div id="menuMain">
     <h2>— 休息 —</h2>
     <div id="mRoom" class="hidden" style="text-align:center;margin:-4px 0 10px;color:#e8d29a;letter-spacing:1px"></div>
     <button class="btn" id="mResume">再開する</button>
-    <button class="btn ghost" id="mInv" style="width:100%;margin-top:8px">所持品 (I)</button>
+    <button class="btn ghost" id="mInv" style="width:100%;margin-top:8px">所持品 (E)</button>
     <button class="btn ghost" id="mGrimoire" style="width:100%;margin-top:8px">魔導書 (Tab)</button>
     <h3>設定</h3>
     <label class="mset"><span>全体音量</span><input type="range" id="mVol" min="0" max="100"></label>
@@ -395,6 +455,7 @@
       <button data-tab="words" data-book="grimoire">言霊辞典</button>
       <button data-tab="help" data-book="grimoire">心得</button>
       <button data-tab="craft" data-book="grimoire">調合書</button>
+      <button data-tab="spirits" data-book="grimoire">精霊</button>
       <button class="ghost-switch" id="bookSwitch"></button>
       <button class="close" id="bookClose">閉じる</button>
     </nav>

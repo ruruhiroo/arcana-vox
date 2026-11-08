@@ -105,6 +105,11 @@ export const sfx = {
   pickup() { if (!ctx) return; tone(990, 0.15, { gain: 0.15 }); setTimeout(() => tone(1480, 0.2, { gain: 0.12 }), 80); },
   learn() { if (!ctx) return; [392, 523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.8, { type: 'triangle', gain: 0.1 }), i * 110)); },
   step(pos) { if (!ctx) return; noise(0.08, { freq: 350, gain: 0.08, pos }); },
+  // 一節を唱え切るたびに上がっていく和音
+  stage(n) { if (!ctx) return; const f = 330 * Math.pow(2, (n * 3) / 12); tone(f, 0.9, { type: 'triangle', gain: 0.09, attack: 0.01 }); tone(f * 1.5, 0.7, { type: 'sine', gain: 0.05, attack: 0.02 }); },
+  meiei() { if (!ctx) return; [261, 329, 392, 523, 659].forEach((f, i) => setTimeout(() => tone(f, 1.6, { type: 'triangle', gain: 0.1 }), i * 45)); noise(1.2, { freq: 300, sweep: 5000, gain: 0.25 }); },
+  crumble(pos) { if (!ctx) return; noise(1.4, { freq: 220, gain: 0.7, pos, sweep: 60 }); tone(55, 1.0, { type: 'sawtooth', gain: 0.25, to: 30, pos }); setTimeout(() => noise(0.8, { freq: 1200, type: 'bandpass', q: 0.6, gain: 0.25, pos }), 180); },
+  bell(pos) { if (!ctx) return; [98, 196, 293, 392].forEach((f, i) => tone(f, 3.5 - i * 0.5, { type: 'sine', gain: 0.22 / (i + 1), pos, attack: 0.005 })); noise(0.3, { freq: 2500, type: 'bandpass', gain: 0.2, pos }); },
   chantStart() { if (!ctx) return; tone(220, 1.2, { type: 'sine', gain: 0.06, to: 330, attack: 0.3 }); },
   portal() { if (!ctx) return; tone(110, 2.5, { type: 'sine', gain: 0.25, to: 880, attack: 0.5 }); noise(2.5, { freq: 200, sweep: 4000, gain: 0.25 }); },
   growl(pos) { if (!ctx) return; tone(70 + Math.random() * 40, 0.6, { type: 'sawtooth', gain: 0.12, to: 50, pos }); },

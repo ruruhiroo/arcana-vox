@@ -19,7 +19,7 @@ function steps(h) {
     },
     {
       title: '名詠', enter: () => h.openPageOf('紅蓮'),
-      text: `詠唱が<b>文章として成立</b>すると威力が上がる。<br>・一節ずつ最後まで唱える(完唱)<br>・対象→修飾→属性→形→効果→起句 の順(語順)<br>・「今こそ解き放て」で締める(結句)<br>三つ揃えば<b style="color:#ffd76a">名詠</b>(威力+30%)。「紅蓮の槍」を名詠で放て。` + typedNote,
+      text: `詠唱が<b>文章として成立</b>すると威力が上がる。<br>・一節ずつ最後まで唱える(完唱)<br>・対象→修飾→属性→形→効果→起句 の順(語順)<br>・最後に魔法の名(ファイア・ヒーリングなど)を呼んで締める(結句)<br>三つ揃えば<b style="color:#ffd76a">名詠</b>(威力+30%)。「紅蓮の槍」を名詠で放て。` + typedNote,
       done: () => G.stats.eloquent >= 1,
     },
     { title: '魔物を討つ', enter: () => h.spawnFoe(), text: '前方に魔物が現れた。紅蓮の槍で倒せ。<br><small>詠唱中は無防備。距離を取ってから唱えよう。</small>', done: () => G.stats.kills >= 1 },
@@ -34,6 +34,7 @@ export function startTutorial(hooks) {
   let i = -1, wait = 0;
   const el = $('tut');
   el.classList.remove('hidden');
+  $('goals')?.classList.add('hidden'); // 手ほどき中は課題パネルを隠す(重なるため)
   function show() {
     const s = list[i];
     el.innerHTML = `<div class="tstep">手ほどき ${i + 1} / ${list.length}</div><h4>${s.title}</h4><p>${s.text}</p>${s.last ? '<button class="btn small" id="tutEnd">手ほどきを終える</button>' : ''}`;
@@ -41,7 +42,7 @@ export function startTutorial(hooks) {
     if (s.last) $('tutEnd').onclick = () => stop();
   }
   function next() { i++; if (i >= list.length) return stop(); list[i].enter?.(); show(); }
-  function stop() { el.classList.add('hidden'); G.tutorial = null; }
+  function stop() { el.classList.add('hidden'); G.tutorial = null; $('goals')?.classList.remove('hidden'); }
   next();
   G.tutorial = {
     update(dt) {

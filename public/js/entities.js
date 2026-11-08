@@ -1,9 +1,15 @@
 // 魔導師と魔物: 見た目・状態・魔物AI
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
-import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf } from './dungeon.js';
+import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf, settleY, CLIMB } from './dungeon.js';
 import { textSprite, runeCircleTex, glowSprite } from './textures.js';
 import { sfx } from './audio.js';
+import { buildEnemyModel, animateEnemy } from './enemymodels.js';
+import { compile } from './lexicon.js';
+// 写本師が唱える呪文 (プレイヤーと同じ言霊)
+import { WORD_BY_ID } from './lexicon.js';
+const WORDS_TEXT = new Proxy({}, { get: (_, id) => WORD_BY_ID[id]?.text || '' });
+const SCRIBE_SPELLS = ['汝に 紅蓮 穿槍 放て', '汝に 氷獄 天雨 放て', '汝に 雷霆 穿槍 放て', '汝に 深淵 穿槍 放て'];
 
 let RUNE_TEX = null, GLOW_TEX = null;
 
@@ -49,7 +55,7 @@ export class Mage {
     this.root = new THREE.Group();
     if (kind !== 'player') {
       this.model = mageMesh(color); this.root.add(this.model);
-      this.label = textSprite(name, { size: 30, color: '#e8dcc0' }); this.label.position.y = 2.15; this.root.add(this.label);
+      this.label = textSprite(name, { size: 30, color: '#e8dcc0' }); this.label.position.y = 2.15; this.label.visible = false; this.root.add(this.label); // 頭上の名前は出さない
       this.chantLabel = textSprite('', { size: 34, color: '#fff2b0', bg: 'rgba(20,10,40,0.55)', width: 1100, lines: 3 }); this.chantLabel.position.y = 2.9; this.root.add(this.chantLabel);
     }
     this.circle = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: RUNE_TEX, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
@@ -100,14 +106,15 @@ export class Mage {
 
 // ---------- 魔物 ----------
 export const ENEMY_TYPES = {
-  skeleton: { name: '骸骨兵', hp: 45, speed: 2.7, dmg: 10, range: 1.7, cd: 1.3, radius: 0.4, undead: true, weak: ['holy', 'thunder'], resist: ['void', 'ice'], drops: ['bone', 'bone', 'iron'] },
-  slime:    { name: '粘獣', hp: 38, speed: 1.9, dmg: 8, range: 1.4, cd: 1.1, radius: 0.55, weak: ['fire'], resist: ['wind'], drops: ['herb', 'crystal'] },
-  wraith:   { name: '怨霊', hp: 42, speed: 2.3, dmg: 12, range: 13, cd: 2.6, radius: 0.45, undead: true, ranged: true, fly: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['crystal', 'crystal'] },
-  golem:    { name: '石像兵', hp: 170, speed: 1.5, dmg: 22, range: 2.3, cd: 2.0, radius: 0.85, weak: ['thunder'], resist: ['fire', 'ice', 'wind'], drops: ['iron', 'iron', 'crystal', 'crystal'] },
+  skeleton: { name: '骸骨兵', hp: 70, speed: 2.7, dmg: 10, range: 1.7, cd: 1.3, radius: 0.4, undead: true, weak: ['holy', 'thunder'], resist: ['void', 'ice'], drops: ['bone', 'bone', 'iron'] },
+  slime:    { name: '粘獣', hp: 62, speed: 1.9, dmg: 8, range: 1.4, cd: 1.1, radius: 0.55, weak: ['fire'], resist: ['wind'], drops: ['herb', 'crystal'] },
+  wraith:   { name: '怨霊', hp: 64, speed: 2.3, dmg: 12, range: 13, cd: 2.6, radius: 0.45, undead: true, ranged: true, fly: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['crystal', 'crystal'] },
+  scribe:   { name: '堕ちた写本師', hp: 72, speed: 2.1, dmg: 8, range: 13, cd: 4.2, radius: 0.42, caster: true, weak: ['fire', 'thunder'], resist: ['void'], drops: ['scroll', 'crystal'] },
+  golem:    { name: '石像兵', hp: 240, speed: 1.5, dmg: 22, range: 2.3, cd: 2.0, radius: 0.85, weak: ['thunder'], resist: ['fire', 'ice', 'wind'], drops: ['iron', 'iron', 'crystal', 'crystal'] },
 };
 
 // 種類ごとの縁取りの色 (暗がりでも輪郭と種類が分かるように)
-export const ENEMY_RIM = { skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a };
+export const ENEMY_RIM = { skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a, scribe: 0xff4a8a };
 // 標準材質に「視線と直交する面ほど光る」縁取りを足す
 function addRim(group, U) {
   group.traverse(o => {
@@ -124,61 +131,18 @@ function addRim(group, U) {
 // 目や核(光る小物)を大きくし、光の滲みを足す
 function addEyeGlow(group) {
   const list = [];
-  group.traverse(o => { if (o.isMesh && (o.material.isMeshBasicMaterial || (o.material.emissiveIntensity || 0) > 1.5)) list.push(o); });
+  group.traverse(o => { if (o.isMesh && o.userData.eye) list.push(o); });
   for (const o of list) {
-    o.scale.multiplyScalar(1.6);
+    o.scale.multiplyScalar(1.3);
     const c = o.material.isMeshBasicMaterial ? o.material.color : o.material.emissive;
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX || (GLOW_TEX = glowSprite()), color: c.clone(), blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85 }));
-    s.scale.setScalar(o.geometry.boundingSphere ? 0.3 : 0.3); s.position.copy(o.position); s.renderOrder = 5;
+    s.scale.setScalar(0.22); s.position.copy(o.position); s.renderOrder = 5;
     o.parent.add(s);
   }
 }
 
 function enemyMesh(type, scale = 1) {
-  const g = new THREE.Group();
-  if (type === 'skeleton') {
-    const bone = new THREE.MeshStandardMaterial({ color: 0xd8ccb0, roughness: 0.75 });
-    const rust = new THREE.MeshStandardMaterial({ color: 0x5a4434, roughness: 0.5, metalness: 0.7 });
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 12), bone); skull.position.y = 1.62; skull.scale.set(1, 1.1, 1.15);
-    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.14), bone); jaw.position.set(0, 1.47, -0.05);
-    const spine = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 6), bone); spine.position.y = 1.1;
-    g.add(skull, jaw, spine);
-    for (let i = 0; i < 4; i++) { const rib = new THREE.Mesh(new THREE.TorusGeometry(0.17 - i * 0.015, 0.015, 5, 14, Math.PI * 1.4), bone); rib.position.y = 1.35 - i * 0.09; rib.rotation.x = Math.PI / 2; rib.rotation.z = Math.PI * 0.8; g.add(rib); }
-    const pelvis = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.04, 6, 12), bone); pelvis.position.y = 0.78; pelvis.rotation.x = Math.PI / 2; g.add(pelvis);
-    for (const s of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.025, 0.78, 6), bone); leg.position.set(s * 0.1, 0.39, 0); g.add(leg);
-      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.65, 6), bone); arm.position.set(s * 0.24, 1.15, -0.1); arm.rotation.x = -0.5; g.add(arm);
-    }
-    const sword = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.9, 0.02), rust); sword.position.set(0.28, 1.0, -0.45); sword.rotation.x = -1.1; g.add(sword);
-    g.userData.weapon = sword;
-    const eye = new THREE.MeshBasicMaterial({ color: 0xff3010 });
-    for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), eye); e.position.set(s * 0.06, 1.65, -0.17); g.add(e); }
-  } else if (type === 'slime') {
-    const mat = new THREE.MeshPhysicalMaterial({ color: 0x4fbf3a, emissive: 0x0c3a08, roughness: 0.15, metalness: 0, clearcoat: 1, transparent: true, opacity: 0.82 });
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.6, 24, 18), mat); body.position.y = 0.5; body.scale.set(1, 0.8, 1);
-    const core = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshBasicMaterial({ color: 0xbaff60 })); core.position.y = 0.5;
-    g.add(body, core); g.userData.body = body;
-  } else if (type === 'wraith') {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x15101e, roughness: 1, transparent: true, opacity: 0.88, side: THREE.DoubleSide });
-    const pts = []; for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push(new THREE.Vector2(0.05 + 0.45 * Math.sin(t * Math.PI * 0.9) * (1 - t * 0.3), t * 1.6)); }
-    const cloak = new THREE.Mesh(new THREE.LatheGeometry(pts, 18), mat); cloak.rotation.x = Math.PI; cloak.position.y = 2.0;
-    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 10), mat); hood.position.y = 1.95;
-    const eye = new THREE.MeshBasicMaterial({ color: 0xc060ff });
-    g.add(cloak, hood);
-    for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), eye); e.position.set(s * 0.07, 1.95, -0.21); g.add(e); }
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW_TEX || glowSprite(), color: 0x7030c0, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.6 }));
-    glow.scale.set(2.2, 2.6, 1); glow.position.y = 1.3; g.add(glow);
-  } else if (type === 'golem') {
-    const stone = new THREE.MeshStandardMaterial({ color: 0x6b645a, roughness: 0.95, flatShading: true });
-    const lava = new THREE.MeshStandardMaterial({ color: 0xff6a00, emissive: 0xff4a00, emissiveIntensity: 2.2 });
-    const rock = (r, x, y, z, sx = 1, sy = 1, sz = 1) => { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), stone); m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.castShadow = true; g.add(m); return m; };
-    rock(0.6, 0, 1.5, 0, 1.2, 1, 0.9); rock(0.32, 0, 2.25, -0.1);
-    const armL = rock(0.3, -0.8, 1.3, 0, 0.8, 1.6, 0.8), armR = rock(0.3, 0.8, 1.3, 0, 0.8, 1.6, 0.8);
-    rock(0.3, -0.35, 0.45, 0, 0.9, 1.4, 0.9); rock(0.3, 0.35, 0.45, 0, 0.9, 1.4, 0.9);
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), lava); core.position.set(0, 1.55, -0.5); g.add(core);
-    for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.04), lava); e.position.set(s * 0.12, 2.3, -0.38); g.add(e); }
-    g.userData.arms = [armL, armR];
-  }
+  const g = buildEnemyModel(type);
   addEyeGlow(g);
   g.scale.setScalar(scale);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
@@ -210,19 +174,23 @@ export class Enemy {
       sig.rotation.x = -Math.PI / 2; sig.position.y = 0.06; this.root.add(sig); this.sigil = sig;
     }
     this.root.position.copy(pos);
+    if (T.caster) { this.chantLabel = textSprite('', { size: 30, color: '#ffb0c8', bg: 'rgba(40,0,20,0.55)', width: 1100, lines: 2 }); this.chantLabel.position.y = 2.6; this.root.add(this.chantLabel); }
     this.hpBar = textSprite('', { size: 26, color: '#ff8a7a', width: 512 }); this.hpBar.scale.multiplyScalar(0.5); this.hpBar.position.y = (T.fly ? 2.6 : 2.2) * (boss ? 1.8 : 1); this.root.add(this.hpBar);
     G.scene.add(this.root);
   }
   updateHpBar() {
     this.hitT = 0.18; // 被弾で縁取りが一瞬強く光る
     const n = 10, f = Math.ceil(clamp(this.hp / this.maxHp, 0, 1) * n);
-    this.hpBar.userData.set(this.hp < this.maxHp ? `${this.name} ${'▮'.repeat(f)}${'▯'.repeat(n - f)}` : '');
+    this.hpBar.userData.set(this.hp < this.maxHp ? `${'▮'.repeat(f)}${'▯'.repeat(n - f)}` : ''); // 名前は出さず、体力だけ
   }
   update(dt) {
     if (!this.alive) return;
     for (const k in this.status) {
       const s = this.status[k]; s.t -= dt;
       if (k === 'burn' && G.isHost) G.fx.damage(this, s.dps * dt, [], s.src, { silent: true });
+      // 状態の見た目: 燃える炎・霜・聖痕の光・侵蝕の靄
+      const fxc = { burn: 0xff7020, slow: 0x9fe4ff, frozen: 0xcfefff, stigma: 0xffe8a0, erosion: 0x8a40c0 }[k];
+      if (fxc && Math.random() < dt * (k === 'burn' ? 22 : 9)) G.particles.emit(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.7, 0.3 + Math.random() * 1.4, (Math.random() - 0.5) * 0.7)), new THREE.Vector3(0, k === 'burn' ? 1.6 : 0.4, 0), fxc, k === 'burn' ? 0.35 : 0.22, 0.7);
       if (s.t <= 0) delete this.status[k];
     }
     if (!this.alive) return;
@@ -231,6 +199,7 @@ export class Enemy {
     else { // 補間
       this.pos.lerp(this.netTarget, Math.min(1, dt * 10));
     }
+    settleY(this.pos, dt); // 段差に沿う
     // 見た目のアニメーション
     this.root.position.copy(this.pos);
     this.root.rotation.y = this.yaw + Math.PI;
@@ -238,35 +207,25 @@ export class Enemy {
     const moving = (this._lastX !== undefined) && Math.hypot(this.pos.x - this._lastX, this.pos.z - this._lastZ) > dt * 0.4;
     this._lastX = this.pos.x; this._lastZ = this.pos.z;
     this.attackAnim = Math.max(0, this.attackAnim - dt * 3);
-    // 種類ごとの動き
-    if (this.type === 'skeleton') { // カタカタ揺れる
-      b.rotation.z = Math.sin(t * 17 + ph) * 0.025 + (moving ? Math.sin(t * 8 + ph) * 0.06 : 0);
-      b.position.y = moving ? Math.abs(Math.sin(t * 8 + ph)) * 0.06 : Math.abs(Math.sin(t * 13 + ph)) * 0.01;
-    } else if (this.type === 'slime') { // 弾む
-      const hop = moving ? Math.abs(Math.sin(t * 5 + ph)) : 0;
-      b.position.y = hop * 0.3;
-      if (ud.body) { const s = 1 + Math.sin(t * 6 + ph) * 0.08 + (moving ? (0.5 - hop) * 0.15 : 0); ud.body.scale.set(s, 0.8 / s, s); }
-    } else if (this.type === 'wraith') { // 漂う
-      b.position.y = 0.25 + Math.sin(t * 2 + ph) * 0.18;
-      b.rotation.z = Math.sin(t * 1.3 + ph) * 0.08; b.rotation.x = moving ? 0.15 : 0;
-    } else if (this.type === 'golem') { // 重く揺れる
-      b.rotation.z = Math.sin(t * 1.4 + ph) * 0.05;
-      b.position.y = moving ? -Math.abs(Math.sin(t * 2.6 + ph)) * 0.08 : 0;
-    }
+    // 種類ごとの動き(体の揺れ・浮き) と、関節の動き(歩く・振る・漂う)
+    if (this.type === 'skeleton') b.position.y = moving ? Math.abs(Math.sin(t * 9 + ph)) * 0.04 : 0;
+    else if (this.type === 'slime') b.position.y = moving ? Math.abs(Math.sin(t * 5 + ph)) * 0.22 : 0;
+    else if (this.type === 'wraith') { b.position.y = 0.25 + Math.sin(t * 2 + ph) * 0.18; b.rotation.z = Math.sin(t * 1.3 + ph) * 0.06; b.rotation.x = moving ? 0.18 : 0; if (Math.random() < dt * 14) G.particles.emit(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6)), new THREE.Vector3(0, -0.3, 0), 0x3a2050, 0.5, 1.2); }
+    else if (this.type === 'golem') { b.rotation.z = Math.sin(t * 1.4 + ph) * 0.04; b.position.y = moving ? -Math.abs(Math.sin(t * 3.2 + ph)) * 0.06 : 0; }
+    animateEnemy(ud, t, ph, moving, this.attackAnim, dt);
     this.hitT = Math.max(0, this.hitT - dt);
     this.rimU.strength.value = (this.type === 'golem' ? 0.4 : 0.8) + Math.sin(t * 3 + ph) * 0.12 + this.hitT * 14;
     if (this.sigil) this.sigil.rotation.z += dt * 0.6;
-    if (this.type === 'skeleton' && ud.weapon) ud.weapon.rotation.x = -1.1 + this.attackAnim * 1.8;
-    if (this.type === 'golem' && ud.arms) { ud.arms[1].rotation.x = -this.attackAnim * 2; ud.arms[0].rotation.x = Math.sin(G.time * 2) * 0.1; }
   }
   think(dt) {
     const T = this.T;
     if (this.stun > 0) { this.stun -= dt; return; }
     // 目標選択
+    if (this.target && G.inSanctuary?.(this.target.pos)) { this.target = null; this.aggro = false; }
     if (!this.target || !this.target.alive || this.target.downed || Math.random() < dt * 0.5) {
-      let best = null, bd = this.aggro ? 26 : 15;
+      let best = null, bd = this.aggro ? 26 : this.keen ? 21 : 15; // 協力探索の魔物は遠くから気づく
       for (const m of G.mages) {
-        if (!m.alive || m.downed) continue;
+        if (!m.alive || m.downed || G.inSanctuary?.(m.pos)) continue; // 聖域の中の者は狙えない
         const d = m.pos.distanceTo(this.pos);
         if (d < bd && (this.aggro || lineOfSight(this.pos, m.pos))) { bd = d; best = m; }
       }
@@ -281,7 +240,22 @@ export class Enemy {
       const los = lineOfSight(this.pos, tp);
       this.yaw = Math.atan2(-(tp.x - this.pos.x), -(tp.z - this.pos.z));
       const inRange = d < T.range + this.target.radius && (los || !T.ranged);
-      if (inRange) {
+      if (T.caster) {
+        if (this.chant) {
+          this.chant.t += dt;
+          const words = this.chant.words, k = Math.min(words.length, Math.floor(this.chant.t / this.chant.dur * words.length) + 1);
+          const text = words.slice(0, k).join(' ');
+          if (text !== this.chant.shown) { this.chant.shown = text; this.chantLabel.userData.set(`「${text}」`); G.hearChant?.(this, text); }
+          if (this.chant.t >= this.chant.dur) this.finishChant(tp);
+        } else if (los && d < T.range) {
+          this.cd -= dt;
+          if (this.cd <= 0) this.beginChant();
+        }
+        // 近づかれたら下がり、遠ければ寄る
+        if (d < 6) move.set(this.pos.x - tp.x, 0, this.pos.z - tp.z).normalize();
+        else if (!los || d > T.range) { const dir = this.target.flow ? flowDir(this.target.flow, this.pos) : null; if (dir) move.copy(dir); }
+        if (this.chant) move.multiplyScalar(0.3);
+      } else if (inRange) {
         if (T.ranged && d < 5) move.set(this.pos.x - tp.x, 0, this.pos.z - tp.z).normalize().multiplyScalar(0.6);
         this.cd -= dt;
         if (this.cd <= 0) { this.cd = T.cd * rand(0.85, 1.2); this.attack(); }
@@ -300,8 +274,33 @@ export class Enemy {
     }
     this.knock.multiplyScalar(Math.max(0, 1 - dt * 5));
     const dx = move.x * sp * dt + this.knock.x * dt, dz = move.z * sp * dt + this.knock.z * dt;
-    moveWithCollision(this.pos, dx, dz, this.radius, this.team);
+    moveWithCollision(this.pos, dx, dz, this.radius, this.team, CLIMB); // 魔物は高台をよじ登って追ってくる
     this.vel.set(dx / dt, 0, dz / dt);
+  }
+  beginChant() {
+    const text = this.nextSpell || SCRIBE_SPELLS[Math.floor(Math.random() * SCRIBE_SPELLS.length)];
+    this.nextSpell = null;
+    const spell = compile(text, null);
+    const words = spell.words.map(id => WORDS_TEXT[id]);
+    this.chant = { spell, words, t: 0, dur: 1.4 + words.length * 0.55, shown: '' };
+    sfx.chantStart?.();
+  }
+  finishChant(tp) {
+    const c = this.chant; this.chant = null; this.cd = this.T.cd * rand(0.8, 1.2);
+    this.chantLabel?.userData.set('');
+    if (!this.alive || !this.target) return;
+    const spell = c.spell; spell.power *= this.bossKind ? 0.9 : 0.6;
+    const from = this.pos.clone().setY(this.pos.y + 1.5), to = this.target.pos.clone().setY(this.target.pos.y + 1);
+    const aim = { origin: from.toArray(), dir: to.clone().sub(from).normalize().toArray(), point: this.target.pos.toArray(), targetId: this.target.id };
+    G.fx.cast(this, spell, aim);
+    G.net?.send({ t: 'ecast', id: this.id, words: spell.words, aim });
+  }
+  // 強打で詠唱が途切れる (写本師)
+  interrupt() {
+    if (!this.chant) return false;
+    this.chant = null; this.chantLabel?.userData.set(''); this.stun = 0.9; this.cd = 1.5;
+    G.ui?.floatText(this.pos, '詠唱妨害!', '#ffd76a');
+    return true;
   }
   attack() {
     const t = this.target; if (!t) return;
@@ -326,6 +325,6 @@ export function updateFlows(dt) {
   for (const m of G.mages) {
     const [cx, cz] = cellOf(m.pos);
     if (m._fc === cx + ',' + cz && m.flow) continue;
-    m._fc = cx + ',' + cz; m.flow = bfs(G.dungeon.grid, cx, cz);
+    m._fc = cx + ',' + cz; m.flow = bfs(G.dungeon.grid, cx, cz, G.dungeon.hgt, CLIMB);
   }
 }

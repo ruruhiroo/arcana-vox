@@ -2,20 +2,21 @@
 // エンジンは2種類:
 //  - vosk      : オフライン認識(デスクトップ版の標準)。言霊だけを文法に登録するので聞き取りが正確
 //  - webspeech : Chrome/Edge の Web Speech API(ブラウザ版でモデル未配置のとき)
-import { WORDS } from './lexicon.js';
+import { WORDS, CALL_WORDS } from './lexicon.js';
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const IS_APP = !!window.desktop?.isApp;
 export const voiceSupported = !!navigator.mediaDevices?.getUserMedia || !!SR;
-// 言霊に絞った文法で認識できる Vosk を常に優先し、使えなければ Web Speech に切り替える
-export let engine = 'vosk';
+// ブラウザ版: Chrome/Edge の音声認識(長い文も聞き取れる)を使う。アプリ版: オフラインの Vosk
+export let engine = (!IS_APP && SR) ? 'webspeech' : 'vosk';
 
 let rec = null, active = false, wantActive = false, continuous = false;
 let handlers = { interim: () => {}, final: () => {}, state: () => {} };
 
 export function initVoice(h) {
   handlers = { ...handlers, ...h };
-  if (engine === 'vosk') { initVosk(); return true; }
+  // マイクは最初に詠唱しようとした時に初めて使う(起動直後に許可を求めない)
+  if (engine === 'vosk') { loadVoskModel(); return true; }
   if (!SR) return false;
   rec = new SR();
   rec.lang = 'ja-JP';
@@ -76,27 +77,44 @@ async function loadScript(src) {
   await new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
 }
 
-async function initVosk() {
-  if (vosk.loading || vosk.model) return;
-  vosk.loading = true;
+// 辞書(音声モデル)は起動直後から裏で読み込む。マイクは最初に唱えようとした時に初めて使う
+function loadVoskModel() {
+  if (vosk.modelPromise) return vosk.modelPromise;
   handlers.state('loading');
-  try {
+  vosk.modelPromise = (async () => {
     await loadScript('voice/vosk.js');
     vosk.model = await window.Vosk.createModel('voice/model.tar.gz', -1);
+    if (!vosk.recognizer) handlers.state('idle');
+  })().catch(e => { failVosk(e); });
+  return vosk.modelPromise;
+}
+function failVosk(e) {
+  console.warn('Vosk init failed', e);
+  vosk.failed = true;
+  // ブラウザ版なら Web Speech に切り替える
+  if (SR) { engine = 'webspeech'; initVoice(handlers); handlers.state('idle'); if (vosk.wanted || continuous) startListening(); }
+  else handlers.state('error:' + (e?.name === 'NotAllowedError' ? 'not-allowed' : 'model'));
+}
+async function ensureMic() {
+  if (vosk.recognizer) return true;
+  await loadVoskModel();
+  if (!vosk.model) return false;
+  try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
     const ctx = vosk.ctx = new AudioContext();
     const words = new Set(PARTICLES);
     for (const w of WORDS) for (const a of w.alias) if (!/[a-z0-9]/i.test(a)) words.add(a);
     // 詠唱文の各節(業火・燃え・盛れ…)も聞き取れるようにする
     for (const w of WORDS) for (const a of w.vocab || []) words.add(a);
+    for (const a of CALL_WORDS) words.add(a);
     const grammar = JSON.stringify([...words, ...PHRASES, '[unk]']);
-    const r = vosk.recognizer = new vosk.model.KaldiRecognizer(ctx.sampleRate, grammar);
+    const r = new vosk.model.KaldiRecognizer(ctx.sampleRate, grammar);
     r.on('partialresult', m => {
       const t = clean(m.result.partial);
       if (vosk.listening && t && t !== vosk.lastPartial) { vosk.lastPartial = t; handlers.interim(t); }
     });
     r.on('result', m => {
-      const t = clean(m.result.text);
+      const t = clean(m.result.text) || vosk.lastPartial;
       vosk.lastPartial = '';
       if (t) handlers.final([t]);
     });
@@ -104,32 +122,35 @@ async function initVosk() {
     const node = ctx.createScriptProcessor(4096, 1, 1);
     node.onaudioprocess = e => { if (vosk.listening) { try { r.acceptWaveform(e.inputBuffer); } catch {} } };
     src.connect(node); node.connect(ctx.destination);
-    vosk.loading = false;
-    handlers.state(continuous ? 'listening' : 'idle');
-    if (continuous) voskStart();
-  } catch (e) {
-    console.warn('Vosk init failed', e);
-    vosk.loading = false; vosk.failed = true;
-    // ブラウザ版なら Web Speech に切り替える
-    if (SR) { engine = 'webspeech'; initVoice(handlers); handlers.state('idle'); }
-    else handlers.state('error:' + (e?.name === 'NotAllowedError' ? 'not-allowed' : 'model'));
-  }
+    vosk.recognizer = r;
+    return true;
+  } catch (e) { failVosk(e); return false; }
 }
 const clean = s => (s || '').replace(/\[unk\]/g, '').replace(/\s+/g, ' ').trim();
 
 function voskStart() {
-  if (!vosk.model) { if (!vosk.loading && !vosk.failed) initVosk(); return; }
+  vosk.wanted = true;
+  if (vosk.failed) return;
+  if (!vosk.recognizer) {
+    // 準備が済んだ時に、まだ押している(または常時詠唱なら)そのまま聞き始める
+    if (!vosk.starting) { vosk.starting = true; handlers.state('loading'); ensureMic().then(ok => { vosk.starting = false; if (ok && (vosk.wanted || continuous)) beginListen(); else if (ok) handlers.state('idle'); }); }
+    return;
+  }
+  beginListen();
+}
+function beginListen() {
   vosk.ctx?.resume();
   if (!vosk.listening) { vosk.listening = true; handlers.state('listening'); }
 }
 function voskStop() {
+  vosk.wanted = false;
   if (!vosk.listening) return;
   // 押し終わりの語尾を取りこぼさないよう少し遅らせて確定する
   setTimeout(() => {
     vosk.listening = false;
     try { vosk.recognizer.retrieveFinalResult(); } catch {}
     handlers.state('idle');
-  }, 250);
+  }, 550);
 }
 export const isContinuous = () => continuous;
 

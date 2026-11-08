@@ -131,15 +131,9 @@ function makeSpineHand() {
   const g = new THREE.Group();
   const palm = new THREE.Mesh(new RoundedBoxGeometry(0.08, 0.075, 0.03, 3, 0.012), skinMat);
   palm.position.set(0.004, -H * 0.3, -0.048); g.add(palm);
-  // 親指(左頁の下寄りを押さえる)
-  const t1 = capsule(0.0115, 0.034); t1.rotation.z = -0.95; t1.position.set(-0.03, -H * 0.36, 0.012);
-  const t2 = capsule(0.0105, 0.026); t2.rotation.z = -1.25; t2.position.set(-0.058, -H * 0.33, 0.018);
-  const tn = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), new THREE.MeshStandardMaterial({ color: 0xe8c0a8, roughness: 0.3 }));
-  tn.scale.set(1.2, 1, 0.4); tn.position.set(-0.07, -H * 0.322, 0.026);
-  // 小指(右頁の下寄り)
-  const p1 = capsule(0.0085, 0.026); p1.rotation.z = 1.1; p1.position.set(0.035, -H * 0.38, 0.012);
-  const p2 = capsule(0.008, 0.018); p2.rotation.z = 1.35; p2.position.set(0.058, -H * 0.36, 0.016);
-  g.add(t1, t2, tn, p1, p2);
+  // 親指: 本の下の縁を表から軽く押さえる。頁の文字にかからないよう、縁ぎりぎりに留める
+  // (頁の面より手前に浮かせ、紙を突き抜けないようにする)
+  // (表側に指を出すと不自然な形に見えるため、指はすべて本の裏側に回す)
   // 残りの指: 右の表紙の裏に回り、下の縁から関節が覗く
   for (let k = 0; k < 3; k++) {
     const f = capsule(0.0092, 0.03); f.rotation.z = Math.PI / 2 - 0.15;
@@ -165,7 +159,7 @@ function makeSpineHand() {
 function makeGrimoire() {
   const root = new THREE.Group();
   const leather = new THREE.MeshStandardMaterial({ map: leatherTex('#4a1418', '#d6ad5a', 7), roughness: 0.7, metalness: 0.05 });
-  const gold = new THREE.MeshStandardMaterial({ color: 0xa8823e, metalness: 0.8, roughness: 0.45 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0x7a5e2c, metalness: 0.6, roughness: 0.6 });
   const edgeMat = new THREE.MeshStandardMaterial({ map: edgeTex, roughness: 0.9 });
   const pages = {};
   for (const side of [-1, 1]) {
@@ -181,7 +175,7 @@ function makeGrimoire() {
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) { const u = (pos.getX(i) / W + 0.5); const fromSpine = side < 0 ? 1 - u : u; pos.setZ(i, Math.sin(Math.min(1, fromSpine * 1.6) * Math.PI) * 0.004 + (1 - fromSpine) * 0.003); }
     geo.computeVertexNormals();
-    const face = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.92, emissive: 0xffa040, emissiveMap: tex, emissiveIntensity: 0.06 }));
+    const face = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, color: 0xc4b392 }) /* 光源の影響を受けない紙: 白飛び・にじみで文字が読めなくならないように */);
     face.position.set(side * W / 2, 0, 0.0075); half.add(face);
     pages[side < 0 ? 'left' : 'right'] = { canvas, tex, mat: face.material };
     // 金の角金具
@@ -296,9 +290,8 @@ export function buildViewModel(camera) {
       grim.turnPivot.position.z = 0.008 + Math.sin(k * Math.PI) * 0.02;
     }
     const ck = chanting ? 1 : 0;
-    for (const p of Object.values(grim.pages)) p.mat.emissiveIntensity = (0.03 + ck * (0.1 + Math.sin(time * 12) * 0.03) + st.kick * 0.4) * (1 - e * 0.6);
     grim.glow.scale.setScalar(0.08 + ck * 0.1 + st.kick * 0.3 + Math.sin(time * 10) * 0.01);
-    grim.glow.material.opacity = (0.25 + ck * 0.3) * (1 - e * 0.85);
+    grim.glow.material.opacity = (ck * 0.35 + st.kick * 0.4) * (1 - e * 0.9);
     grim.ring.material.opacity += ((chanting ? 0.5 * (1 - e * 0.6) : 0) - grim.ring.material.opacity) * Math.min(1, dt * 8);
     grim.ring.rotation.z += dt * (1 + (chantWords || 0) * 0.6);
     holder.visible = alive;

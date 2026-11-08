@@ -1,9 +1,10 @@
 // HUD・魔導書・調合・ミニマップ
 import * as THREE from 'three';
 import { G, clamp } from './state.js';
-import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, expandChant, chantGaps, STARTER_WORDS } from './lexicon.js';
+import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, expandChant, chantGaps, STARTER_WORDS, callName } from './lexicon.js';
 import { W, H, CELL, lineOfSight } from './dungeon.js';
 import { keyOf } from './controls.js';
+import { SPIRITS, BOND_NAMES, bondProgress } from './spirits.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -13,10 +14,11 @@ const SAVE_KEY = 'arcana_vox_grimoire_v1';
 export const BOOK = {
   known: [...STARTER_WORDS], understood: [...STARTER_WORDS], notes: {}, equip: {}, bag: [],
   spells: [
-    { name: '紅蓮の槍', text: '紅蓮 穿槍 放て', memo: '基本の攻撃。粘獣によく効く。' },
-    { name: '自己治癒', text: '我に 癒息 放て', memo: '' },
-    { name: '守護の誓い', text: '我に 守護 放て', memo: '強打を受けても詠唱が乱れなくなる。' },
-    { name: '同胞への癒し', text: '同胞に 癒息 放て', memo: '倒れた仲間を蘇生できる。' },
+    { name: '初級炎魔術', text: '汝に 紅蓮 放て', memo: '最も短い攻撃の詠唱。威力は控えめだが消費が少ない。' },
+    { name: '中級炎魔術', text: '汝に 紅蓮 穿槍 放て', memo: '火の槍を放つ。粘獣によく効く。' },
+    { name: '初級治癒魔術', text: '我に 癒息 放て', memo: '' },
+    { name: '初級守護魔術', text: '我に 守護 放て', memo: '強打を受けても詠唱が乱れなくなる。' },
+    { name: '中級治癒魔術', text: '同胞に 癒息 放て', memo: '倒れた仲間を蘇生できる。' },
     { name: '灯火', text: '我に 灯火 放て', memo: '肩越しに光の玉が付き従い、暗い迷宮を照らす。「穿槍」を加えると照準地点に灯る。' },
   ],
   slots: [0, 1, 2, 3],
@@ -30,6 +32,20 @@ export function loadBook() {
     if (!BOOK.spells.some(sp => /灯火/.test(sp.text))) BOOK.spells.push({ name: '灯火', text: '我に 灯火 放て', memo: '肩越しに光の玉が付き従い、暗い迷宮を照らす。「穿槍」を加えると照準地点に灯る。' });
   }
   if ((BOOK.chantVer || 0) < 3) { for (const sp of BOOK.spells) sp.text = expandChant(sp.text); BOOK.chantVer = 3; }
+  if (BOOK.chantVer < 4) {
+    // 呪文の名を位階つきに改める(自分で付けた名前はそのまま)
+    const RENAME = { '紅蓮の槍': '中級炎魔術', '自己治癒': '初級治癒魔術', '守護の誓い': '初級守護魔術', '同胞への癒し': '中級治癒魔術' };
+    for (const sp of BOOK.spells) if (RENAME[sp.name]) sp.name = RENAME[sp.name];
+    if (!BOOK.spells.some(sp => sp.name === '初級炎魔術')) BOOK.spells.unshift({ name: '初級炎魔術', text: expandChant('汝に 紅蓮 放て'), memo: '最も短い攻撃の詠唱。威力は控えめだが消費が少ない。' });
+    BOOK.chantVer = 4;
+  }
+  if (BOOK.chantVer < 5) {
+    for (const sp of BOOK.spells) {
+      const name = callName(compile(sp.text, null));
+      if (name) sp.text = sp.text.replace(/\s*(今こそ)?解き放て\s*$/, ' ' + name).replace(/\s+放て\s*$/, ' ' + name);
+    }
+    BOOK.chantVer = 5;
+  }
   G.known = new Set(BOOK.known);
 }
 export function saveBook() {
@@ -71,7 +87,9 @@ export const UI = {
     if (!text) { el.innerHTML = ''; $('chantFormula').textContent = ''; return; }
     const toks = tokenize(text, G.known);
     if (!toks.length) { el.innerHTML = `<span class="w unk" style="text-decoration:none">${esc(text)}</span>`; $('chantFormula').textContent = '…言霊が聞き取れない'; return; }
-    el.innerHTML = `<span class="w ok">${rubify(text)}</span>`;
+    // 一節ごとにまとめて折り返す(節の途中で改行しない)。長い詠唱は字を小さく
+    el.innerHTML = `<span class="w ok">${text.trim().split(/\s+/).map(seg => `<span class="ph">${rubify(seg)}</span>`).join(" ")}</span>`;
+    el.classList.toggle("long", text.length > 22);
     const sp = compile(text, G.known);
     const gaps = chantGaps(text, toks.map(t => t.id));
     $('chantFormula').textContent = formula(sp) + (toks.some(t => !t.known) ? '  (未習得の言霊は効力を持たない)' : '') + (gaps.length ? `  ／ 続きを唱えよ:「${WORD_BY_ID[gaps[0]].text}」` : '');
@@ -138,6 +156,7 @@ export const UI = {
     const [px, pz] = [Math.floor(d.portal.x / CELL), Math.floor(d.portal.z / CELL)];
     if (G.explored[pz * W + px]) dot(d.portal, '#a07aff', 5);
     for (const k of G.pickups) if (k.kind === 'scroll' && G.explored[Math.floor(k.pos.z / CELL) * W + Math.floor(k.pos.x / CELL)]) dot(k.pos, '#ffd86a', 3);
+    if (G.sanctuary && G.explored[Math.floor(G.sanctuary.center.z / CELL) * W + Math.floor(G.sanctuary.center.x / CELL)]) dot(G.sanctuary.center, '#9ad8ff', 5);
     for (const e of G.enemies) if (e.alive && e.pos.distanceTo(p.pos) < 22 && lineOfSight(p.pos, e.pos)) dot(e.pos, '#ff4a3a', 2.5);
     for (const m of G.mages) if (m !== p && m.alive) dot(m.pos, m.team === p.team ? '#6ad0ff' : '#ff8a3a', 3.5);
     g.rotate(-p.yaw + Math.PI);
@@ -168,7 +187,7 @@ $('bookClose').onclick = closeBook;
 $('bookSwitch').classList.add('hidden');
 
 function renderBook() {
-  $('bookTitle').textContent = ['words', 'help', 'craft'].includes(tab) ? '教本' : BOOKS[book].title;
+  $('bookTitle').textContent = ['words', 'help', 'craft', 'spirits'].includes(tab) ? '教本' : BOOKS[book].title;
   $('bookClose').textContent = `閉じる (${BOOKS[book].key})`;
   document.querySelectorAll('#book nav button[data-tab]').forEach(b => {
     b.classList.toggle('sel', b.dataset.tab === tab);
@@ -178,6 +197,14 @@ function renderBook() {
     pg.innerHTML = `<h3>研究ノート</h3><p class="muted">気づいたこと、試したい組み合わせ、仲間との作戦… 自由に書き留めよ。自動で保存される。</p>
       <textarea class="journal" id="journal" placeholder="例: 骸骨兵は聖光に弱い。刻印と城壁を組み合わせたら？">${esc(BOOK.journal || '')}</textarea>`;
     $('journal').oninput = e => { BOOK.journal = e.target.value; saveBook(); };
+  } else if (tab === 'spirits') {
+    const bonds = BOOK.bonds || {};
+    pg.innerHTML = `<h3>精霊</h3><p class="muted">言霊は精霊の真名の一部。名を呼べば力を貸してくれる。同じ精霊を呼ぶほど縁が深まり、その術が強くなる。名詠は精霊を大いに喜ばせ、言い損じが続くと機嫌を損ねる。</p>
+      <div class="spirits">${Object.entries(SPIRITS).map(([id, sp]) => {
+        const met = G.known.has(id), w = WORD_BY_ID[id], b = bondProgress(bonds[id] || 0);
+        if (!met) return `<div class="spcard unmet"><h4>？？？</h4><div class="lore">まだ出会っていない精霊。古文書の中に、その名が眠っている。</div></div>`;
+        return `<div class="spcard"><h4 style="color:${sp.color}"><ruby>${sp.name}<rt>${sp.ruby}</rt></ruby></h4><div class="word">真名の言霊『${w.core}』(${w.ruby})</div><div class="lore">${sp.lore}</div><div class="bond">縁: ${BOND_NAMES[b.level]}${b.level < BOND_NAMES.length - 1 ? '' : '(極み)'} ・ 威力 ${Math.round((0.95 + 0.04 * b.level) * 100)}%</div><div class="bar"><i style="width:${Math.round(b.frac * 100)}%;background:${sp.color}"></i></div></div>`;
+      }).join('')}</div>`;
   } else if (tab === 'words') {
     const order = ['element', 'form', 'effect', 'target', 'mod', 'trigger'];
     const sorted = [...WORDS].sort((a, b) => order.indexOf(a.cat) - order.indexOf(b.cat));
@@ -206,7 +233,7 @@ function renderBook() {
         <div class="editor">
           <label>呪文名</label><input type="text" id="spName" value="${esc(s.name)}" maxlength="20">
           <label>詠唱文 — 未知の言葉は飾りとして無視される(厨二的な前口上も自由)</label>
-          <input type="text" id="spText" value="${esc(s.text)}" placeholder="例: 我が名において命ず 紅蓮の業火よ、燃え盛れ 一条の穿槍となりて貫け 今こそ解き放て">
+          <textarea id="spText" class="chanttext" rows="3" placeholder="例: 仇なす汝に 紅蓮の業火よ、燃え盛れ 一条の穿槍となりて貫け ファイアランス (最後に魔法の名を呼ぶ)">${esc(s.text)}</textarea>
           <div class="chips" id="chips">${[...G.known].map(id => WORD_BY_ID[id]).sort((a, b) => a.cat.localeCompare(b.cat)).map(w => `<span class="chip c-${w.cat}" data-w="${esc(w.text)}" title="${esc(w.text)}"><ruby>${esc(w.core)}<rt>${esc(w.ruby)}</rt></ruby></span>`).join('')}</div>
           <div class="formula" id="spFormula"></div>
           <label>研究メモ</label><textarea id="spMemo">${esc(s.memo)}</textarea>

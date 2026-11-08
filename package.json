@@ -1,7 +1,7 @@
 {
   "name": "arcana-vox",
   "productName": "詠唱迷宮 ARCANA VOX",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "声で呪文を唱えるダンジョン探索ゲーム",
   "main": "electron/main.js",
   "private": true,
@@ -10,7 +10,8 @@
     "server": "node server.js",
     "setup-voice": "node tools/fetch-voice-model.js",
     "dist": "electron-builder --win portable",
-    "build-web": "node tools/build-web.js"
+    "build-web": "node tools/build-web.js",
+    "predist": "node tools/vendor.js"
   },
   "devDependencies": {
     "electron": "^45.2.3",
@@ -31,18 +32,10 @@
     "files": [
       "electron/**",
       "public/**",
+      "vendor/**",
       "server.js",
       "package.json",
-      "node_modules/three/package.json",
-      "node_modules/three/build/three.module.js",
-      "node_modules/three/examples/jsm/**",
-      "!node_modules/three/examples/jsm/libs/**",
-      "node_modules/trystero/**",
-      "node_modules/@trystero-p2p/**",
-      "node_modules/@noble/**",
-      "!**/*.map",
-      "!**/*.d.ts",
-      "!**/*.d.mts"
+      "!**/*.map"
     ],
     "asar": true,
     "win": {

@@ -12,6 +12,8 @@ const THREE_ROOT = path.join(__dirname, 'node_modules', 'three');
 // P2P 用ライブラリ(ESM)も node_modules から配信する
 const NM_ROOT = path.dirname(THREE_ROOT);
 const NM_ALLOW = ["/@trystero-p2p/", "/@noble/secp256k1/"];
+const VENDOR = path.join(__dirname, 'vendor');
+const HAS_VENDOR = fs.existsSync(path.join(VENDOR, 'three', 'build', 'three.module.js'));
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png',
@@ -21,9 +23,12 @@ const MIME = {
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split('?')[0]);
   if (p === '/') p = '/index.html';
-  // Three.js はローカルの node_modules から配信(オフラインで動くように)
+  // Three.js と P2P ライブラリはローカルから配信(オフラインで動くように)
+  // アプリ同梱版は vendor/ (tools/vendor.js が作る)、開発中は node_modules から
   let base = ROOT;
-  if (p.startsWith('/vendor/three/')) { base = THREE_ROOT; p = p.slice('/vendor/three'.length); }
+  if (HAS_VENDOR && p.startsWith('/vendor/three/examples/jsm/')) { base = path.join(VENDOR, 'three/addons'); p = p.slice('/vendor/three/examples/jsm'.length); }
+  else if (HAS_VENDOR && p.startsWith('/vendor/')) { base = VENDOR; p = p.slice('/vendor'.length); }
+  else if (p.startsWith('/vendor/three/')) { base = THREE_ROOT; p = p.slice('/vendor/three'.length); }
   else if (p.startsWith('/vendor/nm/')) {
     p = p.slice('/vendor/nm'.length);
     if (!NM_ALLOW.some(a => p.startsWith(a))) { res.writeHead(403); return res.end(); }

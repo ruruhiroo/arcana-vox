@@ -1,0 +1,21 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "arcana-vox",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "server.js"
+      ],
+      "port": 8080
+    },
+    {
+      "name": "web-static",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "tools/serve-web.js"
+      ],
+      "port": 8090
+    }
+  ]
+}

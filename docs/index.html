@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>詠唱迷宮 ARCANA VOX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700;800&family=Cinzel:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #d8b46a; --gold-dim: #8a6d36; --ink: #e9e0cc; --ink-dim: #a39a86;
+    --panel: rgba(14, 10, 8, 0.82); --panel-edge: rgba(216, 180, 106, 0.35);
+    --hp: #c6352c; --mp: #3c6fd8; --sh: #7fc6ff;
+    --serif: 'Shippori Mincho B1', 'Yu Mincho', serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--ink); font-family: var(--serif); }
+  canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+  button { font-family: var(--serif); cursor: pointer; }
+
+  /* ---- ロビー ---- */
+  #lobby { position: fixed; inset: 0; display: grid; place-items: center; z-index: 50;
+    background: radial-gradient(ellipse at 50% 40%, rgba(60,30,90,0.35), rgba(0,0,0,0.92) 70%), #050308; }
+  #lobby .card { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 36px 40px; background: var(--panel);
+    border: 1px solid var(--panel-edge); box-shadow: 0 0 80px rgba(120,70,200,0.25), inset 0 0 60px rgba(0,0,0,0.6); }
+  #lobby h1 { margin: 0; text-align: center; font-size: clamp(34px, 6vw, 56px); letter-spacing: .12em; font-weight: 800;
+    background: linear-gradient(180deg, #fff3cf, #d8b46a 55%, #7a5a22); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 18px rgba(216,180,106,.35)); }
+  #lobby .sub { text-align: center; font-family: 'Cinzel', serif; letter-spacing: .5em; color: var(--gold-dim); margin: 6px 0 22px; }
+  #lobby .tag { text-align: center; color: var(--ink-dim); font-size: 17px; line-height: 1.8; margin-bottom: 22px; }
+  .row { display: flex; gap: 12px; margin: 10px 0; align-items: center; flex-wrap: wrap; }
+  .row label { width: 120px; color: var(--gold); font-size: 17px; }
+  input[type=text], textarea, select { background: rgba(0,0,0,.5); border: 1px solid var(--panel-edge); color: var(--ink); font-family: var(--serif);
+    padding: 9px 12px; font-size: 18.5px; outline: none; }
+  input[type=text]:focus, textarea:focus { border-color: var(--gold); box-shadow: 0 0 12px rgba(216,180,106,.25); }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
+  .mode { padding: 14px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.35); cursor: pointer; transition: .15s; }
+  .mode b { display: block; color: var(--gold); font-size: 19.5px; margin-bottom: 4px; }
+  .mode span { font-size: 15.5px; color: var(--ink-dim); line-height: 1.6; }
+  .mode.sel { border-color: var(--gold); background: rgba(216,180,106,.12); box-shadow: 0 0 20px rgba(216,180,106,.2); }
+  .btn { background: linear-gradient(180deg, rgba(216,180,106,.25), rgba(216,180,106,.08)); border: 1px solid var(--gold); color: #fff3cf;
+    padding: 12px 22px; font-size: 19.5px; letter-spacing: .15em; transition: .15s; }
+  .btn:hover { background: rgba(216,180,106,.35); box-shadow: 0 0 20px rgba(216,180,106,.35); }
+  .btn.small { padding: 6px 12px; font-size: 16px; letter-spacing: .05em; }
+  .btn.ghost { border-color: var(--panel-edge); color: var(--ink-dim); background: transparent; }
+  #startBtn { width: 100%; margin-top: 18px; font-size: 23px; padding: 16px; }
+  .note { font-size: 15.5px; color: var(--ink-dim); line-height: 1.7; }
+  .keys { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 4px 12px; font-size: 16px; margin-top: 14px; color: var(--ink-dim); }
+  .keys kbd { font-family: 'Cinzel', serif; color: var(--gold); border: 1px solid var(--panel-edge); padding: 1px 6px; text-align: center; min-width: 30px; }
+
+  /* ---- HUD ---- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%,-50%); }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: rgba(255,240,200,.75); }
+  #crosshair::before { left: 10px; top: 3px; width: 2px; height: 16px; } #crosshair::after { top: 10px; left: 3px; height: 2px; width: 16px; }
+  #crosshair i { position: absolute; inset: 7px; border: 1px solid rgba(255,240,200,.5); border-radius: 50%; }
+  #vitals { position: absolute; left: 24px; bottom: 24px; width: 260px; }
+  .bar { height: 14px; background: rgba(0,0,0,.6); border: 1px solid rgba(216,180,106,.4); margin-top: 6px; position: relative; overflow: hidden; }
+  .bar > div { height: 100%; transition: width .15s; }
+  .bar span { position: absolute; inset: 0; font-size: 14.5px; line-height: 13px; padding-left: 6px; text-shadow: 0 0 3px #000; }
+  #hpBar > div { background: linear-gradient(90deg, #6a1410, var(--hp)); } #mpBar > div { background: linear-gradient(90deg, #142a6a, var(--mp)); }
+  #shBar { height: 5px; border: none; } #shBar > div { background: var(--sh); box-shadow: 0 0 8px var(--sh); }
+  #statusIcons { margin-top: 6px; font-size: 15.5px; color: var(--gold); min-height: 16px; }
+  #hotbar { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
+  .slot { width: 104px; min-height: 64px; background: var(--panel); border: 1px solid var(--panel-edge); padding: 5px 6px; font-size: 14.5px; position: relative; }
+  .slot .k { position: absolute; top: 2px; right: 5px; font-family: 'Cinzel'; color: var(--gold); font-size: 15.5px; }
+  .slot .n { color: #fff3cf; font-size: 15.5px; font-weight: 700; display: block; margin-bottom: 2px; padding-right: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot .t { color: var(--ink-dim); font-size: 13px; line-height: 1.3; display: block; }
+  .slot.item { width: 64px; text-align: center; }
+  .slot.item .c { font-size: 19.5px; color: #fff; }
+  .slot.dim { opacity: .45; }
+  .slot ruby rt { font-size: 10.5px; color: var(--gold-dim); font-weight: 400; letter-spacing: 0; }
+  .slot .n { padding-top: 6px; line-height: 1.5; }
+  .slot .t { line-height: 1.9; }
+  #hotbar { align-items: flex-end; }
+  .slot:not(.item):not(.book) { width: 138px; }
+  #hotbar { left: calc(50% + 50px); }
+  .slot .t.chant { font-size: 12.5px; line-height: 1.75; color: #d8c8a8; }
+  .slot .t.chant rt { font-size: 8.5px; }
+  .slot .t .sep { font-style: normal; color: var(--ink-dim); margin: 0 1px; }
+  .wcard .phrase { color: #f0d9a8; font-size: 18.5px; margin: 8px 0 4px; line-height: 2; }
+  .wcard .phrase rt, .chip rt, #chantText rt { font-size: 11.5px; color: var(--gold-dim); }
+  #keysPanel { max-height: calc(100vh - 120px); overflow: auto; padding-right: 6px; }
+  #keysPanel h3 { margin: 16px 0 6px; }
+  .krow { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(216,180,106,.12); font-size: 19.5px; color: #f0e2c0; }
+  .kbtn { min-width: 110px; padding: 4px 10px; background: rgba(0,0,0,.45); border: 1px solid var(--panel-edge); color: var(--gold); font: inherit; font-size: 16px; cursor: pointer; }
+  .kbtn:hover { border-color: var(--gold); }
+  .kbtn.wait { color: #fff; border-color: #fff; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .5; } }
+  #inv .equip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  #inv .eslot .sl { display: block; color: var(--gold-dim); font-size: 15.5px; margin-bottom: 4px; letter-spacing: .2em; }
+  #inv .eslot .sl rt { font-size: 10.5px; }
+  #inv .bag { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .eitem { background: rgba(0,0,0,.35); border: 1px solid var(--panel-edge); padding: 8px 10px; min-height: 92px; display: flex; flex-direction: column; gap: 3px; font-size: 16px; }
+  .eitem.r1 { border-color: #3d5f8a; } .eitem.r2 { border-color: #6a4a90; box-shadow: 0 0 12px rgba(195,139,255,.18); } .eitem.r3 { border-color: #a07a2a; box-shadow: 0 0 16px rgba(255,201,74,.25); }
+  .eitem.empty { opacity: .5; justify-content: center; }
+  .eitem .rar { font-size: 14.5px; color: var(--ink-dim); }
+  .eitem small { color: #d8c8a8; font-size: 15px; line-height: 1.5; }
+  .eitem .ebtns { margin-top: auto; display: flex; gap: 6px; }
+  .eitem button { padding: 3px 10px; background: rgba(0,0,0,.4); border: 1px solid var(--panel-edge); color: var(--ink); font: inherit; font-size: 15.5px; cursor: pointer; }
+  .eitem button:hover { border-color: var(--gold); color: var(--gold); }
+  @media (max-width: 760px) { #inv .equip { grid-template-columns: repeat(2, 1fr); } }
+  .startrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  #tut { position: absolute; top: 90px; left: 24px; width: 400px; padding: 14px 18px; background: rgba(12,8,18,.82); border: 1px solid var(--panel-edge); border-left: 3px solid var(--gold); pointer-events: auto; transition: .3s; }
+  #tut.ok { border-left-color: #8dffb0; box-shadow: 0 0 24px rgba(141,255,176,.25); }
+  #tut .tstep { font-size: 14.5px; letter-spacing: .2em; color: var(--gold-dim); }
+  #tut h4 { margin: 4px 0 6px; color: var(--gold); font-size: 20.5px; letter-spacing: .15em; }
+  #tut.ok h4::after { content: ' ✔'; color: #8dffb0; }
+  #tut p { margin: 0; font-size: 17px; line-height: 1.7; color: #f0e2c0; }
+  #tut small { color: var(--ink-dim); }
+  #tut kbd { display: inline-block; min-width: 18px; padding: 0 5px; margin: 0 2px; border: 1px solid var(--gold-dim); font-size: 15.5px; text-align: center; }
+  #tut button { margin-top: 10px; }
+  #target { position: absolute; top: calc(50% + 34px); left: 50%; transform: translateX(-50%); min-width: 240px; text-align: center; padding: 6px 14px 8px; background: rgba(8,5,12,.6); border-top: 2px solid var(--rim, #c33); font-size: 16px; color: #f4e6c8; text-shadow: 0 0 4px #000; pointer-events: none; }
+  #target b { font-size: 19px; letter-spacing: .12em; color: var(--rim, #fff); }
+  #target b.boss { font-size: 22px; }
+  #target .hp { height: 6px; margin: 5px 0 4px; background: rgba(255,255,255,.12); }
+  #target .hp i { display: block; height: 100%; background: linear-gradient(90deg, #a01818, #ff5a3a); transition: width .2s; }
+  #target .wk em { font-style: normal; color: #ffe08a; }
+  #target .wk s { text-decoration: none; color: #9aa8c0; }
+  .bookslots { display: flex; flex-direction: column; gap: 4px; margin-right: 8px; }
+  .slot.book { width: 100px; min-height: 0; height: 29px; display: flex; align-items: center; gap: 6px; padding: 2px 6px; }
+  .slot.book .cov { flex: none; width: 13px; height: 18px; border: 1px solid #c9a050; background: linear-gradient(135deg, #6a1c20, #3a0c10); box-shadow: 0 0 8px rgba(255,160,80,.35); }
+  .slot.book.textbook .cov { border-color: #8a7050; background: linear-gradient(135deg, #6a4a2a, #3a2612); box-shadow: none; }
+  .slot.book .n { padding: 4px 0 0; margin: 0; line-height: 1.2; }
+  .slot.book .t { display: none; }
+  .slot.book .k { top: 50%; transform: translateY(-50%); }
+  .slot.item .n { overflow: visible; text-overflow: clip; padding-right: 0; }
+  .slot.book.held { border-color: var(--gold); box-shadow: 0 0 14px rgba(216,180,106,.35); }
+  #chantBox { position: absolute; left: 50%; bottom: 112px; transform: translateX(-50%); text-align: center; min-width: 420px; max-width: 80vw; }
+  #chantText { font-size: 32.5px; font-weight: 800; letter-spacing: .08em; color: #fff3cf; text-shadow: 0 0 18px rgba(255,200,120,.8), 0 0 4px #000; min-height: 40px; }
+  #chantText .w { padding: 0 4px; } #chantText .w.ok { color: #ffe08a; } #chantText .w.unk { color: #888; text-decoration: line-through; }
+  #chantText .w.trig { color: #ff9a6a; }
+  #chantFormula { font-size: 16px; color: var(--ink-dim); margin-top: 4px; min-height: 18px; }
+  #micState { position: absolute; left: 24px; bottom: 140px; font-size: 16px; color: var(--ink-dim); }
+  #micState.on { color: #ff7a7a; text-shadow: 0 0 10px #f44; }
+  #topLeft { position: absolute; left: 20px; top: 16px; }
+  #floorLabel { font-size: 25.5px; font-weight: 800; color: var(--gold); letter-spacing: .1em; text-shadow: 0 0 10px rgba(0,0,0,.9); }
+  #modeLabel { font-size: 15.5px; color: var(--ink-dim); }
+  #party { margin-top: 10px; font-size: 16px; }
+  #party .pm { margin: 4px 0; width: 210px; }
+  #party .pm .bar { height: 7px; margin-top: 2px; }
+  #minimap { position: absolute; right: 18px; top: 16px; width: 210px; height: 210px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.55); }
+  #log { position: absolute; right: 18px; top: 240px; width: 420px; font-size: 16px; text-align: right; }
+  #log div { margin: 3px 0; text-shadow: 0 0 4px #000, 0 0 2px #000; transition: opacity 1s; }
+  #prompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); font-size: 19.5px; color: #fff3cf; text-shadow: 0 0 6px #000; }
+  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(160,0,0,.7)); opacity: 0; transition: opacity .3s; }
+  #downed { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(40,0,0,.35); font-size: 32.5px; color: #ffb0a0; text-shadow: 0 0 10px #000; text-align: center; }
+  #floats { position: absolute; inset: 0; overflow: hidden; }
+  .float { position: absolute; font-weight: 800; font-size: 23px; text-shadow: 0 0 4px #000, 0 0 2px #000; transform: translate(-50%, -50%); white-space: nowrap; }
+  #banner { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); text-align: center; pointer-events: none; transition: opacity .6s; }
+  #banner .big { font-size: 43px; font-weight: 800; color: #fff3cf; letter-spacing: .15em; text-shadow: 0 0 24px rgba(216,180,106,.8); }
+  #banner .small { font-size: 19.5px; color: var(--ink); margin-top: 6px; text-shadow: 0 0 6px #000; max-width: 640px; }
+  #clickToPlay { position: absolute; left: 50%; top: 50%; transform: translate(-50%, 60px); color: var(--gold); font-size: 18.5px; text-shadow: 0 0 6px #000; }
+
+  /* ---- 打ち込み詠唱 ---- */
+  #typeBox { position: fixed; left: 50%; bottom: 170px; transform: translateX(-50%); z-index: 30; width: min(560px, 90vw); pointer-events: auto; }
+  #typeBox input { width: 100%; font-size: 23px; text-align: center; }
+  #typeBox .note { text-align: center; margin-top: 4px; }
+
+  /* ---- 所持品 ---- */
+  #inv { position: fixed; inset: 0; z-index: 42; display: grid; place-items: center; background: rgba(0,0,0,.55); pointer-events: auto; }
+  #inv .icard { width: min(900px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px 28px; background: var(--panel); border: 1px solid var(--panel-edge); box-shadow: 0 0 60px rgba(0,0,0,.8); }
+  #inv .ihead { display: flex; justify-content: space-between; align-items: baseline; }
+  #inv h2 { margin: 0; color: var(--gold); letter-spacing: .3em; font-size: 25.5px; }
+  #inv h3 { margin: 20px 0 10px; color: var(--gold-dim); font-size: 17px; letter-spacing: .2em; border-bottom: 1px solid var(--panel-edge); padding-bottom: 4px; }
+  #inv .books { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .bookitem { display: flex; gap: 14px; align-items: center; text-align: left; padding: 12px; background: rgba(0,0,0,.35); border: 1px solid var(--panel-edge); color: var(--ink); transition: .15s; }
+  .bookitem .bbtns { display: flex; gap: 8px; margin-top: 10px; }
+  .bookitem .bbtns button { padding: 5px 12px; background: rgba(0,0,0,.4); border: 1px solid var(--panel-edge); color: var(--ink); font: inherit; font-size: 16px; cursor: pointer; }
+  .bookitem .bbtns button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); }
+  .bookitem .bbtns .hold:disabled { color: var(--gold); border-color: var(--gold-dim); cursor: default; }
+  .bookitem.held { border-color: var(--gold); box-shadow: 0 0 22px rgba(216,180,106,.3); }
+  #heldInd { position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%); font-size: 15.5px; letter-spacing: .1em; padding: 3px 12px; background: rgba(0,0,0,.45); border: 1px solid var(--panel-edge); color: var(--ink); }
+  #heldInd b { color: var(--gold); margin-right: 6px; }
+  #heldInd.textbook { color: #c9a07a; }
+  .bookitem:hover { border-color: var(--gold); box-shadow: 0 0 18px rgba(216,180,106,.25); transform: translateY(-2px); }
+  .bookitem .cover { flex: none; width: 74px; height: 98px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px;
+    border-radius: 2px 6px 6px 2px; box-shadow: inset 6px 0 0 rgba(0,0,0,.35), 0 4px 10px rgba(0,0,0,.6); }
+  .bookitem .cover b { font-size: 19.5px; letter-spacing: .1em; color: #fff3cf; writing-mode: vertical-rl; }
+  .bookitem .cover i { font-family: Cinzel, serif; font-style: normal; font-size: 9px; letter-spacing: .15em; color: rgba(255,240,200,.7); }
+  .bookitem.grimoire .cover { background: linear-gradient(135deg, #5a1e1e, #2a0c0c); border: 2px solid #b08a3c; }
+  .bookitem.textbook .cover { background: linear-gradient(135deg, #1e3a4a, #0c1a22); border: 2px solid #8aa0a8; }
+  .bookitem .bdesc { font-size: 16px; color: var(--ink-dim); line-height: 1.6; }
+  .bookitem kbd { font-family: Cinzel; color: var(--gold); border: 1px solid var(--panel-edge); padding: 0 5px; margin-left: 4px; }
+  #inv .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .itm { padding: 8px 10px; background: rgba(0,0,0,.35); border: 1px solid var(--panel-edge); color: var(--ink); text-align: left; font-size: 16px; }
+  .itm b { color: #fff3cf; } .itm .n { float: right; color: var(--gold); font-weight: 700; }
+  .itm small { display: block; color: var(--ink-dim); font-size: 14.5px; margin-top: 3px; }
+  button.itm:hover:not(:disabled) { border-color: var(--gold); }
+  .itm:disabled { opacity: .4; cursor: default; }
+  @media (max-width: 700px) { #inv .books { grid-template-columns: 1fr; } }
+  @media (max-width: 1450px) { #hotbar { transform: translateX(-50%) scale(.82); transform-origin: bottom center; } }
+  @media (max-width: 1200px) { #hotbar { transform: translateX(-50%) scale(.68); } }
+
+  /* ---- Esc メニュー ---- */
+  #menu { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; background: rgba(0,0,0,.55); backdrop-filter: blur(3px); pointer-events: auto; }
+  #menu .mcard { width: min(500px, calc(100vw - 32px)); padding: 28px 32px; background: var(--panel); border: 1px solid var(--panel-edge); box-shadow: 0 0 60px rgba(0,0,0,.8); }
+  #menu h2 { margin: 0 0 18px; text-align: center; color: var(--gold); letter-spacing: .3em; font-size: 25.5px; }
+  #menu h3 { margin: 22px 0 8px; color: var(--gold-dim); font-size: 17px; letter-spacing: .2em; border-bottom: 1px solid var(--panel-edge); padding-bottom: 4px; }
+  #menu #mResume { width: 100%; font-size: 20.5px; }
+  #menu .mrow2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  #menu .mset { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 10px 0; font-size: 17px; }
+  #menu .mset input[type=range] { width: 180px; accent-color: var(--gold); }
+  #menu .mset input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--gold); }
+  #menu #mFull { margin-top: 6px; }
+
+  /* ---- 魔導書 ---- */
+  #book { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(0,0,0,.6); pointer-events: auto; }
+  #book .tome { width: min(1100px, calc(100vw - 32px)); height: min(720px, calc(100vh - 32px)); display: grid; grid-template-columns: 170px 1fr;
+    background: linear-gradient(135deg, #2a1d12, #1a110a); border: 2px solid #6b4f2a; box-shadow: 0 0 60px rgba(0,0,0,.8), inset 0 0 80px rgba(0,0,0,.6); }
+  #book nav { border-right: 1px solid #5a4020; padding: 20px 0; display: flex; flex-direction: column; gap: 4px; }
+  #book nav h2 { margin: 0 0 16px; text-align: center; color: var(--gold); font-size: 25.5px; letter-spacing: .2em; }
+  #book nav button { background: none; border: none; color: var(--ink-dim); font-size: 19.5px; padding: 10px 20px; text-align: left; border-left: 3px solid transparent; }
+  #book nav button.sel { color: #fff3cf; border-left-color: var(--gold); background: rgba(216,180,106,.08); }
+  #book nav .close { margin-top: auto; }
+  #book nav .ghost-switch { margin-top: 18px; font-size: 16px; color: var(--gold-dim); border-top: 1px solid #5a4020; padding-top: 14px; }
+  #book.textbook .tome { background: linear-gradient(135deg, #1d2226, #111518); border-color: #3e5560; }
+  #book.textbook nav { border-right-color: #3a4a52; }
+  .journal { width: 100%; height: calc(100% - 70px); min-height: 360px; font-size: 18.5px; line-height: 1.9; resize: none;
+    background: repeating-linear-gradient(transparent 0 28px, rgba(216,180,106,.12) 28px 29px); padding: 6px 12px; }
+  #book .page { padding: 22px 28px; overflow: auto; background:
+    radial-gradient(ellipse at 30% 20%, rgba(255,240,200,.06), transparent 60%), repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 2px, transparent 2px 4px); }
+  #book h3 { margin: 0 0 10px; color: var(--gold); font-size: 23px; letter-spacing: .1em; }
+  .words { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+  .wcard { border: 1px solid #4d3820; background: rgba(0,0,0,.25); padding: 10px 12px; }
+  .wcard .head { display: flex; align-items: baseline; gap: 8px; }
+  .wcard .tx { font-size: 25.5px; font-weight: 800; color: #fff3cf; }
+  .wcard .rb { font-size: 15.5px; color: var(--gold); }
+  .wcard .cat { margin-left: auto; font-size: 14.5px; color: #0d0905; background: var(--gold-dim); padding: 1px 6px; }
+  .wcard .hint { font-size: 15.5px; color: var(--ink-dim); margin: 6px 0 4px; font-style: italic; }
+  .wcard .mean { font-size: 16px; color: #b8f0c0; margin-bottom: 6px; }
+  .wcard .mean.no { color: #7a7060; }
+  .wcard textarea { width: 100%; height: 44px; font-size: 15.5px; resize: vertical; }
+  .wcard.unknown { opacity: .5; }
+  .wcard.unknown .tx { color: #6a5a40; }
+  .spells { display: grid; grid-template-columns: 300px 1fr; gap: 20px; height: calc(100% - 40px); }
+  .slist { overflow: auto; border-right: 1px solid #4d3820; padding-right: 10px; }
+  .sitem { padding: 8px 10px; border: 1px solid #4d3820; margin-bottom: 6px; cursor: pointer; background: rgba(0,0,0,.2); }
+  .sitem.sel { border-color: var(--gold); background: rgba(216,180,106,.1); }
+  .sitem b { color: #fff3cf; } .sitem small { display: block; color: var(--ink-dim); font-size: 15.5px; }
+  .sitem .slotk { float: right; color: var(--gold); font-family: Cinzel; }
+  .editor label { display: block; color: var(--gold); font-size: 16px; margin: 10px 0 4px; }
+  .editor input[type=text], .editor textarea { width: 100%; }
+  .editor textarea { height: 90px; }
+  .formula { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--gold-dim); background: rgba(0,0,0,.3); font-size: 17px; color: #e8f0ff; min-height: 44px; line-height: 1.6; }
+  .chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip { font-size: 16px; padding: 3px 8px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.3); color: var(--ink); cursor: pointer; }
+  .chip:hover { border-color: var(--gold); }
+  .chip.c-element { border-color: #a0502a; } .chip.c-form { border-color: #3a6aa0; } .chip.c-effect { border-color: #3aa060; }
+  .chip.c-target { border-color: #a03a8a; } .chip.c-mod { border-color: #a0a03a; } .chip.c-trigger { border-color: #c06030; }
+  .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .recipe { border: 1px solid #4d3820; padding: 12px; background: rgba(0,0,0,.25); }
+  .recipe b { color: #fff3cf; font-size: 19.5px; } .recipe p { font-size: 15.5px; color: var(--ink-dim); margin: 6px 0; }
+  .inv { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; font-size: 17px; }
+  .inv span b { color: var(--gold); }
+  .muted { color: var(--ink-dim); font-size: 15.5px; }
+
+  /* ---- スマホ幅 ---- */
+  @media (max-width: 700px) {
+    #lobby .card { padding: 22px 16px; }
+    .modes { grid-template-columns: 1fr; }
+    #minimap { width: 120px; height: 120px; }
+    #log { width: 200px; top: 145px; }
+    #hotbar { transform: translateX(-50%) scale(.7); transform-origin: bottom center; }
+    .spells { grid-template-columns: 1fr; }
+    #book .tome { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    #book nav { flex-direction: row; overflow-x: auto; padding: 8px; }
+    #book nav h2 { display: none; }
+  }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three/build/three.module.js",
+  "three/addons/": "./vendor/three/examples/jsm/",
+  "@trystero-p2p/nostr": "./vendor/nm/@trystero-p2p/nostr/dist/index.mjs",
+  "@trystero-p2p/core": "./vendor/nm/@trystero-p2p/core/dist/index.mjs",
+  "@noble/secp256k1": "./vendor/nm/@noble/secp256k1/index.js"
+} }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="lobby">
+  <div class="card">
+    <h1>詠唱迷宮</h1>
+    <div class="sub">ARCANA&nbsp;VOX</div>
+    <div class="tag">言霊を組み、声に出して唱えよ。<br>迷宮は入るたびに姿を変える。魔導書に記し、己だけの呪文を編み上げろ。</div>
+    <div class="row"><label>魔導師名</label><input type="text" id="nameIn" maxlength="16" placeholder="漆黒の詠唱者" style="flex:1"></div>
+    <div class="row"><label>探索形式</label>
+      <div class="modes">
+        <div class="mode sel" data-mode="coop"><b>協力探索</b><span>仲間と迷宮を攻略する。倒れた仲間は「癒息」で蘇生できる。</span></div>
+        <div class="mode" data-mode="pvp"><b>探索PvP</b><span>他の魔導師とも戦う。敵の詠唱を聞き、何が来るか読め。</span></div>
+      </div>
+    </div>
+    <div class="row" id="onlineRow"><label>接続</label>
+      <select id="netSel"><option value="solo">ひとりで(NPC魔導師と共に)</option><option value="host">ネット: 部屋を作る</option><option value="join">ネット: 部屋に入る</option><option value="lan">LAN: 直接接続</option></select>
+      <input type="text" id="roomIn" placeholder="部屋コード" maxlength="12" autocomplete="off" class="hidden" style="width:160px">
+      <button id="copyCode" class="hidden" type="button">コピー</button>
+      <input type="text" id="hostIn" placeholder="接続先(空欄=自分が部屋)" class="hidden" style="width:220px">
+    </div>
+    <div class="note" id="netNote"></div>
+    <div class="startrow"><button class="btn" id="startBtn">迷宮へ降りる</button><button class="btn ghost" id="tutBtn">手ほどき(はじめての方)</button></div>
+    <div class="keys">
+      <kbd>V</kbd><span>押している間 声で詠唱</span><kbd>C</kbd><span>常時詠唱 切替(ハンズフリー)</span>
+      <kbd>右クリック</kbd><span>魔導書を掲げて頁を読む</span><kbd>ホイール</kbd><span>頁をめくる(F/R でも)</span>
+      <kbd>WASD</kbd><span>移動 / Shift 走る</span><kbd>E</kbd><span>調べる・拾う・転移</span>
+      <kbd>Tab</kbd><span>魔導書を開く(呪文・言霊辞典・心得・調合)</span>
+      <kbd>I</kbd><span>所持品・装備</span><kbd>1-5</kbd><span>道具を使う</span><kbd>Esc</kbd><span>メニュー・操作設定(キー変更)</span>
+      <kbd>F11</kbd><span>全画面(デスクトップ版)</span>
+      <kbd>T</kbd><span>NPC詠唱の読み上げ 切替</span>
+      <kbd>マウス</kbd><span>視点(ドラッグ / 矢印キーでも可)</span><kbd>M</kbd><span>環境音 OFF/小/中</span>
+    </div>
+    <p class="note" id="voiceNote"></p>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="crosshair"><i></i></div>
+  <div id="topLeft"><div id="floorLabel">第1層</div><div id="modeLabel"></div><div id="party"></div></div>
+  <canvas id="minimap" width="210" height="210"></canvas>
+  <div id="log"></div>
+  <div id="prompt"></div>
+  <div id="chantBox"><div id="chantText"></div><div id="chantFormula"></div></div>
+  <div id="micState"></div>
+  <div id="vitals">
+    <div id="statusIcons"></div>
+    <div class="bar" id="shBar"><div style="width:0%"></div></div>
+    <div class="bar" id="hpBar"><div style="width:100%"></div><span></span></div>
+    <div class="bar" id="mpBar"><div style="width:100%"></div><span></span></div>
+  </div>
+  <div id="target" class="hidden"></div>
+  <div id="hotbar"></div>
+  <div id="tut" class="hidden"></div>
+  <div id="vignette"></div>
+  <div id="floats"></div>
+  <div id="banner"><div class="big"></div><div class="small"></div></div>
+  <div id="downed" class="hidden"></div>
+  <div id="clickToPlay">クリックで操作開始</div>
+</div>
+
+<div id="typeBox" class="hidden">
+  <input type="text" id="typeIn" placeholder="例: 紅蓮 穿槍 放て">
+  <div class="note">Enter で詠唱開始 / Esc で取り消し — ひらがな・カタカナ・漢字どれでも可</div>
+</div>
+
+<div id="inv" class="hidden">
+  <div class="icard">
+    <div class="ihead"><h2>所持品</h2><span class="muted">I / Esc で閉じる</span></div>
+    <div class="books">
+      <div class="bookitem grimoire" data-book="grimoire"><span class="cover"><b>魔導書</b><i>GRIMOIRE</i></span><span class="bdesc">常に手にしている、あなただけの魔導書。開いた頁の詠唱文を読み上げて術を放つ。呪文の書き記し・頁の並べ替え、言霊辞典・心得・調合書もここに。<span class="bbtns"><button data-open="grimoire">開く <kbd>Tab</kbd></button></span></span></div>
+    </div>
+    <h3>装備 <span class="muted" id="invTotals"></span></h3>
+    <div class="equip" id="invEquip"></div>
+    <h3>鞄</h3>
+    <div class="bag" id="invBag"></div>
+  </div>
+</div>
+
+<div id="menu" class="hidden">
+  <div class="mcard">
+    <div id="menuMain">
+    <h2>— 休息 —</h2>
+    <div id="mRoom" class="hidden" style="text-align:center;margin:-4px 0 10px;color:#e8d29a;letter-spacing:1px"></div>
+    <button class="btn" id="mResume">再開する</button>
+    <button class="btn ghost" id="mInv" style="width:100%;margin-top:8px">所持品 (I)</button>
+    <button class="btn ghost" id="mGrimoire" style="width:100%;margin-top:8px">魔導書 (Tab)</button>
+    <h3>設定</h3>
+    <label class="mset"><span>全体音量</span><input type="range" id="mVol" min="0" max="100"></label>
+    <label class="mset"><span>環境音</span><select id="mAmb"><option value="0">OFF</option><option value="1">小</option><option value="2">中</option></select></label>
+    <label class="mset"><span>NPCの詠唱を読み上げる</span><input type="checkbox" id="mNpc"></label>
+    <label class="mset"><span>感度</span><input type="range" id="mSens" min="30" max="300"></label>
+    <div class="mrow2"><button class="btn ghost small" id="mKeys">操作設定</button><button class="btn ghost small" id="mFull">全画面 切替 (F11)</button></div>
+    <div class="mrow2" style="margin-top:18px"><button class="btn ghost" id="mTitle">タイトルへ戻る</button><button class="btn ghost" id="mQuit">ゲームを終了</button></div>
+    </div>
+    <div id="keysPanel" class="hidden">
+      <h2>— 操作設定 —</h2>
+      <div id="keysBody"></div>
+      <div class="mrow2" style="margin-top:14px"><button class="btn ghost small" id="kReset">初期設定に戻す</button><button class="btn small" id="kBack">戻る</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="book" class="hidden">
+  <div class="tome">
+    <nav>
+      <h2 id="bookTitle">魔導書</h2>
+      <button data-tab="spells" data-book="grimoire" class="sel">自作呪文</button>
+      <button data-tab="notes" data-book="grimoire">研究ノート</button>
+      <button data-tab="words" data-book="grimoire">言霊辞典</button>
+      <button data-tab="help" data-book="grimoire">心得</button>
+      <button data-tab="craft" data-book="grimoire">調合書</button>
+      <button class="ghost-switch" id="bookSwitch"></button>
+      <button class="close" id="bookClose">閉じる</button>
+    </nav>
+    <div class="page" id="bookPage"></div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

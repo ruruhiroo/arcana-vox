@@ -1,0 +1,111 @@
+// WebAudio による手続き的効果音・環境音 (3D定位つき)
+let ctx = null, master = null, noiseBuf = null, listenerPos = { x: 0, z: 0 };
+
+export const getAudioCtx = () => ctx;
+
+export function initAudio() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  master = ctx.createGain(); master.gain.value = 0.7 * masterVol;
+  const comp = ctx.createDynamicsCompressor();
+  // 石造りの残響
+  const conv = ctx.createConvolver();
+  const len = ctx.sampleRate * 2.2, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+  conv.buffer = ir;
+  const wet = ctx.createGain(); wet.gain.value = 0.28;
+  master.connect(comp); master.connect(conv); conv.connect(wet); wet.connect(comp); comp.connect(ctx.destination);
+  noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  const nd = noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  ambience();
+}
+
+export function setListener(x, z, yaw) {
+  listenerPos = { x, z };
+  if (!ctx) return;
+  const l = ctx.listener;
+  if (l.positionX) { l.positionX.value = x; l.positionZ.value = z; l.positionY.value = 1.6; l.forwardX.value = -Math.sin(yaw); l.forwardZ.value = -Math.cos(yaw); l.forwardY.value = 0; l.upY.value = 1; }
+}
+
+function out(pos) {
+  if (!pos) return master;
+  const p = ctx.createPanner();
+  p.panningModel = 'HRTF'; p.distanceModel = 'inverse'; p.refDistance = 3; p.rolloffFactor = 1.2;
+  if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y ?? 1; p.positionZ.value = pos.z; }
+  p.connect(master); return p;
+}
+
+function noise(dur, { freq = 1000, q = 1, type = 'lowpass', gain = 0.5, attack = 0.01, pos, sweep } = {}) {
+  const t = ctx.currentTime;
+  const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  if (sweep) f.frequency.exponentialRampToValueAtTime(sweep, t + dur);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  s.connect(f); f.connect(g); g.connect(out(pos)); s.start(t, Math.random()); s.stop(t + dur + 0.05);
+}
+
+function tone(freq, dur, { type = 'sine', gain = 0.3, to, pos, attack = 0.005 } = {}) {
+  const t = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(out(pos)); o.start(t); o.stop(t + dur + 0.05);
+}
+
+// 環境音の音量段階 (M キーで切替)
+const AMB_LEVELS = [0, 0.3, 0.7];
+let ambBus = null, ambLevel = 1;
+export function setAmbience(level) {
+  ambLevel = level;
+  if (ambBus) ambBus.gain.setTargetAtTime(AMB_LEVELS[ambLevel], ctx.currentTime, 0.2);
+}
+export function cycleAmbience() {
+  setAmbience((ambLevel + 2) % 3); // 小 → OFF → 中 → 小
+  return ambLevel;
+}
+let masterVol = 0.8;
+export function setMasterVolume(v) {
+  masterVol = v;
+  if (master) master.gain.setTargetAtTime(0.7 * v, ctx.currentTime, 0.05);
+}
+
+function ambience() {
+  // 低いうなりと遠い滴り — 控えめな専用バスに流す
+  ambBus = ctx.createGain(); ambBus.gain.value = AMB_LEVELS[ambLevel]; ambBus.connect(master);
+  const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain();
+  o1.frequency.value = 55; o2.frequency.value = 55.4; o1.type = o2.type = 'sine';
+  const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 120;
+  g.gain.value = 0.04; o1.connect(f); o2.connect(f); f.connect(g); g.connect(ambBus); o1.start(); o2.start();
+  const wind = ctx.createBufferSource(); wind.buffer = noiseBuf; wind.loop = true;
+  const wf = ctx.createBiquadFilter(); wf.type = 'bandpass'; wf.frequency.value = 400; wf.Q.value = 0.6;
+  const wg = ctx.createGain(); wg.gain.value = 0.03; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
+  setInterval(() => {
+    if (!ambLevel || Math.random() > 0.35) return;
+    tone(1800 + Math.random() * 900, 0.25, { gain: 0.02 * AMB_LEVELS[ambLevel], to: 600, pos: { x: listenerPos.x + (Math.random() - 0.5) * 30, z: listenerPos.z + (Math.random() - 0.5) * 30, y: 3 } });
+  }, 3000);
+}
+
+const ELEM_SND = {
+  fire: p => { noise(0.9, { freq: 600, sweep: 2500, gain: 0.5, pos: p }); tone(90, 0.5, { type: 'sawtooth', gain: 0.15, to: 40, pos: p }); },
+  ice: p => { tone(2400, 0.4, { type: 'triangle', gain: 0.15, to: 3400, pos: p }); noise(0.5, { freq: 5000, type: 'highpass', gain: 0.25, pos: p }); },
+  thunder: p => { noise(0.6, { freq: 3000, type: 'bandpass', q: 0.4, gain: 0.7, pos: p }); tone(60, 0.8, { type: 'square', gain: 0.2, to: 30, pos: p }); },
+  holy: p => { [523, 659, 784].forEach((f, i) => tone(f, 1.0, { type: 'sine', gain: 0.12, pos: p, attack: 0.02 + i * 0.03 })); },
+  void: p => { tone(140, 0.9, { type: 'sawtooth', gain: 0.2, to: 50, pos: p }); noise(0.8, { freq: 300, gain: 0.3, pos: p }); },
+  wind: p => { noise(0.8, { freq: 800, type: 'bandpass', q: 1.5, gain: 0.5, sweep: 2400, pos: p }); },
+};
+
+export const sfx = {
+  cast(elements, pos) { if (!ctx) return; if (!elements.length) tone(880, 0.5, { type: 'sine', gain: 0.15, to: 1320, pos }); elements.forEach(e => ELEM_SND[e]?.(pos)); },
+  impact(elements, pos) { if (!ctx) return; noise(0.5, { freq: 900, gain: 0.5, pos, sweep: 150 }); tone(70, 0.35, { gain: 0.25, to: 35, pos }); },
+  heal(pos) { if (!ctx) return; [660, 880, 1100, 1320].forEach((f, i) => setTimeout(() => tone(f, 0.6, { gain: 0.08, pos }), i * 60)); },
+  ward(pos) { if (!ctx) return; tone(330, 0.8, { type: 'triangle', gain: 0.15, to: 440, pos }); },
+  hit(pos) { if (!ctx) return; noise(0.15, { freq: 1800, gain: 0.4, pos }); tone(180, 0.15, { type: 'square', gain: 0.12, to: 80, pos }); },
+  hurt() { if (!ctx) return; tone(120, 0.3, { type: 'sawtooth', gain: 0.25, to: 60 }); noise(0.2, { freq: 600, gain: 0.3 }); },
+  fizzle(pos) { if (!ctx) return; noise(0.4, { freq: 2000, type: 'highpass', gain: 0.2, pos }); tone(300, 0.3, { gain: 0.1, to: 120, pos }); },
+  pickup() { if (!ctx) return; tone(990, 0.15, { gain: 0.15 }); setTimeout(() => tone(1480, 0.2, { gain: 0.12 }), 80); },
+  learn() { if (!ctx) return; [392, 523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.8, { type: 'triangle', gain: 0.1 }), i * 110)); },
+  step(pos) { if (!ctx) return; noise(0.08, { freq: 350, gain: 0.08, pos }); },
+  chantStart() { if (!ctx) return; tone(220, 1.2, { type: 'sine', gain: 0.06, to: 330, attack: 0.3 }); },
+  portal() { if (!ctx) return; tone(110, 2.5, { type: 'sine', gain: 0.25, to: 880, attack: 0.5 }); noise(2.5, { freq: 200, sweep: 4000, gain: 0.25 }); },
+  growl(pos) { if (!ctx) return; tone(70 + Math.random() * 40, 0.6, { type: 'sawtooth', gain: 0.12, to: 50, pos }); },
+};

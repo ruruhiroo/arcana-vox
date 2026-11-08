@@ -1,0 +1,68 @@
+{
+  "name": "arcana-vox",
+  "productName": "詠唱迷宮 ARCANA VOX",
+  "version": "0.1.0",
+  "description": "声で呪文を唱えるダンジョン探索ゲーム",
+  "main": "electron/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "server": "node server.js",
+    "setup-voice": "node tools/fetch-voice-model.js",
+    "dist": "electron-builder --win nsis",
+    "build-web": "node tools/build-web.js"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^25.1.8",
+    "vosk-browser": "^0.0.8"
+  },
+  "dependencies": {
+    "three": "^0.160.0",
+    "trystero": "^0.26.0"
+  },
+  "build": {
+    "appId": "com.arcanavox.game",
+    "productName": "ArcanaVox",
+    "copyright": "ARCANA VOX",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**",
+      "public/**",
+      "server.js",
+      "package.json",
+      "node_modules/three/package.json",
+      "node_modules/three/build/three.module.js",
+      "node_modules/three/examples/jsm/**",
+      "!node_modules/three/examples/jsm/libs/**",
+      "node_modules/trystero/**",
+      "node_modules/@trystero-p2p/**",
+      "node_modules/@noble/**",
+      "!**/*.map",
+      "!**/*.d.ts",
+      "!**/*.d.mts"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "ArcanaVox-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "詠唱迷宮 ARCANA VOX",
+      "perMachine": false
+    }
+  }
+}

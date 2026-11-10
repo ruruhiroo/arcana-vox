@@ -6,6 +6,12 @@ import { buildDecor } from './decor.js';
 import { buildLayout } from './layout.js';
 
 export const CELL = 4, WALL_H = 6.4, W = 52, H = 52;
+export const DRAGON_HALL_HEIGHT = 16;
+export function ceilingAt(x, z, dg = G.dungeon) {
+  const room = dg?.portalRoom, cx = Math.floor(x / CELL), cy = Math.floor(z / CELL);
+  return room?.mod === 'dragon_hall' && cx >= room.x && cx < room.x + room.w && cy >= room.y && cy < room.y + room.h
+    ? (dg.hgt[room.cy * W + room.cx] || 0) + DRAGON_HALL_HEIGHT : WALL_H;
+}
 export const STEP = 0.7;
 export const CLIMB = 2.6; // 魔物がよじ登れる高さ // 歩いて登れる段差の高さ。これより高い所は跳んで登る
 export const FINAL_FLOOR = 10; // 大目標: この層の最奥に『原初の魔導書』が眠る
@@ -57,7 +63,7 @@ export function generate(seed, floor) {
   // 転移陣: 最初の部屋から最も遠い部屋
   let portalRoom = realRooms.find(rm => rm !== rooms[0]) || rooms[1], far = -1;
   // 竜の部屋は回避できる広さの平地を優先する。物置や柱の迷路を戦場にしない。
-  const arenas = realRooms.filter(rm => rm !== rooms[0] && rm.flat && rm.w >= 3 && rm.h >= 3);
+  const arenas = realRooms.filter(rm => rm.mod === 'dragon_hall');
   for (const rm of arenas.length ? arenas : realRooms) { if (rm === rooms[0]) continue; const d = dist[rm.cy * W + rm.cx]; if (d > far) { far = d; portalRoom = rm; } }
   // 選んだ部屋の柱を取り払い、段差のない戦場にする。外周の壁と出入口は保つ。
   const arenaHeight = hgt[portalRoom.cy * W + portalRoom.cx] || 0;
@@ -364,13 +370,24 @@ function buildStructure(dg) {
   const ceilMat = new THREE.MeshStandardMaterial({ ...TEX.ceil, color: 0x777066, roughness: 1 });
   const cg = new THREE.PlaneGeometry(CELL, CELL); cg.rotateX(Math.PI / 2);
   const cm = new THREE.InstancedMesh(cg, ceilMat, floors.length);
-  floors.forEach(([x, y], i) => { m.makeTranslation((x + 0.5) * CELL, WALL_H, (y + 0.5) * CELL); cm.setMatrixAt(i, m); });
+  floors.forEach(([x, y], i) => { m.makeTranslation((x + 0.5) * CELL, ceilingAt((x + 0.5) * CELL, (y + 0.5) * CELL, dg), (y + 0.5) * CELL); cm.setMatrixAt(i, m); });
   group.add(cm);
   const wallMat = new THREE.MeshStandardMaterial({ ...TEX.wall, color: 0xc8b8a4, roughness: 1, normalScale: new THREE.Vector2(1.5, 1.5) });
   const wg = new THREE.BoxGeometry(CELL, WALL_H, CELL); wg.translate(0, WALL_H / 2, 0);
   const wm = new THREE.InstancedMesh(wg, wallMat, walls.length);
   walls.forEach(([x, y], i) => { m.makeTranslation((x + 0.5) * CELL, 0, (y + 0.5) * CELL); wm.setMatrixAt(i, m); });
   wm.castShadow = true; wm.receiveShadow = true; group.add(wm);
+  // 高い広間と通常の回廊の天井差を塞ぐ。下部の出入口は開けたままにする。
+  const arena = dg.portalRoom;
+  if (arena?.mod === 'dragon_hall') {
+    const top = ceilingAt((arena.cx + .5) * CELL, (arena.cy + .5) * CELL, dg);
+    const h = top - WALL_H, cx = (arena.x + arena.w / 2) * CELL, cz = (arena.y + arena.h / 2) * CELL;
+    for (const [x, z, width, depth] of [[cx, arena.y * CELL, arena.w * CELL, .3], [cx, (arena.y + arena.h) * CELL, arena.w * CELL, .3],
+      [arena.x * CELL, cz, .3, arena.h * CELL], [(arena.x + arena.w) * CELL, cz, .3, arena.h * CELL]]) {
+      const upper = new THREE.Mesh(new THREE.BoxGeometry(width, h, depth), wallMat);
+      upper.position.set(x, WALL_H + h / 2, z); upper.castShadow = true; upper.receiveShadow = true; group.add(upper);
+    }
+  }
   return group;
 }
 
@@ -521,7 +538,7 @@ export function raycastGrid(origin, dir, maxDist = 30) {
     p.add(step);
     const gh = heightAt(p.x, p.z);
     if (p.y <= gh + 0.05) { p.y = gh; return p; }
-    if (isWallAt(p.x, p.z) || p.y >= WALL_H) { p.sub(step); p.y = Math.max(0, p.y); return p; }
+    if (isWallAt(p.x, p.z) || p.y >= ceilingAt(p.x, p.z)) { p.sub(step); p.y = Math.max(0, p.y); return p; }
   }
   return p;
 }

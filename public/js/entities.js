@@ -133,7 +133,7 @@ export function spawnEnemy(id, type, pos, floor, summoner = null) {
 
 // ---------- 魔物 ----------
 export const ENEMY_TYPES = {
-  dragon: { name: '詠灰竜ヴォルグ', hp: 230, speed: 2, dmg: 24, range: 14, cd: 8, radius: 0.85, h: 3.7, weak: [], resist: [], drops: ['crystal', 'iron', 'scroll'] },
+  dragon: { name: '詠灰竜ヴォルグ', hp: 230, speed: 2, dmg: 24, range: 24, cd: 8, radius: 1.8, h: 10.5, weak: [], resist: [], drops: ['crystal', 'iron', 'scroll'] },
   skeleton: { name: '骸骨兵', hp: 70, speed: 2.7, dmg: 10, range: 1.7, cd: 1.3, radius: 0.4, undead: true, weak: ['holy', 'thunder'], resist: ['void', 'ice'], drops: ['bone', 'bone', 'iron'] },
   slime:    { name: '粘獣', hp: 62, speed: 1.9, dmg: 8, range: 1.4, cd: 1.1, radius: 0.55, weak: ['fire'], resist: ['wind'], drops: ['herb', 'crystal'] },
   wraith:   { name: '怨霊', hp: 64, speed: 2.3, dmg: 12, range: 13, cd: 2.6, radius: 0.45, undead: true, ranged: true, fly: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['crystal', 'crystal'] },

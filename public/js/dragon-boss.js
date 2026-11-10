@@ -30,19 +30,19 @@ function drawTelegraph(e) {
         const mesh = new THREE.Mesh(geo, mat); mesh.rotation.x = -Math.PI / 2; group.add(mesh);
       }
       group.position.set(pos[0], pos[1] + 0.08, pos[2]); group.rotation.y = s.yaw;
-      if (G.player?.pos.distanceTo(e.pos) < 26 && s.stage === 'windup') {
+      if (G.player?.pos.distanceTo(e.pos) < 42 && s.stage === 'windup') {
         G.ui?.log(a.label, '#ffd18b'); sfx.growl?.(e.pos);
       }
       if (s.stage === 'strike') {
         e.attackAnim = 1;
         const hit = new THREE.Vector3(...pos).add(new THREE.Vector3(0, 0.7, 0));
         if (s.move === 'breath') {
-          for (let i = 1; i <= 6; i++) G.fx.burst(hit.clone().add(new THREE.Vector3(-Math.sin(s.yaw), 0, -Math.cos(s.yaw)).multiplyScalar(i * 2)), 0xff7020, 12, { speed: 2, size: 0.7, life: 0.6, up: 1 });
+          for (let i = 1; i <= 10; i++) G.fx.burst(hit.clone().add(new THREE.Vector3(-Math.sin(s.yaw), 0, -Math.cos(s.yaw)).multiplyScalar(i * a.range / 10)), 0xff7020, 12, { speed: 3, size: 1.4, life: 0.9, up: 1 });
         } else G.fx.burst(hit, color, 70, { speed: 6, up: 3 });
         sfx.crumble?.(e.pos);
       }
-    } else if (s.stage === 'recover' && G.player?.pos.distanceTo(e.pos) < 26) {
-      G.ui?.floatText(e.pos.clone().add(new THREE.Vector3(0, 3.2, 0)), '逆鱗露出 — 今こそ詠唱！', '#9ffff0');
+    } else if (s.stage === 'recover' && G.player?.pos.distanceTo(e.pos) < 42) {
+      G.ui?.floatText(e.pos.clone().add(new THREE.Vector3(0, 6, 0)), '逆鱗露出 — 今こそ詠唱！', '#9ffff0');
     }
   }
   if (s.stage === 'windup') v.group.children[0].material.opacity = 0.15 + 0.25 * (1 - s.remaining / a.warn);
@@ -55,7 +55,7 @@ export function updateDragons(dt) {
     if (!e.alive || e.type !== 'dragon') continue;
     living.add(e.id);
     if (G.isHost) {
-      const targets = G.mages.filter(m => m.team === 'hero' && m.alive && !m.downed && !G.inSanctuary?.(m.pos) && m.pos.distanceTo(e.pos) < 26 && lineOfSight(e.pos, m.pos));
+      const targets = G.mages.filter(m => m.team === 'hero' && m.alive && !m.downed && !G.inSanctuary?.(m.pos) && m.pos.distanceTo(e.pos) < 42 && lineOfSight(e.pos, m.pos));
       const target = targets.sort((a, b) => a.pos.distanceToSquared(e.pos) - b.pos.distanceToSquared(e.pos))[0];
       e.dragon ||= createDragonState();
       const s = e.dragon;
@@ -65,10 +65,10 @@ export function updateDragons(dt) {
       if (s.stage === 'idle') {
         e.yaw = Math.atan2(e.pos.x - target.pos.x, e.pos.z - target.pos.z);
         // 予兆に入ったら足と向きを止める。画面に示した安全地帯を後追いしない。
-        if (d > 8 && !(e.stun > 0) && !e.status.bound) {
+        if (d > 15 && !(e.stun > 0) && !e.status.bound) {
           const delta = target.pos.clone().sub(e.pos).setY(0).normalize().multiplyScalar(dt * (e.status.slow ? 1 : 2));
           const next = e.pos.clone().add(delta);
-          if (!e.leash || next.distanceTo(e.leash) < 9) moveWithCollision(e.pos, delta.x, delta.z, e.radius, e.team, CLIMB);
+          if (!e.leash || next.distanceTo(e.leash) < 1.5) moveWithCollision(e.pos, delta.x, delta.z, e.radius, e.team, CLIMB);
         }
       }
       // 凍結/麻痺は予兆を延ばす。回復中は反撃の持ち時間を削らない。
@@ -87,7 +87,7 @@ export function updateDragons(dt) {
     if (e.dragon) drawTelegraph(e);
   }
   for (const id of visuals.keys()) if (!living.has(id)) disposeVisual(id);
-  const boss = G.enemies.find(e => e.alive && e.type === 'dragon' && e.dragon && G.player?.alive && e.pos.distanceTo(G.player.pos) < 26 && lineOfSight(e.pos, G.player.pos));
+  const boss = G.enemies.find(e => e.alive && e.type === 'dragon' && e.dragon && G.player?.alive && e.pos.distanceTo(G.player.pos) < 42 && lineOfSight(e.pos, G.player.pos));
   const hud = document.getElementById('dragonHud');
   if (hud) {
     hud.classList.toggle('hidden', !boss);

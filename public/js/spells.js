@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
 import { ELEMENTS, compile, WORD_BY_ID, ATTACK_FX } from './lexicon.js';
-import { isWallAt, raycastGrid, CELL, heightAt } from './dungeon.js';
+import { isWallAt, raycastGrid, CELL, heightAt, ceilingAt } from './dungeon.js';
+import { intersectsDragon } from './dragon-model.js';
 import { glowSprite, runeCircleTex } from './textures.js';
 import { sfx } from './audio.js';
 import { bigImpact, updateVfx } from './vfx.js';
@@ -528,7 +529,7 @@ export const FX = {
       const sub = 4;
       for (let s = 0; s < sub && !hit && !end; s++) {
         p.pos.addScaledVector(step, 1 / sub);
-        if (isWallAt(p.pos.x, p.pos.z) || p.pos.y < heightAt(p.pos.x, p.pos.z) || p.pos.y > 5.2) { end = true; break; }
+        if (isWallAt(p.pos.x, p.pos.z) || p.pos.y < heightAt(p.pos.x, p.pos.z) || p.pos.y > ceilingAt(p.pos.x, p.pos.z) - 1.2) { end = true; break; }
         for (const o of G.obstacles) {
           if (o.team === p.team) continue;
           const dx = p.pos.x - o.pos.x, dz = p.pos.z - o.pos.z;
@@ -540,7 +541,7 @@ export const FX = {
           if (t === p.caster && p.age < 0.3) continue;
           if (t.isMage && t.downed && !p.pl.heal) continue;
           const c = t.pos.clone(); c.y = t.T?.fly ? 1.6 : 1.0;
-          if (c.distanceTo(p.pos) > p.radius + (t.radius || 0.4) + 0.3) continue;
+          if (t.type === 'dragon' ? !intersectsDragon(t.body, p.pos, p.radius) : c.distanceTo(p.pos) > p.radius + (t.radius || 0.4) + 0.3) continue;
           const harmful = (p.pl.dmg || 0) > 0 && affects(p.spell, p.caster, t, 'harm');
           const helpful = (p.pl.heal || p.pl.ward || p.pl.haste) && affects(p.spell, p.caster, t, 'help');
           if (p.team === 'monster') { if (t.team !== 'monster') hit = t; }

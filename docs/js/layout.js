@@ -64,6 +64,9 @@ function rotate(m, k) {
   return { ...m, rows, w: m.w, cw: w, ch: h, cells, doors: ds, pillars };
 }
 const VARIANTS = MODULES.flatMap(m => [0, 1, 2, 3].map(k => rotate(m, k)));
+// 巨竜専用の36m四方の広間。既存の接続判定で配置し、他の部屋を上書きしない。
+const DRAGON_HALL = rotate({ id: 'dragon_hall', kind: 'room', big: true, theme: 'arena',
+  rows: Array(9).fill('.........'), doors: [[4, 0], [0, 4], [8, 4], [4, 8]] }, 0);
 // 隠し部屋の型(どの向きの扉からでも入れるよう、四辺の中ほどに扉)
 const SECRET_MODS = [
   { id: 'vault', kind: 'secret', rows: ['...', '...', '...'], doors: [[1, 0], [1, 2], [0, 1], [2, 1]] },
@@ -112,7 +115,7 @@ export function buildLayout(r, floor, W, H) {
     const first = pick(VARIANTS.filter(v => v.kind === 'room' && v.cells.every(c => c.h === 0) && v.doors.length >= 3 && !v.big));
     place(first, (W >> 1) - (first.cw >> 1) + ri(-4, 4), (H >> 1) - (first.ch >> 1) + ri(-4, 4), 0);
     let fails = 0;
-    let bigPlaced = false;
+    let bigPlaced = false, dragonHallPlaced = false;
     while (rooms.length < want && open.length && fails < 900) {
       const di = Math.floor(r() * open.length), d = open[di];
       const from = rooms[d.room];
@@ -120,7 +123,7 @@ export function buildLayout(r, floor, W, H) {
       const roll = r();
       let kind = from.kind === 'room' ? (roll < 0.62 ? 'corridor' : roll < 0.82 ? 'stairs' : 'room') : (roll < 0.68 ? 'room' : roll < 0.84 ? 'corridor' : 'stairs');
       const cands = VARIANTS.filter(v => v.kind === kind && (!v.big || (!bigPlaced && rooms.length > 4)) && (v.id !== 'closet' || r() < 0.4));
-      const v = pick(cands);
+      const v = !dragonHallPlaced && rooms.length >= 5 ? DRAGON_HALL : pick(cands);
       const dl = v.doors.filter(x => x.dir === OPP[d.dir]);
       if (!dl.length) { fails++; continue; }
       const vd = pick(dl);
@@ -130,6 +133,7 @@ export function buildLayout(r, floor, W, H) {
       const gx = d.x + dx, gy = d.y + dy;
       if (!free(gx, gy) || grid[gy * W + gx] || !fits(v, ox, oy, elev)) { fails++; continue; }
       place(v, ox, oy, elev);
+      if (v.id === 'dragon_hall') dragonHallPlaced = true;
       if (v.big) bigPlaced = true;
       grid[gy * W + gx] = 1; hgt[gy * W + gx] = d.h;      // つなぎの通路
       open.splice(di, 1);
@@ -137,6 +141,7 @@ export function buildLayout(r, floor, W, H) {
       if (ni >= 0) open.splice(ni, 1);
     }
     const nRooms = rooms.filter(rm => rm.kind === 'room').length;
+    if (!dragonHallPlaced) continue;
     if (nRooms < 6 && attempt < 11) continue;
     // 輪: 向かい合う扉が一マス挟んで並んでいれば(高さも同じなら)つなぐ。行き止まりばかりにならないように
     for (const a of open) {

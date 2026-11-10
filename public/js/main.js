@@ -1682,7 +1682,7 @@ function placeGuardian(d, floor, seed) {
   g.meteorT = 6; g.elemT = 4; g.gElem = null;
   for (const m of meteors.splice(0)) for (const o of [m.ring, m.fill, m.rock]) scene.remove(o); // 前の層の隕石を片付ける
   g.name = g.final ? '【終章の詠灰竜】' : BOSS_NAMES.dragon;
-  g.hpBar.position.y = 3.8;
+  g.hpBar.position.y = 11;
   g.leash = d.portal.clone(); // 転移陣から離れすぎない
   // 協力は既存の合唱ボーナスで報いる。人数必須の無敵結界は張らない。
   if (portal?.userData?.disc) { portal.userData.disc.material.color.setHex(0xff4040); }

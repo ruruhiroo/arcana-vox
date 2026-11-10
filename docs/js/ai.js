@@ -2,7 +2,7 @@
 // 彼らも実際に詠唱し、読み上げる。プレイヤーの詠唱を「聞いて」対抗呪文を選ぶ。
 import * as THREE from 'three';
 import { G, rand } from './state.js';
-import { compile, tokenize, WORD_BY_ID, speakable, ELEMENTS } from './lexicon.js';
+import { compile, tokenize, WORD_BY_ID, speakable, ELEMENTS, withCallName } from './lexicon.js';
 import { flowDir, lineOfSight, moveWithCollision, bfs, cellOf, CELL, settleY } from './dungeon.js';
 import { speakChant } from './voice.js';
 
@@ -13,6 +13,7 @@ const CHANTS = {
   healAlly: '同胞に 聖光 癒息 放て', healSelf: '我に 癒息 放て', wardAlly: '同胞に 守護 放て', wardSelf: '我に 守護 放て',
   wall: '城壁 放て', iceWall: '氷獄 城壁 放て', haste: '我に 神速 放て', windNova: '颶風 円環 放て', trap: '刻印 紅蓮 放て',
 };
+for (const k in CHANTS) CHANTS[k] = withCallName(CHANTS[k]);
 
 // 弱点を突く術と汎用の術を混ぜ、同じ詠唱が続かないようにする
 function bestAttack(target, dist, rng, lastKey) {

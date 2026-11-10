@@ -5,6 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { G, rand, clamp, seeded } from './state.js';
+import { initReading, toReading } from './reading.js';
 import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, canonicalize, expandChant, chantGaps, chantCoverage, eloquence, correctChant as fixChant, callTail, endsWithCall, applyCustomCalls, fixCallName, callName } from './lexicon.js';
 // 声の聞き取り結果を言霊の正式表記に寄せる(似た音は言霊とみなす)。何も拾えなければ原文のまま
 // 聞き違いを直し、魔導書で自分が名付けた魔法の名(結句)を正式な名に読み替える
@@ -25,6 +26,14 @@ function nameCast(r) {
   return null;
 }
 const heard = t => { const c = canonicalize(t).text; return c ? c + ' ' + callTail(t) : t; };
+// 聞き取った文を、原文と「漢字を読みに直した文」の二通りで照らし、言霊をより多く拾える方を使う
+// (成功→せいこう→聖光 のように、字が違っても音で拾う。画面には言霊の正しい字で出る)
+const chantScore = x => { const j = fixChant(joinChant(x)); return tokenize(heard(j), G.known).filter(t => t.known).length * 10 + chantCoverage(j, tokenize(heard(j)).map(t => t.id)); };
+function withReading(t) {
+  const r = toReading(t);
+  if (!r || r === t) return t;
+  return chantScore(r) > chantScore(t) ? r : t;
+}
 import { generate, buildMeshes, moveWithCollision, raycastGrid, lineOfSight, W, H, CELL } from './dungeon.js';
 import { Mage, Enemy, updateFlows, spawnEnemy, clearDying } from './entities.js';
 import { preloadModels } from './glbmodels.js';
@@ -548,8 +557,8 @@ function pickUp(k, fromNet = false) {
 
 // 得意属性(+20%)と秘伝書(属性ごと 第一巻〜終巻、1巻 +15%)
 // 第二の得手: 誓った属性と縁の深い効果の言霊は、属性を込めなくても威力 ×1.3
-const AFFINITY_SECOND = { fire: ['light'], ice: ['water', 'freeze'], thunder: ['impact'], wind: ['haste'], holy: ['heal', 'ward', 'might'], void: ['poison', 'bind'] };
-const SECOND_TEXT = { fire: '灯火 — 灯す光が強く、長く燃える', ice: '清流・凍結 — 水で濡らし、凍てつかせる', thunder: '衝撃 — 打ち砕く力が増す', wind: '神速 — 速さが更に増す', holy: '癒息・守護・覇気 — 仲間を支える術が強まる', void: '蝕毒・束縛 — 蝕み、縛る力が増す' };
+const AFFINITY_SECOND = { fire: ['light'], ice: ['water', 'freeze'], thunder: ['impact'], wind: ['haste'], holy: ['heal', 'ward', 'might'], void: ['might', 'impact'] };
+const SECOND_TEXT = { fire: '灯火 — 灯す光が強く、長く燃える', ice: '清流・凍結 — 水で濡らし、凍てつかせる', thunder: '衝撃 — 打ち砕く力が増す', wind: '神速 — 速さが更に増す', holy: '癒息・守護・覇気 — 仲間を支える術が強まる', void: '覇気・衝撃 — 力を滾らせ、叩き潰す' };
 const isSecond = spell => !!G.affinity && (AFFINITY_SECOND[G.affinity] || []).some(x => spell.effects?.includes(x));
 G.isSecond = isSecond;
 function elementBonus(spell) {
@@ -736,12 +745,14 @@ let camY = null;
 const JUMP_COST = 12; // 跳躍1回のスタミナ
 
 function setupVoice() {
+  initReading();
   if (!voiceSupported) { UI.micState('🎙 音声認識非対応 — Enter で文字詠唱'); return; }
   initVoice({
     // 間を挟んでも詠唱は続く: 区切りごとの認識結果をつなげ、V を離すまで(常時詠唱は無音が続くまで)待つ
     interim: text => {
       if (!G.player.alive || G.player.downed || consumed) return;
       lastSpeech = performance.now();
+      text = withReading(text);
       const full = correctChant(joinChant(text));
       if (!looksLikeChant(full)) return; // 覚えた言霊が聞こえるまでは詠唱を始めない(ただの会話は無視)
       if (callFinished(full)) { chantBuf = full; consumed = true; commitChant(); return; }
@@ -749,7 +760,7 @@ function setupVoice() {
     },
     final: raw => {
       if (consumed) { consumed = false; return; } // すでに途中経過で放った分
-      raw = raw.map(correctChant);
+      raw = raw.flatMap(r => { const rd = toReading(r); return rd && rd !== r ? [r, rd] : [r]; }).map(correctChant); // 読みに直した候補も足す
       // 候補のうち、これまでの分とつなげて言霊を最も多く含むものを採用
       let bi = 0, bc = -1;
       raw.forEach((r, i) => { const j = joinChant(r), a = heard(j); const c = tokenize(a, G.known).filter(t => t.known).length * 10 - chantGaps(j, tokenize(a).map(t => t.id)).length; if (c > bc) { bc = c; bi = i; } });
@@ -857,7 +868,7 @@ function finishChant(text, raw = text) {
   const pen = shortChantPenalty(spell);
   if (G.nameCastHit) { G.nameCastHit = null; G.achieve('NAME_CAST'); UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), '詠唱省略 — 熟練の業', '#9fe4ff'); }
   else if (cov < 0.97 && pen > 0) {
-    const m = 1 - (1 - (0.25 + 0.75 * cov)) * pen;
+    const m = 1 - (1 - (0.5 + 0.5 * cov)) * pen; /* 省いても威力は半分までしか落ちない */
     spell.power *= m;
     UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), `短縮魔術 威力${Math.round(m * 100)}%`, '#b8c4d8');
   }

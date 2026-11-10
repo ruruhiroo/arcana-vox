@@ -16,14 +16,14 @@ export const EL_LORE = {
     vow: '我、紅蓮と誓約す — 燃え尽きるその刻まで、この声は焔となる' },
   ice: { ruby: 'ひょうごく', motto: '静寂は、万象を縫い止める', power: 55, onHit: '鈍足 — 中級以上なら凍結させ、動きを止める', trait: '足を止めて戦場を支配する。囲まれた時の切り札', spirit: 'ice',
     vow: '我、氷獄と誓約す — 万象を縫い止める静寂を、この声に' },
-  thunder: { ruby: 'らいてい', motto: '天の怒りは、隣へ、また隣へ', power: 66, onHit: '麻痺 — 一瞬動きを止める。魔弾は近くの敵へ連鎖する', trait: '威力は六属性で最も高い。群れを一度に焼き払う', spirit: 'thunder',
+  thunder: { ruby: 'らいてい', motto: '天の怒りは、隣へ、また隣へ', power: 66, onHit: '麻痺 — 一瞬動きを止める。魔弾は近くの敵へ連鎖する', trait: '威力が高く、群れを一度に焼き払う', spirit: 'thunder',
     vow: '我、雷霆と誓約す — 天を裂く怒りよ、我が声に轟け' },
   wind: { ruby: 'ぐふう', motto: '風は傷つけず、ただ遠くへ運ぶ', power: 45, onHit: '吹き飛ばし — 敵を遠くへ押し返す', trait: '威力は控えめ。神速と合わせると速さが1.5倍。距離を支配する', spirit: 'wind',
     vow: '我、颶風と誓約す — 何者にも縛られぬ風を、この身に' },
   holy: { ruby: 'せいこう', motto: '夜明けの名において、穢れを還せ', power: 58, onHit: '聖痕 — 受ける傷が25%増える。亡者には1.35倍', trait: '癒息・守護と合わせると効果が1.5倍。仲間を支える要', spirit: 'holy',
     vow: '我、聖光と誓約す — 夜明けの名において、穢れを還す' },
-  void: { ruby: 'しんえん', motto: '奪え、そして分け与えよ', power: 58, onHit: '侵蝕 — 与えた傷の35%が自分の生命に還る', trait: '戦いながら生き延びる。ひとりで潜る者の友', spirit: 'void',
-    vow: '我、深淵と誓約す — 底なき闇よ、奪い、そして分け与えよ' },
+  void: { ruby: 'しんえん', motto: '底なき闇は、万象を呑み尽くす', power: 76, onHit: '断滅 — 体力が半分を切った敵には傷が1.5倍', trait: '威力は六属性で最も高い。ただし魔力を多く喰う。一撃で終わらせる者の理', spirit: 'void',
+    vow: '我、深淵と誓約す — 底なき闇よ、万象を呑み尽くせ' },
 };
 const TOP = 1.45; // 台座の上面
 const sprite = (color, s, op) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color, blending: THREE.AdditiveBlending, depthWrite: false, opacity: op })); sp.scale.setScalar(s); return sp; };

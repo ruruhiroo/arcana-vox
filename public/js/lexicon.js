@@ -27,11 +27,12 @@ export const WORDS = [
     alias: ['雷霆', 'らいてい', 'ライテイ', '雷電', '雷鳴', '稲妻', 'いかずち', '雷'],
     hint: '「天の怒りは一つに留まらず、隣へ跳ねる」', meaning: '雷属性。威力が高く近くの敵へ連鎖する。石像に強い。' },
   { id: 'holy', text: '聖光', ruby: 'せいこう', cat: 'element', val: 'holy', cost: 8,
-    alias: ['聖光', 'せいこう', 'セイクリッド', 'せいくりっど', 'せいくりーど', '神聖', '聖なる', '聖'],
+    alias: ['聖光', 'せいこう', 'セイクリッド', 'せいくりっど', 'せいくりーど', '神聖', '聖なる', '聖',
+      /* 音声認識の同音語 */ '成功', '精巧', '性交', '製鋼', '精工', '聖公', '生光', '清らなる', 'きよらなる', '清らかなる', 'きよらかなる'],
     hint: '「死してなお歩む者は、この光を最も恐れる」', meaning: '聖属性。不死者に2倍。癒・守護と合わせると効果1.5倍。' },
-  { id: 'void', text: '深淵', ruby: 'しんえん', cat: 'element', val: 'void', cost: 9,
+  { id: 'void', text: '深淵', ruby: 'しんえん', cat: 'element', val: 'void', cost: 12,
     alias: ['深淵', 'しんえん', 'アビス', 'あびす', '奈落', '闇'],
-    hint: '「覗き込む者は、何かを奪い、何かを奪われる」', meaning: '闇属性。与えた傷の一部を自らの命に変える。' },
+    hint: '「覗き込む者は、全てを呑まれる」', meaning: '闇属性。六属性で最も威力が高い。体力が半分を切った敵には傷が1.5倍(断滅)。そのぶん魔力を多く喰う。' },
   { id: 'wind', text: '颶風', ruby: 'ぐふう', cat: 'element', val: 'wind', cost: 7,
     alias: ['颶風', 'ぐふう', 'テンペスト', 'てんぺすと', '暴風', '嵐', '風'],
     hint: '「風そのものは傷つけぬ。ただ、遠くへ運ぶ」', meaning: '風属性。威力は控えめだが大きく吹き飛ばす。速い。' },
@@ -88,7 +89,8 @@ export const WORDS = [
     alias: ['清流', 'せいりゅう', 'アクア', 'あくあ', '流れよ', 'ながれよ', '押し流せ', 'おしながせ'],
     hint: '「水は形を持たず、ゆえに全てを呑む」', meaning: '攻撃:清流。水を浴びせて押し流し、6秒のあいだ濡らす。濡れた敵は氷で凍りつき、雷の傷が1.3倍になる。燃焼は消える。' },
   { id: 'enemy', text: '汝に', ruby: 'なんじに', cat: 'target', val: 'enemy', cost: 0,
-    alias: ['汝に', '汝', 'なんじ', '敵に', 'てきに'],
+    alias: ['汝に', '汝', 'なんじ', '敵に', 'てきに',
+      /* 音声認識の聞き違い: 仇なす汝に → アドランス何時に など */ '何時に', '何時', '仇なす', 'あだなす', 'アドランス', 'あどらんす', 'アダナス', '何児に', '難事に'],
     hint: '「指し示すは、我と相容れぬもの」', meaning: '対象:敵のみに作用する。' },
   { id: 'self', text: '我に', ruby: 'われに', cat: 'target', val: 'self', cost: 0,
     alias: ['我に', '我が身', 'わがみ', 'われに'],
@@ -124,7 +126,7 @@ export const WORDS = [
     hint: '「壊すことにかけて、これに勝る言葉はない」', meaning: '呪い:壁を砕く力×2.2、威力×1.3。消費×1.5。着弾地点の近くにいると自分も巻き込まれる。' },
 
   { id: 'release', text: '放て', ruby: 'はなて', cat: 'trigger', val: 'release', cost: 0,
-    alias: ['解き放て', '放て', 'はなて', 'ハナテ', '顕現せよ', '顕現', 'けんげん', 'リリース', 'りりーす', '発動'],
+    alias: ['放て', 'はなて', '今こそ放て', 'いまこそはなて', 'ハナテ', '顕現せよ', '顕現', 'けんげん', 'リリース', 'りりーす', '発動'],
     hint: '「起句なき詠唱は、半分しか届かない」', meaning: '起句:詠唱を完成させる。無いと略式詠唱となり威力×0.7。' },
 ];
 
@@ -229,9 +231,12 @@ export function chantGaps(rawText, ids, grace = 0) {
 }
 // ---- 短縮魔術: 詠唱文をどれだけ唱えたか (0〜1) ----
 // 「汝 紅蓮 ランス」のように核の言葉だけでも術は発動するが、省いた字数の割合だけ弱まる
+// 音声認識の聞き違い(同音語)を正しい字に戻してから、詠唱をどれだけ唱えたかを測る
+const HOMOPHONES = [[/アドランス|あどらんす|アダナス|あだなす/g, '仇なす'], [/何時に+|何児に|難事に/g, '汝に'], [/成功|精巧|性交|製鋼|精工|聖公|生光/g, '聖光']];
+export const fixHomophones = t => HOMOPHONES.reduce((s, [re, to]) => s.replace(re, to), t || '');
 export function chantCoverage(rawText, ids, grace = 0) {
   if (!ids.length) return 1;
-  const s = toHira(normalize(rawText));
+  const s = toHira(normalize(fixHomophones(rawText)));
   let sum = 0;
   for (const id of ids) {
     const w = WORD_BY_ID[id];
@@ -246,7 +251,7 @@ export function chantCoverage(rawText, ids, grace = 0) {
   return Math.min(1, sum / ids.length + grace);
 }
 // ---- 名詠: 詠唱が「文章として成立」しているほど術は強まる ----
-// 完唱: どの言霊も一節を最後まで唱えた / 語順: 対象→修飾→属性→形→効果→起句 の順 / 結句: 起句(今こそ解き放て)で締めた
+// 完唱: どの言霊も一節を最後まで唱えた / 語順: 対象→修飾→属性→形→効果→起句 の順 / 結句: 起句(今こそ放て)で締めた
 const ORDER = { target: 0, mod: 1, element: 2, form: 3, effect: 4, trigger: 5 };
 export function eloquence(rawText, known, lenient = false) {
   const s = toHira(normalize(rawText));
@@ -265,7 +270,7 @@ export function eloquence(rawText, known, lenient = false) {
 
 // 最初から使える: 属性ひとつ・回復・守護・灯火・威力アップ(覇気)と、出し方「発射」。設置(刻印)・衛星・付与などは古文書で学ぶ
 // はじめの属性は迷宮へ降りる前に選ぶ (ここには入れない)
-export const STARTER_WORDS = ['heal', 'ward', 'light', 'might', 'lance', 'enemy', 'self', 'ally', 'release'];
+export const STARTER_WORDS = ['heal', 'ward', 'light', 'might', 'lance', 'enemy', 'self', 'ally']; // 締めは魔法の名で(「放て」は使わない)
 
 // ---- 正規化: カタカナ→ひらがな、空白・記号除去 ----
 export function normalize(s) {
@@ -277,7 +282,7 @@ export function normalize(s) {
 }
 
 const ALIAS_TABLE = [];
-for (const w of WORDS) for (const a of w.alias) ALIAS_TABLE.push({ n: normalize(a), id: w.id });
+for (const w of WORDS) for (const a of new Set([...w.alias, w.ruby].filter(Boolean))) ALIAS_TABLE.push({ n: normalize(a), id: w.id });
 ALIAS_TABLE.sort((a, b) => b.n.length - a.n.length);
 
 // 短い核で書かれた呪文(古い保存データ等)を、正式な詠唱文に書き直す
@@ -492,6 +497,13 @@ function calledByName(text, spell) {
 const CALL_GROUPS = [...Object.values(CALL_EL), ...Object.values(CALL_FORM), ...Object.values(CALL_EFF)];
 // 長い名から順に、重ならないように拾う(「サテライト」の中の「ライト」を灯火と取り違えない)
 const CALL_VARIANTS = CALL_GROUPS.flatMap(g => g.map(a => ({ n: normalize(a), g }))).sort((a, b) => b.n.length - a.n.length);
+// 締めを魔法の名にした詠唱文を作る(「放て」は取り除き、名が無ければ付ける)
+export function withCallName(text) {
+  const base = expandChant(text).split(' ').filter(t => t !== WORD_BY_ID.release.text).join(' ');
+  const tail = (text.match(/\s([ァ-ヶー・]+)\s*$/) || [])[1];
+  const name = tail || callName(compile(base, null));
+  return name ? base + ' ' + name : base;
+}
 export function callTail(text) {
   let t = normalize(text);
   const found = new Set();

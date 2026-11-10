@@ -27,4 +27,7 @@ copyDir(path.join(NM, '@noble/secp256k1'), path.join(OUT, 'nm/@noble/secp256k1')
 const HF = path.join(NM, '@huggingface/transformers/dist'), HF_OUT = path.join(OUT, 'nm/@huggingface/transformers/dist');
 fs.mkdirSync(HF_OUT, { recursive: true });
 for (const f of ['transformers.min.js', 'ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm']) fs.copyFileSync(path.join(HF, f), path.join(HF_OUT, f));
+// 読みの辞書 (聞き取った漢字をひらがなに分解する)
+copyDir(path.join(NM, 'kuromoji/build'), path.join(OUT, 'nm/kuromoji/build'));
+copyDir(path.join(NM, 'kuromoji/dict'), path.join(OUT, 'nm/kuromoji/dict'));
 console.log('vendor/ を作成しました');

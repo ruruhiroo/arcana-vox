@@ -38,6 +38,10 @@ const HF = path.join(NM, '@huggingface/transformers/dist'), HF_OUT = path.join(O
 fs.mkdirSync(HF_OUT, { recursive: true });
 for (const f of ['transformers.min.js', 'ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm']) fs.copyFileSync(path.join(HF, f), path.join(HF_OUT, f));
 
+// 読みの辞書 (聞き取った漢字をひらがなに分解する)
+copyDir(path.join(NM, 'kuromoji/build'), path.join(OUT, 'vendor/nm/kuromoji/build'));
+copyDir(path.join(NM, 'kuromoji/dict'), path.join(OUT, 'vendor/nm/kuromoji/dict'));
+
 // GitHub Pages に「Jekyll で加工しないで」と伝える
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
 

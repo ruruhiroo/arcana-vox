@@ -16,12 +16,13 @@
     "predist:steam": "node tools/vendor.js"
   },
   "devDependencies": {
+    "@huggingface/transformers": "^3.7.6",
     "electron": "^45.2.3",
     "electron-builder": "^25.1.8",
-    "vosk-browser": "^0.0.8",
-    "@huggingface/transformers": "^3.7.6"
+    "vosk-browser": "^0.0.8"
   },
   "dependencies": {
+    "kuromoji": "^0.1.2",
     "three": "^0.160.0",
     "trystero": "^0.26.0"
   },

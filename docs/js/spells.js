@@ -9,7 +9,7 @@ import { bigImpact, updateVfx } from './vfx.js';
 import { updateDying } from './entities.js';
 
 // 中級(威力1.0)で与える基本ダメージ。初級は約0.58倍、上級は約1.6倍
-const BASE = { fire: 60, ice: 55, thunder: 66, holy: 58, void: 58, wind: 45 };
+const BASE = { fire: 60, ice: 55, thunder: 66, holy: 58, void: 76, wind: 45 };
 let GLOW = null, RUNE = null;
 
 // ---------- 粒子 ----------
@@ -409,7 +409,7 @@ export const FX = {
     if (t.isMage && t.downed) return;
     // 状態異常
     const pw = opts.power || 1;
-    // 炎=燃焼(じわじわ焼く) / 氷=鈍足、中級以上は凍結 / 雷=麻痺 / 聖=聖痕(受けるダメージ増) / 闇=侵蝕(与えるダメージ減)+吸収 / 風=吹き飛ばし
+    // 炎=燃焼(じわじわ焼く) / 氷=鈍足、中級以上は凍結 / 雷=麻痺 / 聖=聖痕(受けるダメージ増) / 闇=断滅(体力が半分を切った相手に1.5倍) / 風=吹き飛ばし
     const tier = opts.tier || 0, tag = (txt, col) => { if (!opts.silent) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.5, 0)), txt, col); };
     // 濡れた敵: 氷で凍りつき、雷がよく通る(清流と同じ術でも効く)
     const wet = t.status.wet || (opts.atk || []).includes('water');
@@ -420,7 +420,7 @@ export const FX = {
       if (e === 'ice') { t.status.slow = { t: 3 * pw }; if (tier >= 1 && !t.isMage) { t.stun = Math.max(t.stun || 0, 0.8 + 0.5 * tier); t.status.frozen = { t: 0.8 + 0.5 * tier }; tag('凍結', '#9fe4ff'); } else tag('鈍足', '#9fe4ff'); }
       if (e === 'thunder' && !t.isMage) { t.stun = Math.max(t.stun || 0, 0.5 + 0.2 * tier); tag('麻痺', '#d8c8ff'); }
       if (e === 'holy') { if (!t.status.stigma) tag('聖痕', '#fff0b0'); t.status.stigma = { t: 4 + tier }; }
-      if (e === 'void') { if (!t.status.erosion) tag('侵蝕', '#c080ff'); t.status.erosion = { t: 4 + tier }; if (src && src.alive && opts.silent !== true) FX.heal(src, a * 0.35, src, true); }
+      if (e === 'void' && !opts.silent && t.maxHp && t.hp < t.maxHp * 0.5) { a *= 1.5; tag('断滅', '#c080ff'); } // 弱った者ほど深く抉る
       if (e === 'wind' && opts.dir) { const k = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar((13 + 4 * tier) * pw); if (t.knock) t.knock.add(k); else if (t.vel) t.pushV = k; tag('吹き飛ばし', '#9effc8'); }
     }
     // 攻撃の種類: 凍結・束縛・衝撃・蝕毒

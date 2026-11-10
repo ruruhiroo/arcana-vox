@@ -91,7 +91,7 @@ export function setContinuous(v) {
 // 文法: 言霊の別名のうち一語のもの + 助詞 + [unk](それ以外の発話)。モデルに無い語は自動で無視される
 const PARTICLES = ['に', 'の', 'よ', 'を', 'て', 'と'];
 // モデルの語彙に一語として無い言霊は、語彙にある音の並びで表す(正規化で空白が消え別名と一致する)
-const PHRASES = ['ライ テイ', 'セイ クリード', '我 に', 'われ に', '汝 に', '同胞 に', 'はら から に', '放 て', '解き 放 て', '神聖'];
+const PHRASES = ['ライ テイ', 'セイ クリード', '我 に', 'われ に', '汝 に', '同胞 に', 'はら から に', '放 て', '今 こそ 放 て', 'いま こそ', '神聖'];
 let vosk = { model: null, recognizer: null, ctx: null, listening: false, loading: false, failed: false, lastPartial: '' };
 
 async function loadScript(src) {

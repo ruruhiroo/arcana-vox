@@ -3,7 +3,7 @@ import { itemIcon } from './icons.js';
 // HUD・魔導書・調合・ミニマップ
 import * as THREE from 'three';
 import { G, clamp } from './state.js';
-import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, expandChant, chantGaps, chantCoverage, STARTER_WORDS, callName, CALL_WORDS, callTail } from './lexicon.js';
+import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, expandChant, chantGaps, chantCoverage, STARTER_WORDS, callName, CALL_WORDS, callTail, withCallName } from './lexicon.js';
 import { W, H, CELL, lineOfSight } from './dungeon.js';
 import { keyOf } from './controls.js';
 import { SPIRITS, BOND_NAMES, bondProgress } from './spirits.js';
@@ -14,7 +14,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 // ---------- 魔導書の永続化 ----------
 const SAVE_KEY = 'arcana_vox_grimoire_v1';
 // 呪文の研究: 覚えた言霊をすべて分類ごとに並べる(未習得の言霊は古文書で覚えるまで出てこない)
-const CHIP_ORDER = [['target', '対象'], ['element', '力(属性)'], ['effect', '力(効果)'], ['form', '出し方'], ['mod', '修飾'], ['trigger', '起句']];
+const CHIP_ORDER = [['target', '対象'], ['element', '力(属性)'], ['effect', '力(効果)'], ['form', '出し方'], ['mod', '修飾']]; // 締めは魔法の名(起句「放て」は出さない)
 function chipGroups() {
   return CHIP_ORDER.map(([cat, label]) => {
     const ws = WORDS.filter(w => w.cat === cat && G.known.has(w.id));
@@ -110,6 +110,12 @@ export function loadBook() {
     for (const sp of BOOK.spells) for (const [id, o] of olds) if (WORD_BY_ID[id]) sp.text = sp.text.split(o).join(' ' + WORD_BY_ID[id].core + ' ');
     for (const sp of BOOK.spells) { const m = sp.text.match(/\s([ァ-ヶー・]+)\s*$/), tail = m ? m[1] : callTail(sp.text); sp.text = expandChant(sp.text) + (tail ? ' ' + tail : ''); }
     BOOK.chantVer = 9;
+  }
+  if (BOOK.chantVer < 10) {
+    // 締めの「今こそ放て」をやめ、魔法の名で締める
+    for (const sp of BOOK.spells) sp.text = withCallName(sp.text);
+    BOOK.known = BOOK.known.filter(id => id !== 'release'); BOOK.understood = (BOOK.understood || []).filter(id => id !== 'release');
+    BOOK.chantVer = 10;
   }
   BOOK.mastery ||= {};
   G.known = new Set(BOOK.known);
@@ -346,7 +352,7 @@ function renderBook() {
             <button class="btn small ghost" id="spDel" style="margin-left:auto">削除</button>
           </div>
           <p class="muted">文法: [対象] [修飾] [属性…] [形] [効果…] [起句]。順番は自由。<br>
-          例: 「同胞に 聖光 癒息 円環 放て」= 周囲の味方をまとめて大回復 / 「刻印 氷獄 放て」= 踏むと凍る罠 / 「颶風 城壁 放て」= 触れた敵を吹き飛ばす壁</p>
+          例: 「同胞に 聖光 癒息 円環」= 周囲の味方をまとめて大回復 / 「刻印 氷獄」= 踏むと凍る罠 / 「颶風 城壁」= 触れた敵を吹き飛ばす壁(最後に魔法の名を唱えて締める)</p>
         </div>
       </div>`;
     const upd = () => { const sp = compile($('spText').value, G.known); $('spFormula').innerHTML = esc(formula(sp)) + (sp.unknownWords.length ? `<br><span class="muted">未習得: ${sp.unknownWords.map(i => '？？？').join(' ')}</span>` : ''); };
@@ -397,7 +403,7 @@ function renderBook() {
   } else {
     pg.innerHTML = `<h3>魔導師の心得</h3><div style="line-height:2;font-size:15px">
       <p>■ <b>詠唱</b> — <b>V</b>を押しながら呪文を声に出す(離すと発動)。<b>C</b>で常時詠唱(ハンズフリー)。マイクが無い場合は<b>Enter</b>で文字詠唱。声でも文字でも、詠唱には時間がかかり、その間は足が鈍る。</p>
-      <p>■ <b>起句</b> — 「放て」で詠唱を締めると完全詠唱。無いと略式(威力70%)。</p>
+      <p>■ <b>魔法の名</b> — 最後に魔法の名(ファイア・ヒーリング など)を唱えて締めると完全詠唱。無いと略式(威力70%)。</p>
       <p>■ <b>詠唱妨害</b> — 詠唱中に強打(12以上)を受けると術が霧散する。「守護」で防げる。仲間が長い呪文を唱えている間は守ってやれ。</p>
       <p>■ <b>読み合い</b> — 敵の魔導師の詠唱は頭上に表示され、声も聞こえる。「穿槍」が聞こえたら「城壁」で阻め。「天雨」なら足元の魔法陣から離れろ。</p>
       <p>■ <b>属性と相性</b> — 骸骨兵・怨霊は聖光に弱い。粘獣は紅蓮、石像兵は雷霆に弱い。複数の属性を混ぜると効果が融合する。</p>

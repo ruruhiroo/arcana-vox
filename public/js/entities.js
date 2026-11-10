@@ -6,11 +6,11 @@ import { textSprite, runeCircleTex, glowSprite } from './textures.js';
 import { sfx } from './audio.js';
 import { buildEnemyModel, animateEnemy } from './enemymodels.js';
 import { makeModel, animateGlb, dieGlb } from './glbmodels.js';
-import { compile } from './lexicon.js';
+import { compile, withCallName } from './lexicon.js';
 // 写本師が唱える呪文 (プレイヤーと同じ言霊)
 import { WORD_BY_ID } from './lexicon.js';
 const WORDS_TEXT = new Proxy({}, { get: (_, id) => WORD_BY_ID[id]?.text || '' });
-const SCRIBE_SPELLS = ['汝に 紅蓮 穿槍 放て', '汝に 氷獄 天雨 放て', '汝に 雷霆 穿槍 放て', '汝に 深淵 穿槍 放て'];
+const SCRIBE_SPELLS = ['汝に 紅蓮 穿槍', '汝に 氷獄 天雨', '汝に 雷霆 穿槍', '汝に 深淵 穿槍'].map(withCallName);
 
 let RUNE_TEX = null, GLOW_TEX = null;
 

@@ -4,6 +4,9 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { glowSprite } from './textures.js';
 import { G } from './state.js';
+import { itemModel } from './icons3d.js';
+// Blender の模型の中から名前で部品を探す(書き出しで lid → lid001 のように番号が付くことがある)
+const part = (o, name) => { let hit = null; const re = new RegExp('^' + name + '(_?\\.?\\d+)?$'); o.traverse(x => { if (!hit && re.test(x.name)) hit = x; }); return hit; };
 // ときどき小さくきらめく(見つけやすさのため。光の輪や浮遊はしない)
 function glint(pos, color, dt, rate = 0.6) { if (G.particles && Math.random() < dt * rate) G.particles.emit(pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.3, Math.random() * 0.15, (Math.random() - 0.5) * 0.3)), new THREE.Vector3(0, 0.25, 0), color, 0.07, 0.9); }
 
@@ -109,24 +112,56 @@ function makeHerb() {
 // ---- 魔晶: 岩から伸びる六角柱の結晶の群れ ----
 function makeCrystal() {
   const g = new THREE.Group();
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32, 1), stoneMat); rock.scale.set(1.2, 0.55, 1); rock.position.y = 0.12; rock.castShadow = true; g.add(rock);
-  const mat = new THREE.MeshPhysicalMaterial({ color: 0x7ac0ff, emissive: 0x2a60e0, emissiveIntensity: 0.7, roughness: 0.08, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true, opacity: 0.88 });
-  const core = new THREE.MeshBasicMaterial({ color: 0xcfe8ff });
-  const shards = [];
-  for (let i = 0; i < 6; i++) {
-    const h = i === 0 ? 0.75 : rnd(0.3, 0.55), r = i === 0 ? 0.09 : rnd(0.04, 0.07);
-    const s = new THREE.Group();
-    const prism = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.1, h, 6), mat); prism.position.y = h / 2;
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(r, r * 2.2, 6), mat); tip.position.y = h + r * 1.1;
-    const inner = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.35, r * 0.35, h * 0.8, 6), core); inner.position.y = h * 0.45;
-    s.add(prism, tip, inner);
-    const a = i / 6 * Math.PI * 2;
-    s.position.set(i ? Math.cos(a) * 0.14 : 0, 0.18, i ? Math.sin(a) * 0.14 : 0);
-    s.rotation.set(i ? Math.cos(a) * 0.5 : 0, 0, i ? -Math.sin(a) * 0.5 : 0);
-    g.add(s); shards.push(s);
+  const lean = new THREE.Group(); g.add(lean); g.userData.lean = lean; // 壁から離れる向きへ傾ける
+  const mat = new THREE.MeshPhysicalMaterial({ color: 0x86c4ff, emissive: 0x2050c0, emissiveIntensity: 0.55, roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08, transparent: true, opacity: 0.9, flatShading: true });
+  // 根元: 床に埋もれた小石と砕けた欠片
+  for (let i = 0; i < 5; i++) { const r = new THREE.Mesh(new THREE.DodecahedronGeometry(rnd(0.04, 0.1), 0), stoneMat); const a = rnd(0, 6.28), d = rnd(0.12, 0.34); r.position.set(Math.cos(a) * d, 0.02, Math.sin(a) * d); r.scale.y = 0.6; g.add(r); }
+  // 結晶: 大きい柱が数本と、まわりに小さな柱。長さも太さも角度もばらばら
+  const n = 7 + Math.floor(rnd(0, 4));
+  for (let i = 0; i < n; i++) {
+    const big = i < 2;
+    const h = big ? rnd(0.55, 0.95) : rnd(0.14, 0.42), r = big ? rnd(0.06, 0.095) : rnd(0.025, 0.05);
+    const geo = new THREE.CylinderGeometry(r * 0.92, r, h, 6); geo.translate(0, h / 2, 0);
+    const tip = new THREE.ConeGeometry(r * 0.92, r * rnd(1.6, 2.6), 6); tip.translate(0, h + r * 1.0, 0);
+    const prism = new THREE.Mesh(geo, mat), point = new THREE.Mesh(tip, mat);
+    const s = new THREE.Group(); s.add(prism, point);
+    const a = rnd(0, 6.28), d = big ? rnd(0, 0.06) : rnd(0.06, 0.24);
+    s.position.set(Math.cos(a) * d, -0.02, Math.sin(a) * d * 0.7);
+    // 外側の柱ほど外へ開く
+    const tilt = big ? rnd(0.05, 0.25) : rnd(0.35, 0.9);
+    s.rotation.set(Math.sin(a) * tilt, rnd(0, 1), -Math.cos(a) * tilt);
+    lean.add(s);
   }
-  const glow = glowSprite3(0x5aa0ff, 0.7, 0.18); glow.position.y = 0.4; g.add(glow);
-  g.userData.animate = (dt, t) => { mat.emissiveIntensity = 0.7 + Math.sin(t * 1.4) * 0.2; glow.material.opacity = 0.14 + Math.sin(t * 1.4) * 0.05; };
+  const glow = glowSprite3(0x5aa0ff, 0.9, 0.16); glow.position.y = 0.35; lean.add(glow);
+  g.userData.animate = (dt, t) => { mat.emissiveIntensity = 0.55 + Math.sin(t * 1.3) * 0.15; glow.material.opacity = 0.12 + Math.sin(t * 1.3) * 0.04; };
+  return g;
+}
+
+// ---- 灯り茸: 湿った床に群れて生える、ほのかに光る茸。摘むと魔力が少し戻る ----
+function makeMushroom(odd = false) {
+  const g = new THREE.Group();
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0xd8d0b8, roughness: 0.8 });
+  const hue = odd ? [0xc060ff, 0x6a20a0] : Math.random() < 0.5 ? [0x7ad8ff, 0x2a90c0] : [0x9affb0, 0x30a060];
+  const capMat = new THREE.MeshStandardMaterial({ color: hue[0], emissive: hue[1], emissiveIntensity: 0.9, roughness: 0.5 });
+  const gillMat = new THREE.MeshBasicMaterial({ color: hue[0] });
+  const n = 4 + Math.floor(rnd(0, 4));
+  const caps = [];
+  for (let i = 0; i < n; i++) {
+    const big = i === 0, h = big ? rnd(0.22, 0.32) : rnd(0.08, 0.2), cr = big ? rnd(0.09, 0.13) : rnd(0.035, 0.07);
+    const m = new THREE.Group();
+    const stemGeo = new THREE.CylinderGeometry(cr * 0.22, cr * 0.32, h, 7); stemGeo.translate(0, h / 2, 0);
+    const p = stemGeo.attributes.position; for (let j = 0; j < p.count; j++) { const y = p.getY(j); p.setX(j, p.getX(j) + Math.sin(y * 9) * 0.008); } // 少し曲がる
+    stemGeo.computeVertexNormals();
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(cr, 12, 7, 0, Math.PI * 2, 0, Math.PI / 2), capMat); cap.scale.y = 0.55; cap.position.y = h;
+    const gill = new THREE.Mesh(new THREE.CircleGeometry(cr * 0.95, 12), gillMat); gill.rotation.x = Math.PI / 2; gill.position.y = h - 0.002;
+    m.add(new THREE.Mesh(stemGeo, stemMat), cap, gill);
+    if (odd) for (let k = 0; k < 6; k++) { const dot = new THREE.Mesh(new THREE.SphereGeometry(cr * 0.14, 6, 4), new THREE.MeshBasicMaterial({ color: 0xfff0ff })); const a = Math.random() * 6.28, el = 0.3 + Math.random() * 0.9; dot.position.set(Math.cos(a) * Math.cos(el) * cr, h + Math.sin(el) * cr * 0.55, Math.sin(a) * Math.cos(el) * cr); m.add(dot); }
+    const a = rnd(0, 6.28), d = big ? 0 : rnd(0.06, 0.22);
+    m.position.set(Math.cos(a) * d, 0, Math.sin(a) * d); m.rotation.set(rnd(-0.25, 0.25), 0, rnd(-0.25, 0.25));
+    g.add(m); caps.push(cap);
+  }
+  const glow = glowSprite3(hue[0], 0.8, 0.2); glow.position.y = 0.18; g.add(glow);
+  g.userData.animate = (dt, t) => { capMat.emissiveIntensity = 0.75 + Math.sin(t * 0.9) * 0.2; glint(g.position.clone().setY(g.position.y + 0.25), hue[0], dt, 0.35); };
   return g;
 }
 
@@ -156,16 +191,61 @@ function makeChest() {
   // 隙間から漏れる光と、中の宝の輝き(開くと見える)
   const seep = glowSprite3(0xffc860, 1.0, 0.16); seep.position.set(0, H + 0.12, 0); seep.scale.set(1.4, 0.45, 1);
   const treasure = glowSprite3(0xffd76a, 0.9, 0); treasure.position.set(0, H + 0.1, 0);
-  const coins = new THREE.Mesh(new THREE.CylinderGeometry(W / 2 - 0.06, W / 2 - 0.06, 0.04, 16), new THREE.MeshStandardMaterial({ color: 0xd8a830, metalness: 1, roughness: 0.35, emissive: 0x3a2a00 }));
-  coins.scale.z = (D - 0.1) / (W - 0.12); coins.position.y = H; coins.visible = false;
+  // 中身: 金貨の山と散らばった金貨、宝石、杯 (開くと見える)
+  const coins = new THREE.Group(); coins.visible = false;
+  const gold = new THREE.MeshStandardMaterial({ color: 0xe0b040, metalness: 0.85, roughness: 0.3, emissive: 0x5a3a00, emissiveIntensity: 0.6 });
+  const pile = new THREE.Mesh(new THREE.SphereGeometry(0.4, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), gold);
+  pile.scale.set(1.15, 0.32, 0.62); pile.position.y = H + 0.06; coins.add(pile);
+  const coinGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.008, 12);
+  for (let i = 0; i < 34; i++) {
+    const c = new THREE.Mesh(coinGeo, gold); const a = rnd(0, 6.28), d = Math.sqrt(Math.random());
+    const x = Math.cos(a) * d * 0.42, z = Math.sin(a) * d * 0.24;
+    const top = 0.13 * Math.max(0, 1 - (x * x) / 0.21 - (z * z) / 0.058);
+    c.position.set(x, H + 0.07 + Math.sqrt(Math.max(0, top)) * 0.35 + rnd(0, 0.01), z); c.rotation.set(rnd(-0.6, 0.6), rnd(0, 3), rnd(-0.6, 0.6)); coins.add(c);
+  }
+  const gemCols = [0xff3050, 0x40a0ff, 0x40e080, 0xc060ff];
+  for (let i = 0; i < 4; i++) {
+    const col = gemCols[i % gemCols.length];
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(rnd(0.035, 0.055), 0), new THREE.MeshPhysicalMaterial({ color: col, emissive: col, emissiveIntensity: 0.5, roughness: 0.05, clearcoat: 1 }));
+    gem.position.set(rnd(-0.3, 0.3), H + 0.16 + rnd(0, 0.04), rnd(-0.12, 0.12)); gem.rotation.set(rnd(0, 3), rnd(0, 3), 0); gem.scale.y = 1.4; coins.add(gem);
+  }
+  const cup = new THREE.Group();
+  const bowlG = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.035, 0.09, 12, 1, true), gold); bowlG.position.y = 0.16; bowlG.material.side = THREE.DoubleSide;
+  const stemG = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.1, 6), gold); stemG.position.y = 0.07;
+  const footG = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.015, 12), gold); footG.position.y = 0.01;
+  cup.add(bowlG, stemG, footG); cup.position.set(0.3, H + 0.08, 0.05); cup.rotation.z = -0.35; coins.add(cup);
   g.add(seep, treasure, coins);
   let open = 0, opening = false;
   g.userData.lid = lid; g.userData.seep = seep;
   g.userData.open = () => { opening = true; coins.visible = true; };
   g.userData.animate = (dt, t) => {
-    if (opening && open < 1) { open = Math.min(1, open + dt * 2.2); lid.rotation.x = -1.9 * (1 - Math.pow(1 - open, 3)); treasure.material.opacity = 0.85 * open; seep.visible = false; }
+    if (opening && open < 1) { open = Math.min(1, open + dt * 2.2); lid.rotation.x = -1.9 * (1 - Math.pow(1 - open, 3)); treasure.material.opacity = 0.3 * open; seep.visible = false; }
     else if (!opening) seep.material.opacity = 0.12 + Math.sin(t * 1.5) * 0.04;
-    else treasure.material.opacity = 0.5 + Math.sin(t * 3) * 0.15;
+    else treasure.material.opacity = 0.22 + Math.sin(t * 3) * 0.06;
+  };
+  return g;
+}
+
+// Blender で作った宝箱(板張りの木箱・豪華な漆塗りの箱)。蓋は後ろの蝶番で開く
+function makeBlenderChest(data) {
+  const m = itemModel(data?.rich ? 'chest_rich' : 'chest');
+  if (!m) return null;
+  const lid = part(m, 'lid'), treasure = part(m, 'treasure');
+  if (!lid) return null;
+  const g = new THREE.Group(); g.add(m);
+  m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.material.side = THREE.DoubleSide; } }); // 薄い帯の裏が抜けて見えないように
+  if (treasure) treasure.visible = false;
+  const H = 0.57;
+  const seep = glowSprite3(data?.rich ? 0xffa0a0 : 0xffc860, 1.0, 0.16); seep.position.set(0, H + 0.06, 0); seep.scale.set(1.4, 0.45, 1);
+  const shine = glowSprite3(0xffd76a, 0.9, 0); shine.position.set(0, H + 0.1, 0);
+  g.add(seep, shine);
+  let open = 0, opening = false;
+  g.userData.lid = lid; g.userData.seep = seep;
+  g.userData.open = () => { opening = true; if (treasure) treasure.visible = true; };
+  g.userData.animate = (dt, t) => {
+    if (opening && open < 1) { open = Math.min(1, open + dt * 2.2); lid.rotation.x = -1.9 * (1 - Math.pow(1 - open, 3)); shine.material.opacity = 0.3 * open; seep.visible = false; }
+    else if (!opening) seep.material.opacity = 0.12 + Math.sin(t * 1.5) * 0.04;
+    else shine.material.opacity = 0.22 + Math.sin(t * 3) * 0.06;
   };
   return g;
 }
@@ -203,6 +283,8 @@ export function makePickupMesh(kind, data = {}, matColors = {}) {
   if (kind === 'scroll') return makeScroll();
   if (kind === 'herb') return makeHerb();
   if (kind === 'crystal') return makeCrystal();
-  if (kind === 'chest') return makeChest();
+  if (kind === 'mushroom') return makeMushroom();
+  if (kind === 'oddshroom') return makeMushroom(true);
+  if (kind === 'chest') return makeBlenderChest(data) || makeChest();
   return makeLoot(data.mat, matColors[data.mat] || 0xffffff);
 }

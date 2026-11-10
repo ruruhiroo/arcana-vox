@@ -3,133 +3,81 @@ import * as THREE from 'three';
 import { G, seeded } from './state.js';
 import { stoneWall, stoneFloor, ceilingTex, glowSprite } from './textures.js';
 import { buildDecor } from './decor.js';
+import { buildLayout } from './layout.js';
 
-export const CELL = 4, WALL_H = 5.2, W = 46, H = 46;
+export const CELL = 4, WALL_H = 6.4, W = 52, H = 52;
 export const STEP = 0.7;
 export const CLIMB = 2.6; // 魔物がよじ登れる高さ // 歩いて登れる段差の高さ。これより高い所は跳んで登る
 export const FINAL_FLOOR = 10; // 大目標: この層の最奥に『原初の魔導書』が眠る
 let TEX = null;
 
+// 迷宮の入口の広場: 敵はいない。北の門(転移陣)から第1層へ
+function makeHub(seed) {
+  const grid = new Uint8Array(W * H), hgt = new Float32Array(W * H);
+  const x0 = 20, y0 = 21, w = 11, h = 10;
+  const cells = [];
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) { grid[y * W + x] = 1; cells.push([x, y]); }
+  // 門の前の奥まった通路
+  const gx = x0 + (w >> 1);
+  for (let y = y0 - 2; y < y0; y++) { grid[y * W + gx] = 1; cells.push([gx, y]); }
+  const cellPos = (cx, cy) => new THREE.Vector3((cx + 0.5) * CELL, 0, (cy + 0.5) * CELL);
+  const room = { id: 0, mod: 'hub', kind: 'room', x: x0, y: y0, w, h, cx: gx, cy: y0 + 6, cells, flat: true, theme: 'shrine' };
+  const torches = [], decor = [];
+  for (const [xx, yy] of cells) for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+    if (grid[(yy + dy) * W + xx + dx]) continue;
+    if ((xx + yy) % 3 === 0) torches.push({ pos: new THREE.Vector3((xx + 0.5 + dx * 0.47) * CELL, 2.8, (yy + 0.5 + dy * 0.47) * CELL), dir: [dx, dy], cell: [xx + dx, yy + dy] });
+  }
+  // 門の両脇の像、隅の樽や木箱
+  decor.push({ type: 'statue', pos: cellPos(gx - 1, y0).add(new THREE.Vector3(0, 0, -1.2)), rot: 0, s: 1.2 });
+  decor.push({ type: 'statue', pos: cellPos(gx + 1, y0).add(new THREE.Vector3(0, 0, -1.2)), rot: 0, s: 1.2 });
+  for (const [cx, cy, t] of [[x0, y0 + h - 1, 'barrel'], [x0 + 1, y0 + h - 1, 'crate'], [x0 + w - 1, y0 + h - 1, 'crate'], [x0 + w - 1, y0 + 3, 'barrel'], [x0, y0 + 3, 'oilbarrel']]) decor.push({ type: t, pos: cellPos(cx, cy), rot: Math.random() * 6, s: 1 });
+  for (let k = 0; k < 6; k++) decor.push({ type: 'moss', pos: cellPos(x0 + Math.floor(Math.random() * w), y0 + Math.floor(Math.random() * h)), rot: 0, s: 1 });
+  decor.push({ type: 'vines', pos: cellPos(x0, y0 + 5).add(new THREE.Vector3(-1.3, 0, 0)), rot: Math.PI / 2, s: 1 });
+  decor.push({ type: 'vines', pos: cellPos(x0 + w - 1, y0 + 6).add(new THREE.Vector3(1.3, 0, 0)), rot: -Math.PI / 2, s: 1 });
+  // 得意属性の祭壇: 南側に弧を描いて六つ
+  const ELS = ['fire', 'ice', 'thunder', 'wind', 'holy', 'void'];
+  const c = cellPos(gx, y0 + 6);
+  const shrines = ELS.map((el, i) => { const a = Math.PI * (0.15 + 0.7 * i / 5); return { el, pos: c.clone().add(new THREE.Vector3(-Math.cos(a) * 11, 0, Math.sin(a) * 6.5)) }; });
+  const braziers = [cellPos(gx - 2, y0 + 1), cellPos(gx + 2, y0 + 1)];
+  return {
+    hub: true, seed, floor: 0, grid, hgt, plats: [], rooms: [room], start: room, portalRoom: room, sanctRoom: room,
+    portal: cellPos(gx, y0 - 1), spawns: [], scrolls: [], chests: [], herbs: [], crystals: [], torches, decor, braziers, shrines,
+    secrets: [], richChests: [], roomEvents: [], mushrooms: [], oddShrooms: [], gasTraps: [],
+  };
+}
 export function generate(seed, floor) {
+  if (floor === 0) return makeHub(seed);
   const r = seeded(seed);
   const ri = (a, b) => a + Math.floor(r() * (b - a + 1));
   const pick = arr => arr[Math.floor(r() * arr.length)];
-  const grid = new Uint8Array(W * H);
-  const set = (x, y, v = 1) => { if (x > 0 && y > 0 && x < W - 1 && y < H - 1) grid[y * W + x] = v; };
-  const rooms = [];
-  const want = 8 + Math.min(6, floor);
-  // ---- 部屋: 大きさと形のちがう「部屋の型」を組み合わせる ----
-  for (let tries = 0; tries < 500 && rooms.length < want; tries++) {
-    const big = r() < 0.25;
-    const w = big ? ri(7, 11) : ri(3, 7), h = big ? ri(7, 10) : ri(3, 7);
-    const x = ri(2, W - w - 3), y = ri(2, H - h - 3);
-    if (rooms.some(o => x < o.x + o.w + 2 && x + w + 2 > o.x && y < o.y + o.h + 2 && y + h + 2 > o.y)) continue;
-    rooms.push({ x, y, w, h, cx: x + (w >> 1), cy: y + (h >> 1) });
-  }
-  const SHAPES = ['rect', 'pillars', 'cross', 'round', 'lshape', 'cave', 'rect'];
-  rooms.forEach((rm, i) => {
-    let shape = pick(SHAPES);
-    if (i === 0) shape = 'rect';
-    if ((shape === 'pillars' || shape === 'cross') && (rm.w < 6 || rm.h < 6)) shape = 'round';
-    if (shape === 'lshape' && (rm.w < 5 || rm.h < 5)) shape = 'rect';
-    rm.shape = shape;
-    for (let yy = rm.y; yy < rm.y + rm.h; yy++) for (let xx = rm.x; xx < rm.x + rm.w; xx++) {
-      const lx = xx - rm.x, ly = yy - rm.y, ex = rm.w - 1 - lx, ey = rm.h - 1 - ly;
-      let on = true;
-      if (shape === 'round') on = !((lx === 0 || ex === 0) && (ly === 0 || ey === 0));
-      if (shape === 'cross') { const bx = Math.abs(xx - rm.cx) <= Math.max(1, rm.w >> 2), by = Math.abs(yy - rm.cy) <= Math.max(1, rm.h >> 2); on = bx || by; }
-      if (shape === 'lshape') on = lx < Math.ceil(rm.w / 2) || ly >= Math.floor(rm.h / 2);
-      if (on) set(xx, yy);
-    }
-    // 列柱の広間: 内側に柱を立てる(柱は壊せる壁)
-    if (shape === 'pillars') for (let yy = rm.y + 1; yy < rm.y + rm.h - 1; yy += 2) for (let xx = rm.x + 1; xx < rm.x + rm.w - 1; xx += 2) if (Math.abs(xx - rm.cx) + Math.abs(yy - rm.cy) > 1) set(xx, yy, 0);
-    set(rm.cx, rm.cy); // 中央は必ず床
-  });
-  // 洞窟の部屋: 縁を崩して自然な形に
-  for (const rm of rooms) if (rm.shape === 'cave') {
-    for (let k = 0; k < rm.w * rm.h * 0.5; k++) {
-      const xx = ri(rm.x - 1, rm.x + rm.w), yy = ri(rm.y - 1, rm.y + rm.h);
-      const edge = xx <= rm.x || yy <= rm.y || xx >= rm.x + rm.w - 1 || yy >= rm.y + rm.h - 1;
-      if (edge) set(xx, yy, r() < 0.55 ? 1 : 0);
-    }
-    set(rm.cx, rm.cy);
-  }
-  // ---- 回廊: 幅1〜2、途中で曲がる ----
-  const carve = (a, b) => {
-    let x = a.cx, y = a.cy;
-    const wide = r() < 0.3;
-    const mx = ri(Math.min(a.cx, b.cx), Math.max(a.cx, b.cx)), my = ri(Math.min(a.cy, b.cy), Math.max(a.cy, b.cy));
-    const dig = (x, y) => { set(x, y); if (wide) { set(x + 1, y); set(x, y + 1); } };
-    const goX = tx => { while (x !== tx) { dig(x, y); x += Math.sign(tx - x); } };
-    const goY = ty => { while (y !== ty) { dig(x, y); y += Math.sign(ty - y); } };
-    if (r() < 0.5) { goX(mx); goY(my); goX(b.cx); goY(b.cy); } else { goY(my); goX(mx); goY(b.cy); goX(b.cx); }
-    dig(x, y);
-  };
-  const connected = [rooms[0]], rest = rooms.slice(1);
-  while (rest.length) {
-    let best = null, bd = 1e9, bi = -1;
-    for (const c of connected) rest.forEach((o, i) => { const d = Math.abs(c.cx - o.cx) + Math.abs(c.cy - o.cy); if (d < bd) { bd = d; best = [c, o]; bi = i; } });
-    carve(best[0], best[1]); connected.push(best[1]); rest.splice(bi, 1);
-  }
-  for (let i = 0; i < 3; i++) carve(rooms[ri(0, rooms.length - 1)], rooms[ri(0, rooms.length - 1)]);
-  // 行き止まりの小部屋(物置)をいくつか
-  for (let k = 0; k < 4; k++) {
-    const rm = pick(rooms), dir = pick([[1, 0], [-1, 0], [0, 1], [0, -1]]);
-    let x = rm.cx, y = rm.cy, len = ri(3, 7);
-    while (grid[y * W + x] && x > 2 && y > 2 && x < W - 3 && y < H - 3) { x += dir[0]; y += dir[1]; }
-    for (let s = 0; s < len; s++) { set(x, y); x += dir[0]; y += dir[1]; }
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) set(x + dx, y + dy);
-  }
-
+  // ---- 間取り: 部屋の型を扉でつないで組み上げる (layout.js) ----
+  const { grid, hgt, rooms, plats, secrets } = buildLayout(r, floor, W, H);
+  const realRooms = rooms.filter(rm => rm.kind === 'room');
   const dist = bfs(grid, rooms[0].cx, rooms[0].cy);
-  let portalRoom = rooms[1], far = -1;
-  for (const rm of rooms) { const d = dist[rm.cy * W + rm.cx]; if (d > far) { far = d; portalRoom = rm; } }
-  // 聖域の部屋(開始と転移陣の間あたり)
-  const sCands = rooms.filter(rm => rm !== rooms[0] && rm !== portalRoom && rm.w >= 4 && rm.h >= 4 && rm.shape !== 'pillars');
+  // 転移陣: 最初の部屋から最も遠い部屋
+  let portalRoom = realRooms.find(rm => rm !== rooms[0]) || rooms[1], far = -1;
+  for (const rm of realRooms) { if (rm === rooms[0]) continue; const d = dist[rm.cy * W + rm.cx]; if (d > far) { far = d; portalRoom = rm; } }
+  // 聖域の部屋(開始と転移陣の間あたり、平らな部屋)
+  const sCands = realRooms.filter(rm => rm !== rooms[0] && rm !== portalRoom && rm.flat && rm.cells.length >= 9 && rm.mod !== 'pillars' && rm.mod !== 'crypt' && rm.mod !== 'gallery');
   const sx = rooms[0].cx, sy = rooms[0].cy, px = portalRoom.cx, py = portalRoom.cy;
   const midScore = rm => Math.abs(Math.hypot(rm.cx - sx, rm.cy - sy) - Math.hypot(rm.cx - px, rm.cy - py)) + Math.hypot(rm.cx - sx, rm.cy - sy) * 0.1;
-  const sanctRoom = sCands.sort((a, b) => midScore(a) - midScore(b))[0] || null;
-
+  const sanctRoom = rooms[0]; // 聖域は降り立った部屋だけ (途中に安全地帯は無い)
   const used = new Set();
-  // ---- 高台と階段: 部屋の一辺に高い足場を作り、階段で上がれるようにする ----
-  const hgt = new Float32Array(W * H);
-  const plats = [];
-  for (const rm of rooms) {
-    if (rm === rooms[0] || rm === portalRoom || rm === sanctRoom || rm.w < 4 || rm.h < 4 || r() > 0.85) continue;
-    const sides = rm.w * rm.h >= 42 ? [ri(0, 1), ri(2, 3)] : [ri(0, 3)]; // 広い部屋は二方に高台
-    for (const side of sides) {
-    const top = pick([1.2, 1.8, 2.4, 2.4]);
-    const along = side < 2 ? rm.h : rm.w;
-    const depth = Math.max(1, Math.min(Math.floor(along * 0.4), Math.floor(along / 2) - 1));
-    const cells = [];
-    for (let yy = rm.y - 1; yy <= rm.y + rm.h; yy++) for (let xx = rm.x - 1; xx <= rm.x + rm.w; xx++) {
-      if (!grid[yy * W + xx]) continue;
-      const inside = side === 0 ? yy < rm.y + depth : side === 1 ? yy >= rm.y + rm.h - depth : side === 2 ? xx < rm.x + depth : xx >= rm.x + rm.w - depth;
-      if (inside && !(xx === rm.cx && yy === rm.cy) && xx >= rm.x && xx < rm.x + rm.w && yy >= rm.y && yy < rm.y + rm.h) { hgt[yy * W + xx] = top; cells.push([xx, yy]); }
-    }
-    if (!cells.length) continue;
-    // 階段: 高台の縁から部屋の内側へ、一段ずつ下りる
-    const [ix, iy] = side === 0 ? [0, 1] : side === 1 ? [0, -1] : side === 2 ? [1, 0] : [-1, 0];
-    const edge = cells.filter(([xx, yy]) => !hgt[(yy + iy) * W + xx + ix] && grid[(yy + iy) * W + xx + ix]);
-    const start = edge.length ? pick(edge) : null;
-    if (start) {
-      let [xx, yy] = start, hh = top;
-      while (hh > 0.01) { xx += ix; yy += iy; hh = Math.round((hh - 0.6) * 10) / 10; if (!grid[yy * W + xx] || (xx === rm.cx && yy === rm.cy)) break; hgt[yy * W + xx] = Math.max(0, hh); }
-    }
-    plats.push({ rm, cells, top });
-    }
-  }
   const cellPos = (cx, cy, jitter = 0) => new THREE.Vector3((cx + 0.5 + (r() - 0.5) * jitter) * CELL, hgt[cy * W + cx] || 0, (cy + 0.5 + (r() - 0.5) * jitter) * CELL);
-  const floorCellsIn = rm => { const out = []; for (let yy = rm.y - 1; yy <= rm.y + rm.h; yy++) for (let xx = rm.x - 1; xx <= rm.x + rm.w; xx++) if (grid[yy * W + xx]) out.push([xx, yy]); return out; };
+  const floorCellsIn = rm => rm.cells ? rm.cells.filter(([xx, yy]) => grid[yy * W + xx]) : [];
   // 調度品の置かれていない床から選ぶ (魔物や宝が家具に埋まらないように)
   const randomCellIn = rm => { const all = floorCellsIn(rm); const free = all.filter(([xx, yy]) => !used.has(xx + "," + yy)); const c = pick(free.length ? free : all); return cellPos(c[0], c[1], 0.6); };
   const wallSide = (xx, yy) => [[0, -1], [0, 1], [-1, 0], [1, 0]].filter(([dx, dy]) => !grid[(yy + dy) * W + xx + dx]);
 
   // ---- 部屋の主題と調度品 ----
-  const THEMES = ['library', 'crypt', 'storage', 'shrine', 'ruin'];
+  // 部屋の主題(25): 書庫・墓所・物置・祠・廃墟 / 牢獄・錬金工房・鍛冶場・食堂・厨房・兵舎・武器庫・宝物庫・玉座の間・拷問部屋・地下庭園・浴場・天文室・写本室・標本室・闘技場・酒蔵・鉱坑・祭祀場・作戦室・からくりの間
+  const THEMES = ['library', 'crypt', 'storage', 'shrine', 'ruin', 'prison', 'alchemy', 'forge', 'dining', 'kitchen', 'barracks', 'armory', 'treasury', 'throne', 'torture', 'garden', 'bath', 'observatory', 'scriptorium', 'specimen', 'arena', 'cellar', 'mine', 'ritual', 'warroom', 'clockwork'];
+  const RARE = { treasury: 0.3, throne: 0.5, arena: 0.6, ritual: 0.6 }; // 珍しい部屋
+  const pickTheme = () => { for (let k = 0; k < 8; k++) { const t = pick(THEMES); if (r() < (RARE[t] ?? 1)) return t; } return 'ruin'; };
   const decor = [];
   rooms.forEach((rm, i) => {
-    rm.theme = rm.shape === 'cave' ? 'ruin' : i === 0 ? 'storage' : pick(THEMES);
+    if (rm.kind !== 'room') { rm.theme = 'corridor'; return; }
+    rm.theme = rm.theme || (i === 0 ? 'storage' : pickTheme());
     if (rm === sanctRoom) return;
     const cells = floorCellsIn(rm).filter(([xx, yy]) => !(xx === rm.cx && yy === rm.cy));
     const nearWall = cells.filter(([xx, yy]) => wallSide(xx, yy).length);
@@ -146,56 +94,212 @@ export function generate(seed, floor) {
       }
     };
     const area = rm.w * rm.h;
-    if (rm.theme === 'library') { place('shelf', nearWall, Math.ceil(area / 8), { wall: true }); place('desk', inner, 1); place('books', cells, 3); place('candles', cells, 2); }
+    // 壁際を一面埋める(書庫は書架、墓所は納骨棚)。出入口には掛からない
+    const lineWalls = (type, chance = 1, depth = 0.72) => {
+      for (const [xx, yy] of nearWall) for (const d of wallSide(xx, yy)) {
+        if (r() > chance) continue;
+        const pos = new THREE.Vector3((xx + 0.5 + d[0] * (0.5 - depth / 2 / CELL)) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + d[1] * (0.5 - depth / 2 / CELL)) * CELL);
+        decor.push({ type, pos, rot: Math.atan2(-d[0], -d[1]), s: 1 });
+      }
+    };
+    // 部屋の中ほどに、列をそろえて置く
+    const rows = (type, list, every = 2, rot = 0) => {
+      for (const [xx, yy] of list) {
+        if ((xx + yy) % every || used.has(xx + ',' + yy)) continue;
+        used.add(xx + ',' + yy);
+        decor.push({ type, pos: new THREE.Vector3((xx + 0.5) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5) * CELL), rot, s: 1 });
+      }
+    };
+    const center = () => new THREE.Vector3((rm.cx + 0.5) * CELL, hgt[rm.cy * W + rm.cx] || 0, (rm.cy + 0.5) * CELL);
+    if (rm.theme === 'library') {
+      lineWalls('wallshelf');
+      decor.push({ type: 'rug', pos: center(), rot: rm.w > rm.h ? Math.PI / 2 : 0, s: 1 });
+      decor.push({ type: 'chandelier', pos: center(), rot: 0, s: 1 });
+      rows('readtable', inner.slice(), 2, rm.w > rm.h ? 0 : Math.PI / 2);
+      place('lectern', inner, 1); place('bookpile', cells, 2 + Math.floor(area / 20));
+    }
+    if (rm.theme === 'crypt') {
+      lineWalls('wallniche', 0.85);
+      decor.push({ type: 'sarcophagus', pos: center(), rot: rm.w > rm.h ? Math.PI / 2 : 0, s: 1 });
+    }
+    if (rm.theme === 'storage') place('cratestack', nearWall, Math.ceil(area / 7), { wall: true });
+    if (rm.theme === 'shrine') { decor.push({ type: 'rug', pos: center(), rot: rm.w > rm.h ? Math.PI / 2 : 0, s: 1 }); rows('pew', inner.slice(), 2, 0); }
+    // ---- 追加の主題 ----
+    const T = rm.theme, wide = rm.w > rm.h, along = wide ? Math.PI / 2 : 0;
+    const innerL = inner.slice();
+    if (T === 'prison') { lineWalls('cellbars', 0.9, 2.6); lineWalls('shackles', 0.4, 0.12); decor.push({ type: 'chains', pos: center(), rot: 0, s: 1 }); place('bones', cells, 2); }
+    if (T === 'alchemy') { lineWalls('flaskshelf', 0.6, 0.5); decor.push({ type: 'cauldron', pos: center(), rot: 0, s: 1 }); rows('alembic', innerL, 3, along); place('bookpile', cells, 1); }
+    if (T === 'forge') { lineWalls('weaponrack', 0.4, 0.45); place('furnace', nearWall, 1, { wall: true }); place('anvil', innerL, 2); place('armorstand', cells, 1); }
+    if (T === 'dining') { rows('longtable', innerL, 2, along); decor.push({ type: 'chandelier', pos: center(), rot: 0, s: 1 }); lineWalls('banner', 0.25, 0.12); }
+    if (T === 'kitchen') { place('hearth', nearWall, 1, { wall: true }); lineWalls('hangmeat', 0.3, 1.6); place('barrel', nearWall, 2, { wall: true }); rows('alembic', innerL, 4, along); }
+    if (T === 'barracks') { lineWalls('bunk', 0.5, 1); place('footlocker', cells, Math.ceil(area / 10)); place('armorstand', nearWall, 1, { wall: true }); }
+    if (T === 'armory') { lineWalls('weaponrack', 0.7, 0.45); lineWalls('shieldwall', 0.4, 0.12); rows('armorstand', innerL, 2, along); }
+    if (T === 'treasury') { decor.push({ type: 'goldpile', pos: center(), rot: 0, s: 1 }); place('goldpile', innerL, 2); lineWalls('banner', 0.3, 0.12); }
+    if (T === 'throne') { lineWalls('banner', 0.6, 0.12); decor.push({ type: 'rug', pos: center(), rot: along, s: 1 }); place('throne', nearWall, 1, { wall: true }); rows('pillar', innerL, 3, 0); }
+    if (T === 'torture') { lineWalls('shackles', 0.6, 0.12); place('cage', cells, 2); decor.push({ type: 'chains', pos: center(), rot: 0, s: 1 }); place('bones', cells, 3); }
+    if (T === 'garden') { lineWalls('roots', 0.7, 0.3); place('bush', cells, Math.ceil(area / 5)); decor.push({ type: 'fountain', pos: center(), rot: 0, s: 1 }); place('shrooms', cells, 3); }
+    if (T === 'bath') { for (const [xx, yy] of innerL) decor.push({ type: 'pool', pos: new THREE.Vector3((xx + 0.5) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5) * CELL), rot: 0, s: 1 }); lineWalls('banner', 0.15, 0.12); place('candles', nearWall, 4, { wall: true }); }
+    if (T === 'observatory') { lineWalls('starchart', 0.5, 0.12); decor.push({ type: 'orrery', pos: center(), rot: 0, s: 1 }); place('telescope', innerL, 1); place('desk', cells, 1); }
+    if (T === 'scriptorium') { lineWalls('scrollrack', 0.8, 0.55); rows('desk', innerL, 2, along); place('candles', cells, 3); }
+    if (T === 'specimen') { lineWalls('flaskshelf', 0.4, 0.5); rows('specimen', innerL, 2, 0); place('bones', cells, 2); }
+    if (T === 'arena') { decor.push({ type: 'arenaring', pos: center(), rot: 0, s: 1 }); lineWalls('weaponrack', 0.3, 0.45); lineWalls('banner', 0.3, 0.12); }
+    if (T === 'cellar') { lineWalls('winerack', 0.8, 1); place('barrel', cells, 2); place('candles', cells, 2); }
+    if (T === 'mine') { lineWalls('minebeam', 0.5, 0.4); place('minecart', innerL, 1); place('rubble', cells, 3); place('stalagmite', cells, 2); }
+    if (T === 'ritual') { decor.push({ type: 'ritualcircle', pos: center(), rot: 0, s: 1 }); place('obelisk', cells, 4); place('candles', nearWall, 3, { wall: true }); }
+    if (T === 'warroom') { decor.push({ type: 'maptable', pos: center(), rot: along, s: 1 }); lineWalls('banner', 0.5, 0.12); lineWalls('shieldwall', 0.3, 0.12); }
+    if (T === 'clockwork') { lineWalls('gearwall', 0.6, 0.2); place('rubble', cells, 1); }
+    if (rm.theme === 'library-old') { place('shelf', nearWall, Math.ceil(area / 8), { wall: true }); place('desk', inner, 1); place('books', cells, 3); place('candles', cells, 2); }
     if (rm.theme === 'crypt') { place('coffin', inner.length ? inner : cells, Math.ceil(area / 14)); place('bones', cells, 3); place('candles', nearWall, 2, { wall: true }); }
     if (rm.theme === 'storage') { place('oilbarrel', nearWall, Math.max(1, Math.ceil(area / 20)), { wall: true }); place('barrel', nearWall, Math.ceil(area / 12), { wall: true }); place('crate', nearWall, Math.ceil(area / 10), { wall: true }); place('rubble', cells, 1); }
     if (rm.theme === 'shrine') { place('statue', nearWall, 1, { wall: true }); place('candles', cells, 4); place('brokenPillar', inner, 1); }
     if ((rm.theme === 'ruin' || rm.theme === 'crypt') && r() < 0.7) place('puddle', inner.length ? inner : cells, 1);
     if (area >= 30 && r() < 0.5) place('crack', inner.length ? inner : cells, 1);
     if (rm.theme !== 'storage' && r() < 0.25) place('oilbarrel', nearWall, 1, { wall: true });
+    // どの部屋にも調べられる樽・木箱を少し
+    if (rm.theme !== 'storage') place(r() < 0.5 ? 'barrel' : 'crate', nearWall, 1 + Math.floor(area / 24) + (r() < 0.5 ? 1 : 0), { wall: true });
+    place('moss', cells, Math.ceil(area / (rm.theme === 'ruin' || rm.theme === 'crypt' ? 10 : 22)));
+    if (r() < (rm.theme === 'ruin' ? 0.9 : 0.4)) place('vines', nearWall, 1 + Math.floor(area / 25), { wall: true });
+    if (r() < 0.5) place('shrooms', nearWall, 1 + Math.floor(area / 30), { wall: true });
     if (rm.theme === 'ruin') { place('rubble', cells, Math.ceil(area / 8)); place('stalagmite', cells, Math.ceil(area / 10)); place('bones', cells, 1); }
   });
   // 回廊にも少し瓦礫
   for (let k = 0; k < 10; k++) { const x = ri(2, W - 3), y = ri(2, H - 3); if (grid[y * W + x] && !used.has(x + ',' + y)) { used.add(x + ',' + y); decor.push({ type: r() < 0.6 ? 'rubble' : 'bones', pos: cellPos(x, y, 0.6), rot: r() * 6.28, s: 0.7 + r() * 0.3 }); } }
 
-  const spawns = [], scrolls = [], chests = [], herbs = [], crystals = [], torches = [];
+  const spawns = [], scrolls = [], chests = [], herbs = [], crystals = [], torches = [], mushrooms = [];
+  const richChests = [];
   rooms.forEach((rm, i) => {
+    if (rm.kind === 'secret' || rm.kind === 'sealed') {
+      const cs = floorCellsIn(rm).sort(() => r() - 0.5);
+      const at = k => { const c = cs[k % cs.length]; used.add(c[0] + ',' + c[1]); return cellPos(c[0], c[1], 0.3); };
+      richChests.push(at(0));
+      herbs.push(at(1));
+      if (rm.kind === 'sealed') scrolls.push(at(2));
+      else if (r() < 0.5) richChests.push(at(2));
+      crystals.push(...floorCellsIn(rm).flatMap(([xx, yy]) => wallSide(xx, yy).slice(0, 1).map(([dx, dy]) => ({ pos: new THREE.Vector3((xx + 0.5 + dx * 0.36) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.36) * CELL), dir: [dx, dy] }))).slice(0, 2));
+      return;
+    }
     if (i !== 0 && rm !== sanctRoom) {
-      const n = ri(1, 2) + Math.floor(floor / 2) + (rm.w * rm.h > 50 ? 1 : 0);
-      for (let k = 0; k < n; k++) spawns.push({ pos: randomCellIn(rm), type: pickEnemy(r, floor) });
+      const room = rm.kind === 'room';
+      // 1部屋あたりの平均: 1層 約0.8体 → 5層 約1.9体 → 10層 約3.3体
+      const n = room ? Math.floor(0.5 + floor * 0.28 + (rm.cells.length > 30 ? 0.35 : 0) + r()) : (r() < 0.1 + floor * 0.05 ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        const type = pickEnemy(r, floor);
+        const pack = (type === 'ghoul' || type === 'bat') && room && floor >= 2 ? ri(1, Math.min(2, floor - 1)) : 0; // 群れ(2層から)
+        for (let q = 0; q <= pack; q++) spawns.push({ pos: randomCellIn(rm), type });
+      }
     }
     if (rm === portalRoom && (floor % 3 === 0 || floor === FINAL_FLOOR)) {
       const final = floor === FINAL_FLOOR, kind = final ? null : ({ 3: 'mirror', 6: 'bell', 0: 'collapse' })[floor % 9];
       spawns.push({ pos: cellPos(rm.cx, rm.cy), type: kind === 'mirror' ? 'scribe' : 'golem', boss: true, final, bossKind: kind });
     }
-    const chestP = rm.theme === 'storage' || rm.theme === 'crypt' ? 0.6 : 0.35;
+    const chestP = rm.kind !== 'room' ? 0.05 : rm.theme === 'storage' || rm.theme === 'crypt' || rm.mod === 'closet' ? 0.7 : 0.35;
     if (r() < chestP && i !== 0) chests.push(randomCellIn(rm));
-    if (r() < (rm.theme === 'ruin' ? 0.9 : 0.45)) herbs.push(randomCellIn(rm));
+    if (r() < (rm.kind !== 'room' ? 0.12 : rm.theme === 'ruin' ? 0.9 : 0.45)) herbs.push(randomCellIn(rm));
     // 壁沿いの松明と魔晶
     for (const [xx, yy] of floorCellsIn(rm)) {
       for (const [dx, dy] of wallSide(xx, yy)) {
         const p = new THREE.Vector3((xx + 0.5 + dx * 0.47) * CELL, 2.6 + Math.min(2.2, hgt[yy * W + xx] || 0) * 0.5, (yy + 0.5 + dy * 0.47) * CELL);
         const k = (xx * 31 + yy * 17 + dx * 5 + dy * 3) % 9;
-        if (k === 0 && r() < (rm.theme === 'ruin' ? 0.3 : 0.7)) torches.push({ pos: p, dir: [dx, dy], cell: [xx + dx, yy + dy] });
-        else if (k === 4 && r() < (rm.theme === 'ruin' ? 0.45 : 0.15)) crystals.push({ pos: new THREE.Vector3(p.x, (hgt[yy * W + xx] || 0) + 0.9 + r() * 1.2, p.z), dir: [dx, dy] });
+        if (k === 0 && r() < (rm.theme === 'ruin' ? 0.3 : rm.kind !== 'room' ? 0.45 : 0.7)) torches.push({ pos: p, dir: [dx, dy], cell: [xx + dx, yy + dy] });
+        else if (k === 4 && r() < (rm.theme === 'ruin' ? 0.45 : 0.15)) crystals.push({ pos: new THREE.Vector3((xx + 0.5 + dx * 0.36) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.36) * CELL), dir: [dx, dy] });
+        else if (k === 7 && rm.kind === 'room' && r() < (rm.theme === 'ruin' || rm.theme === 'crypt' ? 0.5 : 0.2)) mushrooms.push(new THREE.Vector3((xx + 0.5 + dx * 0.33 + (r() - 0.5) * 0.2) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.33 + (r() - 0.5) * 0.2) * CELL));
       }
     }
   });
+  // 魔物の数の上限 (重くなりすぎないように)。部屋の主は残す
+  const cap = 8 + floor * 4;
+  while (spawns.filter(x => !x.boss).length > cap) { const i = spawns.findIndex((x, k) => !x.boss && r() < 0.15); if (i >= 0) spawns.splice(i, 1); }
   for (const pl of plats) if (r() < 0.65) { const c = pick(pl.cells); chests.push(cellPos(c[0], c[1], 0.4)); }
   // 古文書(言霊の手掛かり): 毎階2〜3。書庫に置かれやすい
-  const scrollRooms = rooms.slice(1).filter(rm => rm !== sanctRoom).sort((a, b) => (b.theme === 'library') - (a.theme === 'library') || r() - 0.5).slice(0, ri(2, 3));
+  const scrollRooms = realRooms.slice(1).filter(rm => rm !== sanctRoom).sort((a, b) => (b.theme === 'library') - (a.theme === 'library') || r() - 0.5).slice(0, ri(2, 3));
   for (const rm of scrollRooms) scrolls.push(randomCellIn(rm));
 
-  return { seed, floor, grid, hgt, plats, rooms, start: rooms[0], portalRoom, sanctRoom, portal: cellPos(portalRoom.cx, portalRoom.cy), spawns, scrolls, chests, herbs, crystals, torches, decor };
+  // 部屋の仕掛け: 術で解く謎・試練の碑・祈りの祭壇。半分ほどの部屋に一つ
+  const roomEvents = [];
+  const evRooms = realRooms.filter(rm => rm !== rooms[0] && rm !== sanctRoom && rm !== portalRoom).sort(() => r() - 0.5);
+  const EV = [['flames', 3], ['frozen', 2], ['tablet', 2], ['trial', floor >= 2 ? 2 : 0.6], ['altar', 1.5]];
+  let lore = Math.floor(r() * 10);
+  for (const rm of evRooms.slice(0, Math.max(2, Math.round(evRooms.length * 0.5)))) {
+    const freeIn = floorCellsIn(rm).filter(([xx, yy]) => !used.has(xx + ',' + yy) && !(xx === rm.cx && yy === rm.cy));
+    const inner = freeIn.filter(([xx, yy]) => !wallSide(xx, yy).length), edge = freeIn.filter(([xx, yy]) => wallSide(xx, yy).length);
+    let v = r() * EV.reduce((a, e) => a + e[1], 0), type = 'altar';
+    for (const [t, w] of EV) if ((v -= w) <= 0) { type = t; break; }
+    const take = list => { if (!list.length) return null; const c = list.splice(Math.floor(r() * list.length), 1)[0]; used.add(c[0] + ',' + c[1]); return c; };
+    const wallRot = c => { const ws = wallSide(c[0], c[1]); const d = ws[0]; return d ? Math.atan2(-d[0], -d[1]) : 0; };
+    const wallPos = (c, k = 0.3) => { const d = wallSide(c[0], c[1])[0] || [0, 0]; return new THREE.Vector3((c[0] + 0.5 + d[0] * k) * CELL, hgt[c[1] * W + c[0]] || 0, (c[1] + 0.5 + d[1] * k) * CELL); };
+    if (type === 'flames') {
+      const pool = (inner.length >= 3 ? inner : freeIn).slice(), spots = [];
+      for (let k = 0; k < 30 && spots.length < 3 && pool.length; k++) { const c = pool[Math.floor(r() * pool.length)]; if (spots.some(o => Math.abs(o[0] - c[0]) + Math.abs(o[1] - c[1]) < 2)) continue; spots.push(c); used.add(c[0] + ',' + c[1]); }
+      if (spots.length < 2) continue;
+      roomEvents.push({ type, spots: spots.map(c => cellPos(c[0], c[1])), reward: cellPos(rm.cx, rm.cy) });
+    } else if (type === 'tablet' || type === 'altar') {
+      const c = take(edge.length ? edge : freeIn); if (!c) continue;
+      roomEvents.push({ type, pos: wallPos(c), rot: wallRot(c), lore: lore++ });
+    } else {
+      const c = take(inner.length ? inner : freeIn); if (!c) continue;
+      roomEvents.push({ type, pos: cellPos(c[0], c[1]) });
+    }
+  }
+
+  // 仲間と解く仕掛け: 部屋の仕掛けの無い部屋に、毎階1〜2つ
+  const coopEvents = [];
+  const evUsed = new Set(evRooms.slice(0, Math.max(2, Math.round(evRooms.length * 0.5))));
+  const coopRooms = evRooms.filter(rm => !evUsed.has(rm) && rm.cells.length >= 16);
+  const CO = [['plates', 3], ['chorus', 2], ['relay', 3], ['orb', floor >= 2 ? 2.5 : 0]];
+  const spread = (list, n, gap) => { const pool = list.slice(), out = []; for (let k = 0; k < 60 && out.length < n && pool.length; k++) { const c = pool[Math.floor(r() * pool.length)]; if (out.some(o => Math.abs(o[0] - c[0]) + Math.abs(o[1] - c[1]) < gap)) continue; out.push(c); used.add(c[0] + ',' + c[1]); } return out; };
+  for (const rm of coopRooms.slice(0, floor === 0 ? 0 : 1 + (r() < 0.55 ? 1 : 0))) {
+    const freeIn = floorCellsIn(rm).filter(([xx, yy]) => !used.has(xx + ',' + yy) && !(xx === rm.cx && yy === rm.cy));
+    const inner = freeIn.filter(([xx, yy]) => !wallSide(xx, yy).length);
+    let v = r() * CO.reduce((a, e) => a + e[1], 0), type = 'plates';
+    for (const [t, w] of CO) if ((v -= w) <= 0) { type = t; break; }
+    if (type === 'plates') { const s = spread(inner.length >= 4 ? inner : freeIn, 4, 2); if (s.length >= 2) coopEvents.push({ type, spots: s.map(c => cellPos(c[0], c[1])) }); }
+    else if (type === 'relay') { const s = spread(freeIn, 7, 3); if (s.length >= 3) coopEvents.push({ type, spots: s.map(c => cellPos(c[0], c[1])) }); }
+    else if (type === 'chorus') coopEvents.push({ type, pos: cellPos(rm.cx, rm.cy) });
+    else {
+      const c = spread(inner.length ? inner : freeIn, 1, 1)[0]; if (!c) continue;
+      const far = realRooms.filter(o => o !== rm && o !== sanctRoom).sort((a, b) => Math.hypot(b.cx - rm.cx, b.cy - rm.cy) - Math.hypot(a.cx - rm.cx, a.cy - rm.cy))[0];
+      if (!far) continue;
+      coopEvents.push({ type, pos: cellPos(c[0], c[1]), target: cellPos(far.cx, far.cy) });
+    }
+  }
+
+  // 篝火台: 広い部屋の中ほどに置き、部屋全体を照らす (暗すぎて魔物の姿が見えないのを防ぐ)
+  const braziers = [];
+  for (const rm of realRooms) {
+    if (rm === sanctRoom || rm.cells.length < 20) continue;
+    const want = Math.min(3, Math.floor(rm.cells.length / 22));
+    const inner = rm.cells.filter(([xx, yy]) => !wallSide(xx, yy).length && !used.has(xx + ',' + yy) && !(xx === rm.cx && yy === rm.cy));
+    const picked = [];
+    for (let k = 0; k < 40 && picked.length < want && inner.length; k++) {
+      const c = inner[Math.floor(r() * inner.length)];
+      if (picked.some(o => Math.abs(o[0] - c[0]) + Math.abs(o[1] - c[1]) < 3)) continue;
+      picked.push(c); used.add(c[0] + ',' + c[1]);
+    }
+    for (const c of picked) braziers.push(cellPos(c[0], c[1]));
+  }
+  const SEAL_WORDS = ['fire', 'heal', 'ward', 'light', 'might'];
+  for (const s of secrets) if (s.kind === 'sealed') s.word = pick(SEAL_WORDS);
+  // 怪し茸(紫): 茸の一部を入れ替え、少なければ足す
+  const oddShrooms = [];
+  // 怪し茸は置かない(声の異変は避けられない魔物の技で起きる)
+  // 笑気の罠: 回廊や部屋の床に、層ごとに数か所
+  const gasTraps = [];
+  const trapCells = rooms.filter(rm => rm !== rooms[0] && rm !== sanctRoom).flatMap(rm => floorCellsIn(rm)).filter(([xx, yy]) => !used.has(xx + ',' + yy));
+  for (let k = 0; k < 2 + Math.floor(floor / 3) && trapCells.length; k++) { const c = trapCells.splice(Math.floor(r() * trapCells.length), 1)[0]; used.add(c[0] + ',' + c[1]); gasTraps.push(cellPos(c[0], c[1], 0.5)); }
+  return { coopEvents, oddShrooms, gasTraps, roomEvents, mushrooms, secrets, richChests, seed, floor, grid, hgt, plats, rooms: rooms.filter(rm => rm.kind !== 'secret' && rm.kind !== 'sealed'), start: rooms[0], portalRoom, sanctRoom, portal: cellPos(portalRoom.cx, portalRoom.cy), spawns, scrolls, chests, herbs, crystals, torches, decor, braziers };
 }
 
+// 出現表: [種類, 重み, 出始める層, 層ごとの重みの変化]
+const ENEMY_TABLE = [
+  ['skeleton', 5, 1, -0.35], ['slime', 3.5, 1, -0.35], ['bat', 2.2, 1, 0], ['ghoul', 2, 1, 0.1],
+  ['scribe', 1.5, 2, 0.1], ['wraith', 1.5, 2, 0.1], ['spider', 1.6, 2, 0.15], ['imp', 1.2, 3, 0.2],
+  ['knight', 1.2, 4, 0.25], ['golem', 0.9, 4, 0.15], ['ogre', 0.8, 5, 0.2], ['lich', 0.6, 6, 0.15],
+];
 function pickEnemy(r, floor) {
-  const v = r();
-  if (floor >= 2 && v < 0.14) return 'scribe';
-  if (floor >= 2 && v < 0.28) return 'wraith';
-  if (floor >= 4 && v < 0.3) return 'golem';
-  if (v < 0.6) return 'skeleton';
-  return 'slime';
+  const list = ENEMY_TABLE.filter(e => floor >= e[2]).map(([t, w, f0, dw]) => [t, Math.max(0.3, w + dw * (floor - f0))]);
+  let v = r() * list.reduce((a, e) => a + e[1], 0);
+  for (const [t, w] of list) { if ((v -= w) <= 0) return t; }
+  return list[0][0];
 }
 
 export function bfs(grid, sx, sy, hgt = null, climb = STEP) {
@@ -281,7 +385,27 @@ export function buildMeshes(dg) {
     group.add(tg);
     dg.torchObjs.push({ group: tg, flame, core, cell: t.cell, light: new THREE.Vector3().copy(tg.position).add(new THREE.Vector3(-t.dir[0] * 0.4, 0.5, -t.dir[1] * 0.4)), phase: Math.random() * 10 });
   }
+  // 篝火台 (台座・鉄の鉢・炎)
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 0.95 });
+  const ironMat = new THREE.MeshStandardMaterial({ color: 0x2a2622, metalness: 0.6, roughness: 0.55 });
+  const coalMat = new THREE.MeshStandardMaterial({ color: 0x1a0c06, emissive: 0xff5a10, emissiveIntensity: 1.2, roughness: 1 });
+  for (const p of dg.braziers || []) {
+    const bg = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 0.25, 10), stoneMat); base.position.y = 0.12;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 0.9, 8), stoneMat); post.position.y = 0.7;
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.26, 0.3, 14, 1, true), ironMat); bowl.position.y = 1.3; bowl.material.side = THREE.DoubleSide;
+    const coal = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.06, 12), coalMat); coal.position.y = 1.38;
+    const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: TEX.flame, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffaa55 }));
+    flame.position.y = 1.9; flame.scale.set(1.2, 1.7, 1);
+    const core = flame.clone(); core.material = core.material.clone(); core.material.color.set(0xffeecc); core.scale.set(0.55, 0.8, 1); core.position.y = 1.75;
+    for (const m of [base, post, bowl]) { m.castShadow = true; m.receiveShadow = true; }
+    bg.add(base, post, bowl, coal, flame, core);
+    bg.position.copy(p); group.add(bg);
+    dg.torchObjs.push({ group: bg, flame, core, cell: null, big: true, light: p.clone().add(new THREE.Vector3(0, 2.2, 0)), phase: Math.random() * 10 });
+    dg._brz = (dg._brz || []).concat([{ x: p.x, z: p.z, r: 0.45 }]);
+  }
   buildDecor(dg, group);
+  for (const b of dg._brz || []) dg.solids.push(b); // 篝火台にはぶつかる
   return group;
 }
 

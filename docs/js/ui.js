@@ -1,7 +1,9 @@
+import { badges as mischiefBadges } from './mischief.js';
+import { itemIcon } from './icons.js';
 // HUD・魔導書・調合・ミニマップ
 import * as THREE from 'three';
 import { G, clamp } from './state.js';
-import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, expandChant, chantGaps, STARTER_WORDS, callName } from './lexicon.js';
+import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, expandChant, chantGaps, chantCoverage, STARTER_WORDS, callName, CALL_WORDS, callTail } from './lexicon.js';
 import { W, H, CELL, lineOfSight } from './dungeon.js';
 import { keyOf } from './controls.js';
 import { SPIRITS, BOND_NAMES, bondProgress } from './spirits.js';
@@ -11,20 +13,52 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 
 // ---------- 魔導書の永続化 ----------
 const SAVE_KEY = 'arcana_vox_grimoire_v1';
+// 呪文の研究: 覚えた言霊をすべて分類ごとに並べる(未習得の言霊は古文書で覚えるまで出てこない)
+const CHIP_ORDER = [['target', '対象'], ['element', '力(属性)'], ['effect', '力(効果)'], ['form', '出し方'], ['mod', '修飾'], ['trigger', '起句']];
+function chipGroups() {
+  return CHIP_ORDER.map(([cat, label]) => {
+    const ws = WORDS.filter(w => w.cat === cat && G.known.has(w.id));
+    if (!ws.length) return '';
+    return `<div class="chipgrp"><span class="chiplbl">${label}</span>${ws.map(w => `<span class="chip c-${w.cat}" data-w="${esc(w.text)}" title="${esc(w.text)}
+${esc(w.meaning || '')}"><ruby>${esc(w.core)}<rt>${esc(w.ruby)}</rt></ruby></span>`).join('')}</div>`;
+  }).join('');
+}
 export const BOOK = {
   known: [...STARTER_WORDS], understood: [...STARTER_WORDS], notes: {}, equip: {}, bag: [],
   spells: [
-    { name: '初級炎魔術', text: '汝に 紅蓮 放て', memo: '最も短い攻撃の詠唱。威力は控えめだが消費が少ない。' },
-    { name: '中級炎魔術', text: '汝に 紅蓮 穿槍 放て', memo: '火の槍を放つ。粘獣によく効く。' },
+    { name: '初級強化魔術', text: '我に 覇気 放て', memo: '20秒間、自分の術の威力を1.3倍にする。戦いの前に。' },
     { name: '初級治癒魔術', text: '我に 癒息 放て', memo: '' },
     { name: '初級守護魔術', text: '我に 守護 放て', memo: '強打を受けても詠唱が乱れなくなる。' },
-    { name: '中級治癒魔術', text: '同胞に 癒息 放て', memo: '倒れた仲間を蘇生できる。' },
+    { name: '初級治癒魔術(同胞)', text: '同胞に 癒息 放て', memo: '倒れた仲間を蘇生できる。' },
     { name: '灯火', text: '我に 灯火 放て', memo: '肩越しに光の玉が付き従い、暗い迷宮を照らす。「穿槍」を加えると照準地点に灯る。' },
   ],
   slots: [0, 1, 2, 3],
 };
+// 記録の枠(セーブスロット)。魔導書は枠ごとに別々に保存する
+const BOOK_DEFAULT = JSON.stringify(BOOK);
+let bookKey = SAVE_KEY;
+// 道具袋の魔導書の札: 誓った属性の色と紋
+const GSLOT_EL = { fire: ['#6a1c12', '#2a0a06', '#f0a850', '炎'], ice: ['#1c4466', '#0a1a2a', '#cfeaff', '氷'], thunder: ['#3a2466', '#140a2a', '#f0dc70', '雷'], wind: ['#1e5038', '#0a2014', '#d0eab0', '風'], holy: ['#e8dcb8', '#9a8a60', '#7a5a1a', '聖'], void: ['#26143a', '#08040e', '#b080e8', '闇'] };
+let gslotEl;
+export function setGrimoireElement(el) {
+  if (el === gslotEl) return; gslotEl = el;
+  const c = GSLOT_EL[el];
+  document.querySelectorAll('.gslot .gcover').forEach(g => {
+    g.style.background = c ? `linear-gradient(135deg, ${c[0]}, ${c[1]})` : '';
+    g.style.borderColor = c ? c[2] : '';
+    g.style.boxShadow = c ? `0 0 16px ${c[2]}55` : '';
+    let em = g.querySelector('i.gel');
+    if (!em) { em = document.createElement('i'); em.className = 'gel'; g.appendChild(em); }
+    em.textContent = c ? c[3] : ''; em.style.color = c ? c[2] : '';
+    g.querySelector('b').style.color = el === 'holy' ? '#3a2408' : '';
+  });
+}
+export function setBookKey(k) { bookKey = k; }
 export function loadBook() {
-  try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.known) Object.assign(BOOK, s); } catch {}
+  for (const k of Object.keys(BOOK)) delete BOOK[k];
+  Object.assign(BOOK, JSON.parse(BOOK_DEFAULT));
+  let fresh = true;
+  try { const s = JSON.parse(localStorage.getItem(bookKey)); if (s && s.known) { Object.assign(BOOK, s); fresh = false; } } catch {}
   // 旧来の短い詠唱(紅蓮 穿槍 放て)を、正式な詠唱文に書き直す
   if ((BOOK.chantVer || 0) < 3) {
     // 灯火(光源の魔法)を追加
@@ -39,6 +73,12 @@ export function loadBook() {
     if (!BOOK.spells.some(sp => sp.name === '初級炎魔術')) BOOK.spells.unshift({ name: '初級炎魔術', text: expandChant('汝に 紅蓮 放て'), memo: '最も短い攻撃の詠唱。威力は控えめだが消費が少ない。' });
     BOOK.chantVer = 4;
   }
+  if (BOOK.chantVer < 6 && (BOOK.chantVer || 0) >= 1) {
+    // 中級魔法は最初は持たない: 最初から書かれていた中級の呪文を外し、形の言霊(穿槍)も古文書で見つけ直す
+    BOOK.spells = BOOK.spells.filter(sp => sp.name !== '中級炎魔術');
+    for (const sp of BOOK.spells) if (sp.name === '中級治癒魔術') sp.name = '初級治癒魔術(同胞)';
+    BOOK.known = BOOK.known.filter(id => id !== 'lance');
+  }
   if (BOOK.chantVer < 5) {
     for (const sp of BOOK.spells) {
       const name = callName(compile(sp.text, null));
@@ -46,11 +86,45 @@ export function loadBook() {
     }
     BOOK.chantVer = 5;
   }
+  if (BOOK.chantVer < 6) BOOK.chantVer = 6;
+  if (BOOK.chantVer < 7) {
+    // 出し方の言霊: 発射(穿槍)は最初から使える。威力アップの魔法(覇気)も最初から
+    for (const id of ['lance', 'might']) { if (!BOOK.known.includes(id)) BOOK.known.push(id); if (!BOOK.understood?.includes(id)) BOOK.understood?.push(id); }
+    const fire = BOOK.spells.find(sp => sp.name === '初級炎魔術');
+    if (fire && !/穿槍/.test(fire.text) && !fire.call) fire.text = expandChant('汝に 紅蓮 穿槍') + ' ファイアランス';
+    if (!BOOK.spells.some(sp => /覇気/.test(sp.text))) BOOK.spells.splice(1, 0, { name: '初級強化魔術', text: expandChant('我に 覇気') + ' ブースト', memo: '20秒間、自分の術の威力を1.3倍にする。戦いの前に。' });
+    BOOK.chantVer = 7;
+  }
+  if (BOOK.chantVer < 8) {
+    // 出し方(穿槍)を含む炎の呪文は中級になった。初級は「対象+属性+名」(迷宮へ降りる時に書き足す)
+    for (const sp of BOOK.spells) if (sp.name === '初級炎魔術' && /穿槍/.test(sp.text)) sp.name = '中級炎魔術';
+    BOOK.chantVer = 8;
+  }
+  // 白紙の魔導書には炎の中級呪文を入れない(攻撃呪文は入口の祭壇で選んだ属性のものが書かれる)
+  if (fresh) BOOK.spells = BOOK.spells.filter(sp => sp.name !== '中級炎魔術');
+  if ((BOOK.chantVer || 0) < 9) {
+    // 詠唱文を短く流れるものに改めた: 書いてある呪文を新しい文に直す(結句の魔法の名は残す)
+    // 古い詠唱文は、まず丸ごと核の言葉に戻す(古い文の一部が別の言霊と聞き違えられないように)
+    const OLD = { fire: '紅蓮の業火よ、燃え盛れ', ice: '万象を凍てつかせよ、氷獄の吐息', thunder: '天を裂く雷霆よ、轟け', holy: '穢れを祓え、聖光の輝き', void: '深淵より這い出でよ、虚無の顎', wind: '荒れ狂え、颶風の咆哮', lance: '一条の穿槍となりて貫け', nova: '我を軸とし円環を描け', rain: '天より降れ、天雨の裁き', orbit: '衛星となりて我が周りを巡れ', enchant: '其の身に力を付与せよ', might: '内なる覇気よ、昂ぶれ', wall: '何人も通さぬ城壁よ、聳えよ', heal: '癒息の恵みよ、傷を塞げ', ward: '見えざる守護の盾よ、包み込め', haste: '時を置き去りに、神速の翼', enemy: '仇なす汝に', self: '我が身に宿れ', ally: '背を預けし同胞に', dual: '二重に重ねて', max: '器を超えし極大の', eternal: '永劫に続く', rune: '地に刻印を刻み', swift: '迅の如く', blood: '我が血を贄とし、血誓を結ぶ', ruin: '天地よ崩壊せよ、全て崩れ去れ', release: '今こそ解き放て', light: '灯火よ、冥き路を照らし出せ', freeze: '凍結の楔よ、其の身を縫い止めよ', bind: '束縛の鎖よ、影より伸びよ', impact: '衝撃となりて打ち砕け', poison: '蝕毒の霧よ、内より蝕め' };
+    const olds = Object.entries(OLD).sort((x, y) => y[1].length - x[1].length);
+    for (const sp of BOOK.spells) for (const [id, o] of olds) if (WORD_BY_ID[id]) sp.text = sp.text.split(o).join(' ' + WORD_BY_ID[id].core + ' ');
+    for (const sp of BOOK.spells) { const m = sp.text.match(/\s([ァ-ヶー・]+)\s*$/), tail = m ? m[1] : callTail(sp.text); sp.text = expandChant(sp.text) + (tail ? ' ' + tail : ''); }
+    BOOK.chantVer = 9;
+  }
+  BOOK.mastery ||= {};
   G.known = new Set(BOOK.known);
 }
 export function saveBook() {
+  if (G.wiping) return; // 全滅の演出中は書き戻さない
   BOOK.known = [...G.known];
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify(BOOK)); } catch {}
+  try { localStorage.setItem(bookKey, JSON.stringify(BOOK)); } catch {}
+}
+// 全滅が決まった瞬間に記録を消す(演出の間にタイトルへ戻っても逃れられないように)
+export function forgetBook() { try { localStorage.removeItem(bookKey); } catch {} }
+// 全滅: 魔導書を白紙に戻す(覚えた言霊・書いた呪文・装備・秘伝書がすべて消える)
+export function wipeBook() {
+  try { localStorage.removeItem(bookKey); } catch {}
+  loadBook(); saveBook();
 }
 
 // ---------- HUD ----------
@@ -62,6 +136,17 @@ const RUBY_RE = new RegExp(Object.keys(RUBY_MAP).sort((a, b) => b.length - a.len
 export const rubify = str => esc(str).replace(RUBY_RE, m => RUBY_MAP[m]);
 // ホットバー用: 呪文を核の語だけに縮めて表示 (紅蓮・穿槍・放て)
 const coreLine = text => tokenize(text).map(t => RUBY_MAP[WORD_BY_ID[t.id].core]).join('<i class="sep">・</i>');
+
+// 道具枠(1〜5キー)。どの道具でも入れられる。所持品で道具に重ねて数字キーを押すか、ここへ引きずって入れる
+export const QUICK_DEFAULT = [null, null, null, null, null];
+export function quickSlotsHtml(withKeys) {
+  return G.quick.map((k, i) => {
+    const c = k ? G.inv[k] || 0 : 0, key = withKeys ? `<span class="k">${keyOf('item' + (i + 1))}</span>` : `<span class="k">${i + 1}</span>`;
+    const held = G.held === 'item' && G.heldSlot === i ? ' held' : '';
+    if (!k || !c) return `<div class="slot item ic empty${held}" data-q="${i}">${key}</div>`;
+    return `<div class="slot item ic${held} ${k === 'ether' && G.player?.status?.drinking ? 'using' : ''}" data-q="${i}" title="${esc(G.itemName?.(k) || k)}"><span class="pic">${itemIcon(k)}</span>${key}${c > 1 ? `<span class="c">${c}</span>` : ''}</div>`;
+  }).join('');
+}
 
 export const UI = {
   floatText(pos, text, color = '#fff') {
@@ -86,13 +171,16 @@ export const UI = {
     const el = $('chantText');
     if (!text) { el.innerHTML = ''; $('chantFormula').textContent = ''; return; }
     const toks = tokenize(text, G.known);
-    if (!toks.length) { el.innerHTML = `<span class="w unk" style="text-decoration:none">${esc(text)}</span>`; $('chantFormula').textContent = '…言霊が聞き取れない'; return; }
+    if (!toks.some(t => t.known)) { el.innerHTML = ''; $('chantFormula').textContent = ''; return; } // 言霊でない言葉(ただの会話)は出さない
     // 一節ごとにまとめて折り返す(節の途中で改行しない)。長い詠唱は字を小さく
     el.innerHTML = `<span class="w ok">${text.trim().split(/\s+/).map(seg => `<span class="ph">${rubify(seg)}</span>`).join(" ")}</span>`;
     el.classList.toggle("long", text.length > 22);
     const sp = compile(text, G.known);
-    const gaps = chantGaps(text, toks.map(t => t.id));
-    $('chantFormula').textContent = formula(sp) + (toks.some(t => !t.known) ? '  (未習得の言霊は効力を持たない)' : '') + (gaps.length ? `  ／ 続きを唱えよ:「${WORD_BY_ID[gaps[0]].text}」` : '');
+    // 言霊ごとに唱え切れたかを示す(どこで詰まったか分かるように)。✓=唱え切った / △=一部だけ(短縮)
+    const lenient = G.lenientChant?.();
+    const ids = [...new Set(toks.filter(t => t.known).map(t => t.id))];
+    const parts = lenient ? '' : ids.map(id => { const c = chantCoverage(text, [id]); const w = WORD_BY_ID[id]; return c >= 0.8 ? `<span class="cp ok">✓ ${esc(w.text)}</span>` : `<span class="cp part">△ ${esc(w.text)} <small>${Math.round(c * 100)}%</small></span>`; }).join('');
+    $('chantFormula').innerHTML = (parts ? `<div class="cparts">${parts}</div>` : '') + esc(formula(sp) + (toks.some(t => !t.known) ? '  (未習得の言霊は効力を持たない)' : ''));
   },
   micState(s) { const m = $('micState'); m.textContent = s; m.classList.toggle('on', /聴取|詠唱/.test(s)); },
 
@@ -102,11 +190,15 @@ export const UI = {
     $('hpBar').lastElementChild.textContent = `生命 ${Math.ceil(Math.max(0, p.hp))} / ${p.maxHp}`;
     $('mpBar').firstElementChild.style.width = clamp(p.mp / p.maxMp * 100, 0, 100) + '%';
     $('mpBar').lastElementChild.textContent = `魔力 ${Math.floor(p.mp)} / ${p.maxMp}`;
+    { const st = p.stamina ?? 100, sb = $('stBar'); sb.firstElementChild.style.width = st + '%'; sb.classList.toggle('winded', !!p.winded); sb.classList.toggle('full', st >= 100); }
     $('shBar').firstElementChild.style.width = clamp(p.shield / 60 * 100, 0, 100) + '%';
     const st = [];
     if (p.shield > 0) st.push(`守護${Math.ceil(p.shield)}`); if (p.status.burn) st.push('炎上'); if (p.status.slow) st.push('鈍足'); if (p.status.haste) st.push('神速');
-    $('statusIcons').textContent = st.join('  ');
-    $('floorLabel').textContent = `第${G.floor}層`;
+    const might = p.status.might ? `<span class="buff might">覇気 威力×1.3 <b>${Math.ceil(p.status.might.t)}</b>秒</span>` : '';
+    const odd = mischiefBadges(p).map(t => `<span class="buff odd">${esc(t)}</span>`).join('');
+    $('statusIcons').innerHTML = might + odd + esc(st.join('  '));
+    const mv = $('mightVignette'); if (mv) mv.style.opacity = p.status.might ? (p.status.might.t < 4 ? 0.5 + 0.5 * Math.sin(G.time * 10) : 1) : 0;
+    $('floorLabel').textContent = G.floor === 0 ? '迷宮の入口' : `第${G.floor}層`;
     $('modeLabel').textContent = (G.mode === 'coop' ? '協力探索' : '探索PvP') + (G.net ? ' ・ オンライン' : '') + (G.mode === 'pvp' ? `  討伐 ${p.kills}` : '');
     const others = G.mages.filter(m => m !== p);
     $('party').innerHTML = others.map(m => {
@@ -121,10 +213,11 @@ export const UI = {
   },
 
   renderHotbar() {
-    const items = [['potion', '回復薬', 'かいふくやく'], ['ether', '魔力薬', 'まりょくやく'], ['amulet', '護符', 'ごふ'], ['flash', '閃光玉', 'せんこうだま'], ['lantern', '導灯', 'しるべび']];
+    G.quick ||= [...QUICK_DEFAULT];
+    G.autoQuick?.();
     // 手に持つ書物 (Q で持ち替え)。魔導書を持っている間だけ詠唱できる
     let h = '';
-    items.forEach(([k, n, r], i) => { h += `<div class="slot item ${G.inv[k] ? '' : 'dim'}"><span class="k">${keyOf('item' + (i + 1))}</span><span class="n"><ruby>${n}<rt>${r}</rt></ruby></span><span class="c">${G.inv[k] || 0}</span></div>`; });
+    h += quickSlotsHtml(true);
     $('hotbar').innerHTML = h;
   },
 
@@ -199,7 +292,15 @@ function renderBook() {
     $('journal').oninput = e => { BOOK.journal = e.target.value; saveBook(); };
   } else if (tab === 'spirits') {
     const bonds = BOOK.bonds || {};
-    pg.innerHTML = `<h3>精霊</h3><p class="muted">言霊は精霊の真名の一部。名を呼べば力を貸してくれる。同じ精霊を呼ぶほど縁が深まり、その術が強くなる。名詠は精霊を大いに喜ばせ、言い損じが続くと機嫌を損ねる。</p>
+    pg.innerHTML = `<h3>精霊</h3>
+      <div class="spguide">
+        <p><b>精霊とは</b> — 属性(紅蓮・氷獄…)と、癒息・守護・神速・灯火の言霊は、それぞれ精霊の<b>真名の一部</b>。その言霊を含む術を唱えると、名を呼ばれた精霊が力を貸す。古文書で新しい言霊を覚えた時に、その精霊と出会う。</p>
+        <p><b>縁(えにし)</b> — その精霊の言霊を含む術を放つたびに縁が深まる。ふつうに唱えて +1、整詠で +2、名詠で +3。縁が深いほど、その精霊の術が強くなる。</p>
+        <table class="bondtable"><tr>${BOND_NAMES.map((n, i) => `<th>${n}</th>`).join('')}</tr><tr>${[0, 6, 18, 40, 75, 130].map(x => `<td>${x}</td>`).join('')}</tr><tr>${BOND_NAMES.map((n, i) => `<td>${Math.round((0.95 + 0.04 * i) * 100)}%</td>`).join('')}</tr></table>
+        <p class="muted" style="margin-top:-4px">上から: 縁の名 ・ 必要な縁 ・ 術の威力</p>
+        <p><b>機嫌</b> — その精霊の言霊を含む詠唱を<b>二度続けて言い損じる</b>(術にならない)と、精霊は25秒そっぽを向き、その間は術の威力が85%に落ちる。うまく唱えれば言い損じの数は消える。</p>
+        <p><b>頼み</b> — 出会った精霊は、ときどき頼みごとをしてくる(画面左の課題に出る)。叶えると縁が一気に +15 深まる。</p>
+      </div>
       <div class="spirits">${Object.entries(SPIRITS).map(([id, sp]) => {
         const met = G.known.has(id), w = WORD_BY_ID[id], b = bondProgress(bonds[id] || 0);
         if (!met) return `<div class="spcard unmet"><h4>？？？</h4><div class="lore">まだ出会っていない精霊。古文書の中に、その名が眠っている。</div></div>`;
@@ -232,9 +333,10 @@ function renderBook() {
           <button class="btn small" id="newSpell" style="width:100%">＋ 新しい呪文</button></div>
         <div class="editor">
           <label>呪文名</label><input type="text" id="spName" value="${esc(s.name)}" maxlength="20">
+          <label>唱える名 — 詠唱の最後にこの名を叫ぶと術が完成する(空欄なら標準の名)</label><input type="text" id="spCall" value="${esc(s.call || '')}" maxlength="16" placeholder="例: インフェルノ / 紅蓮葬">
           <label>詠唱文 — 未知の言葉は飾りとして無視される(厨二的な前口上も自由)</label>
-          <textarea id="spText" class="chanttext" rows="3" placeholder="例: 仇なす汝に 紅蓮の業火よ、燃え盛れ 一条の穿槍となりて貫け ファイアランス (最後に魔法の名を呼ぶ)">${esc(s.text)}</textarea>
-          <div class="chips" id="chips">${[...G.known].map(id => WORD_BY_ID[id]).sort((a, b) => a.cat.localeCompare(b.cat)).map(w => `<span class="chip c-${w.cat}" data-w="${esc(w.text)}" title="${esc(w.text)}"><ruby>${esc(w.core)}<rt>${esc(w.ruby)}</rt></ruby></span>`).join('')}</div>
+          <textarea id="spText" class="chanttext" rows="3" placeholder="例: 仇なす汝に 燃ゆる紅蓮の焔よ 一筋の穿槍となれ ファイアランス (最後に魔法の名を呼ぶ)">${esc(s.text)}</textarea>
+          <div class="chips" id="chips">${chipGroups()}</div>
           <div class="formula" id="spFormula"></div>
           <label>研究メモ</label><textarea id="spMemo">${esc(s.memo)}</textarea>
           <div class="row">
@@ -252,7 +354,15 @@ function renderBook() {
     pg.querySelectorAll('.chip').forEach(c => c.onclick = () => { const t = $('spText'); t.value = (t.value.trim() + ' ' + c.dataset.w).trim(); upd(); });
     pg.querySelectorAll('.sitem').forEach(el => el.onclick = () => { selSpell = +el.dataset.i; renderBook(); });
     const commit = () => {
-      const obj = { name: $('spName').value || '無銘の呪文', text: $('spText').value, memo: $('spMemo').value };
+      const call = $('spCall').value.trim();
+      let text = $('spText').value.trim();
+      // 詠唱文の最後の名(標準の名・前に付けた名)を外し、唱える名を付け直す
+      const old = BOOK.spells[selSpell]?.call;
+      const ends = [old, ...[...CALL_WORDS].sort((a, b) => b.length - a.length)].filter(Boolean);
+      for (let cut = true; cut;) { cut = false; for (const w of ends) if (text.endsWith(w)) { text = text.slice(0, -w.length).trim(); cut = true; break; } }
+      const std = callName(compile(text, null));
+      if (call || std) text = (text + ' ' + (call || std)).trim();
+      const obj = { name: $('spName').value || '無銘の呪文', text, memo: $('spMemo').value, ...(call ? { call } : {}) };
       if (BOOK.spells[selSpell]) BOOK.spells[selSpell] = obj; else { BOOK.spells.push(obj); selSpell = BOOK.spells.length - 1; }
       saveBook();
     };
@@ -277,7 +387,7 @@ function renderBook() {
           <p>素材: ${Object.entries(r.need).map(([k, n]) => `${names[k]}×${n}`).join(' ')}</p>
           <button class="btn small ${ok ? '' : 'ghost'}" data-craft="${i}" ${ok ? '' : 'disabled'}>調合する</button></div>`;
       }).join('')}</div>
-      <p class="muted" style="margin-top:14px">素材は迷宮の霊草・壁の魔晶・宝箱・倒した魔物から得られる。道具は 5〜9 キーで使用。</p>`;
+      <p class="muted" style="margin-top:14px">素材は迷宮の霊草・壁の魔晶・宝箱・倒した魔物から得られる。道具は 1〜4 キーで使う(魔力薬 1・護符 2・閃光玉 3・導灯 4)。</p>`;
     pg.querySelectorAll('[data-craft]').forEach(b => b.onclick = () => {
       const r = RECIPES[+b.dataset.craft];
       for (const [k, n] of Object.entries(r.need)) G.inv[k] -= n;
@@ -298,8 +408,7 @@ function renderBook() {
 }
 
 export const RECIPES = [
-  { id: 'potion', name: '回復薬', need: { herb: 2 }, desc: '生命を45回復する。' },
-  { id: 'ether', name: '魔力薬', need: { crystal: 2 }, desc: '魔力を50回復する。' },
+  { id: 'ether', name: '魔力薬', need: { crystal: 2 }, desc: '1秒かけて飲み干すと、4秒かけて魔力が55戻る。飲んでいる間は詠唱できず、足も鈍る。' },
   { id: 'amulet', name: '護符', need: { bone: 2, crystal: 1 }, desc: '50の守護を15秒間まとう。詠唱妨害を防ぐ。' },
   { id: 'flash', name: '閃光玉', need: { iron: 1, crystal: 1 }, desc: '周囲10mの魔物を2.5秒間怯ませる。' },
   { id: 'lantern', name: '導灯', need: { iron: 2, herb: 1 }, desc: 'この層の地図をすべて照らし出す。' },

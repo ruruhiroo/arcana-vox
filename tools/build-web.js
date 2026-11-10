@@ -24,7 +24,7 @@ copyDir(path.join(ROOT, 'public'), OUT);
 const THREE = path.join(NM, 'three');
 fs.mkdirSync(path.join(OUT, 'vendor/three/build'), { recursive: true });
 fs.copyFileSync(path.join(THREE, 'build/three.module.js'), path.join(OUT, 'vendor/three/build/three.module.js'));
-for (const dir of ['postprocessing', 'shaders', 'geometries']) {
+for (const dir of ['postprocessing', 'shaders', 'geometries', 'loaders', 'utils', 'environments']) {
   copyDir(path.join(THREE, 'examples/jsm', dir), path.join(OUT, 'vendor/three/examples/jsm', dir));
 }
 
@@ -32,6 +32,11 @@ for (const dir of ['postprocessing', 'shaders', 'geometries']) {
 const noMaps = s => !s.endsWith('.map') && !s.endsWith('.d.ts') && !s.endsWith('.d.mts');
 copyDir(path.join(NM, '@trystero-p2p'), path.join(OUT, 'vendor/nm/@trystero-p2p'), noMaps);
 copyDir(path.join(NM, '@noble/secp256k1'), path.join(OUT, 'vendor/nm/@noble/secp256k1'), noMaps);
+
+// AI 音声認識 (Chrome 以外のブラウザで、GPU があれば使う)
+const HF = path.join(NM, '@huggingface/transformers/dist'), HF_OUT = path.join(OUT, 'vendor/nm/@huggingface/transformers/dist');
+fs.mkdirSync(HF_OUT, { recursive: true });
+for (const f of ['transformers.min.js', 'ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm']) fs.copyFileSync(path.join(HF, f), path.join(HF_OUT, f));
 
 // GitHub Pages に「Jekyll で加工しないで」と伝える
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');

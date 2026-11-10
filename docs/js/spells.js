@@ -1,11 +1,12 @@
 // 呪文の発現: 弾・環・雨・壁・罠、ダメージ/回復/守護、粒子演出
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
-import { ELEMENTS, compile, WORD_BY_ID } from './lexicon.js';
+import { ELEMENTS, compile, WORD_BY_ID, ATTACK_FX } from './lexicon.js';
 import { isWallAt, raycastGrid, CELL, heightAt } from './dungeon.js';
 import { glowSprite, runeCircleTex } from './textures.js';
 import { sfx } from './audio.js';
 import { bigImpact, updateVfx } from './vfx.js';
+import { updateDying } from './entities.js';
 
 // 中級(威力1.0)で与える基本ダメージ。初級は約0.58倍、上級は約1.6倍
 const BASE = { fire: 60, ice: 55, thunder: 66, holy: 58, void: 58, wind: 45 };
@@ -145,13 +146,17 @@ const isLocalOwner = c => c && (c.isMage ? c.isLocal() : G.isHost);
 function payload(spell) {
   const p = spell.power;
   const els = spell.elements;
-  const dmg = els.length ? els.reduce((s, e) => s + BASE[e], 0) / els.length * p : 0;
+  const atk = ATTACK_FX.filter(a => spell.effects.includes(a));
+  // 属性が無くても、攻撃の種類があれば無属性の傷を与える(衝撃は重い)
+  const dmg = els.length ? els.reduce((s, e) => s + BASE[e], 0) / els.length * p * (atk.includes('impact') ? 1.15 : 1) : atk.length ? (atk.includes('impact') ? 62 : 44) * p : 0;
   const holyB = els.includes('holy') ? 1.5 : 1;
   return {
     dmg,
     heal: spell.effects.includes('heal') ? 28 * p * holyB : 0,
     ward: spell.effects.includes('ward') ? 35 * p * holyB : 0,
     haste: spell.effects.includes('haste') ? 6 * (spell.eternal ? 1.6 : 1) * (els.includes('wind') ? 1.5 : 1) : 0,
+    might: spell.effects.includes('might') ? 20 * (spell.eternal ? 1.6 : 1) : 0,
+    atk,
   };
 }
 
@@ -159,12 +164,13 @@ function applyPayload(spell, caster, t, pl, mult = 1, dir = null) {
   if (!t.alive) return false;
   let did = false;
   if (pl.dmg > 0 && affects(spell, caster, t, 'harm') && !(t.isMage && t.downed)) {
-    FX.damage(t, pl.dmg * mult, spell.elements, caster, { dir, power: spell.power, tier: spell.tier || 0 }); did = true;
+    FX.damage(t, pl.dmg * mult, spell.elements, caster, { dir, power: spell.power, tier: spell.tier || 0, atk: pl.atk }); did = true;
   }
   if (affects(spell, caster, t, 'help') && t.isMage) {
     if (pl.heal) { FX.heal(t, pl.heal * mult, caster); did = true; }
     if (pl.ward) { FX.shield(t, pl.ward * mult, 10 * (spell.eternal ? 1.6 : 1), spell.elements.length ? spell.elements : null); did = true; }
     if (pl.haste) { t.status.haste = { t: pl.haste }; did = true; burst(t.pos.clone().setY(1), 0x9effc8, 20, { speed: 3 }); }
+    if (pl.might) { t.status.might = { t: pl.might }; did = true; burst(t.pos.clone().setY(1), 0xffb060, 30, { speed: 3, up: 2 }); if (t.isLocal?.()) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), '覇気 — 威力×1.3', '#ffc070'); }
   } else if (affects(spell, caster, t, 'help') && !t.isMage && (pl.heal || pl.ward)) { // 敵を癒すことも出来る
     if (pl.heal) { t.hp = Math.min(t.maxHp, t.hp + pl.heal * mult); t.updateHpBar(); did = true; }
   }
@@ -220,6 +226,36 @@ export const FX = {
       return;
     }
     const form = spell.form;
+    // 付与: 力を放たずに宿す
+    if (form === 'enchant') {
+      let t = aim.targetId ? findById(aim.targetId) : null;
+      if (!t) t = spell.target === 'enemy' ? findById(this.pickDirectTarget(caster, spell, dir)) : caster;
+      if (!t) return;
+      burst(t.pos.clone().setY(1.2), color, 40, { speed: 2, up: 2 }); ring(t.pos.clone(), color, 1.4, 0.6);
+      if (!local) return;
+      if (hostile(caster, t)) { // 敵へ: 呪い
+        t.status.cursed = { t: 10 * dur };
+        G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.6, 0)), '呪印 — 受ける傷+25%', '#d0a0ff');
+        if (pl.dmg) FX.damage(t, pl.dmg * 0.3, spell.elements, caster, { power: spell.power, tier: spell.tier || 0 });
+      } else { // 自分・味方へ: 属性を宿す
+        if (spell.elements.length) { t.status.enchant = { t: 20 * dur, elements: spell.elements, power: spell.power }; if (t.isLocal?.()) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), '付与 — 術に追撃が乗る', '#ffe0a0'); }
+        applyPayload({ ...spell, target: null }, caster, t, { ...pl, dmg: 0 }, count);
+      }
+      return;
+    }
+    // 衛星: 術者の周りを巡る光弾
+    if (form === 'orbit') {
+      const n = 2 * count, meshes = [];
+      for (let i = 0; i < n; i++) {
+        const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color, blending: THREE.AdditiveBlending, depthWrite: false }));
+        core.scale.setScalar(0.8);
+        const inner = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        const g = new THREE.Group(); g.add(core, inner); G.scene.add(g); meshes.push(g);
+      }
+      G.orbits ||= [];
+      G.orbits.push({ caster, spell, pl, color, meshes, r: 1.7, t: 8 * dur, ang: 0, hits: new Map(), helpT: 0, local });
+      return;
+    }
     if (spell.target === 'self' && (form === 'lance' || !form)) { // 自分に向けた術
       if (local) applyPayload(spell, caster, caster, pl, count);
       burst(caster.pos.clone().setY(1), color, 30, { speed: 3 });
@@ -244,7 +280,7 @@ export const FX = {
     } else { // 形なし: 直接作用
       let t = aim.targetId ? findById(aim.targetId) : null;
       if (!t) t = caster;
-      for (let i = 0; i < count; i++) if (local) applyPayload(spell, caster, t, { ...pl, dmg: pl.dmg * 0.6 }, 1);
+      for (let i = 0; i < count; i++) if (local) applyPayload(spell, caster, t, { ...pl, dmg: pl.dmg * 0.85 }, 1);
       if (t !== caster) { const a = caster.pos.clone().setY(1.5), b = t.pos.clone().setY(1.2); for (let k = 0; k < 20; k++) G.particles.emit(a.clone().lerp(b, k / 20), rv(0.3), color, 0.5, 0.5); }
       burst(t.pos.clone().setY(1), color, 30, { speed: 2.5, up: 1.5 });
       flash(t.pos.clone().setY(1.5), color, 20, 0.3);
@@ -295,7 +331,9 @@ export const FX = {
     if (!local) return;
     for (const t of allTargets()) {
       const d = t.pos.distanceTo(center);
-      if (d <= radius + (t.radius || 0.4)) applyPayload(spell, caster, t, pl, 0.85, t.pos.clone().sub(center).setY(0).normalize());
+      if (d > radius + (t.radius || 0.4)) continue;
+      applyPayload(spell, caster, t, pl, 0.85, t.pos.clone().sub(center).setY(0).normalize());
+      if (pl.dmg > 0 && t.isMage && caster?.isMage && t !== caster && !hostile(caster, t) && !t.downed) G.onFriendlyFire?.(caster, t, spell, pl);
     }
   },
 
@@ -332,19 +370,27 @@ export const FX = {
     burst(center.clone().setY(1.5), color, 60, { speed: 2, up: 2 });
   },
 
-  enemyBolt(enemy, from, dir) {
-    const spell = { power: 1, elements: ['void'], effects: [], target: null };
-    this.spawnProjectile({ caster: enemy, spell, pl: { dmg: enemy.dmg }, color: 0x9a3cff, pos: from, vel: dir.multiplyScalar(13), local: G.isHost, team: 'monster' });
+  enemyBolt(enemy, from, dir, el = 'void') {
+    const spell = { power: 1, elements: [el], effects: [], target: null };
+    this.spawnProjectile({ caster: enemy, spell, pl: { dmg: enemy.dmg }, color: ELEMENTS[el]?.color || 0x9a3cff, pos: from, vel: dir.multiplyScalar(13), local: G.isHost, team: 'monster' });
   },
 
   // ---------- 効果の適用 (権限を持つクライアントのみ) ----------
   damage(t, amount, elements, src, opts = {}) {
     if (!t || !t.alive) return;
+    // 付与: 属性を宿した者の攻撃には、その属性の追撃が乗る
+    const en = src?.status?.enchant;
+    if (en && !opts.enchantHit && !opts.silent && amount > 0 && src !== t) {
+      this.damage(t, amount, elements, src, { ...opts, enchantHit: true });
+      return this.damage(t, 10 * en.power, en.elements, src, { enchantHit: true, power: en.power, tier: 0 });
+    }
     if (t.isMage && t.kind === 'remote') { G.net?.send({ t: 'dmg', to: t.netId, amount, elements, src: src?.id, opts: { melee: opts.melee, dir: opts.dir?.toArray?.() } }); return; }
-    if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power }); return; }
+    if (t === G.player && src && !src.isMage && amount > 0 && !opts.silent) G.onEnemyHit?.(src); // 魔物の技(声を狂わせる など)
+    if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, atk: opts.atk }); return; }
     let a = amount;
+    let crit = false;
     for (const e of elements) {
-      if (t.T?.weak?.includes(e)) a *= 1.5;
+      if (t.T?.weak?.includes(e) && !crit) { a *= 2.5; crit = true; }
       if (t.T?.resist?.includes(e)) a *= 0.6;
       if (e === 'holy' && t.undead) a *= 1.35;
     }
@@ -352,12 +398,23 @@ export const FX = {
     if (t.resistElem && elements.includes(t.resistElem)) a *= 0.35; // 鏡の魔導師: 写し取った属性
     if (t.vulnUntil > (G.time || 0)) a *= 1.6; // 鐘の余韻
     if (t.status?.stigma) a *= 1.25; // 聖痕
+    if (t.status?.cursed) a *= 1.25; // 付与の呪い
+    if (t.guardian && t.barrier && !opts.silent) { const k = G.guardHit?.(t, src) ?? 1; a *= k; if (k < 1) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 1.6, 0)), '結界', '#d0a0ff'); }
+    if (t.T?.guard && !opts.silent) {
+      const f = new THREE.Vector3(-Math.sin(t.yaw), 0, -Math.cos(t.yaw));
+      const from = opts.dir ? new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).negate() : src?.pos ? src.pos.clone().sub(t.pos) : null;
+      if (from && from.setY(0).lengthSq() > 1e-6 && from.normalize().dot(f) > 0.35) { a *= 0.4; if (!opts.enchantHit) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), '盾で防いだ', '#9fd0ff'); }
+    }
     if (src?.status?.erosion) a *= 0.75; // 侵蝕された者の攻撃は弱まる
     if (t.isMage && t.downed) return;
     // 状態異常
     const pw = opts.power || 1;
     // 炎=燃焼(じわじわ焼く) / 氷=鈍足、中級以上は凍結 / 雷=麻痺 / 聖=聖痕(受けるダメージ増) / 闇=侵蝕(与えるダメージ減)+吸収 / 風=吹き飛ばし
     const tier = opts.tier || 0, tag = (txt, col) => { if (!opts.silent) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.5, 0)), txt, col); };
+    // 濡れた敵: 氷で凍りつき、雷がよく通る(清流と同じ術でも効く)
+    const wet = t.status.wet || (opts.atk || []).includes('water');
+    if (wet && elements.includes('thunder')) { a *= 1.3; tag('感電', '#a0c8ff'); }
+    if (wet && elements.includes('ice') && !t.isMage) { const d = 1.6 + 0.4 * tier; t.stun = Math.max(t.stun || 0, d); t.status.frozen = { t: d }; delete t.status.wet; tag('氷結', '#cfefff'); }
     for (const e of elements) {
       if (e === 'fire') { if (!t.status.burn) tag('燃焼', '#ff9a50'); t.status.burn = { t: 4, dps: (5 + 3 * tier) * pw, src }; }
       if (e === 'ice') { t.status.slow = { t: 3 * pw }; if (tier >= 1 && !t.isMage) { t.stun = Math.max(t.stun || 0, 0.8 + 0.5 * tier); t.status.frozen = { t: 0.8 + 0.5 * tier }; tag('凍結', '#9fe4ff'); } else tag('鈍足', '#9fe4ff'); }
@@ -366,6 +423,16 @@ export const FX = {
       if (e === 'void') { if (!t.status.erosion) tag('侵蝕', '#c080ff'); t.status.erosion = { t: 4 + tier }; if (src && src.alive && opts.silent !== true) FX.heal(src, a * 0.35, src, true); }
       if (e === 'wind' && opts.dir) { const k = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar((13 + 4 * tier) * pw); if (t.knock) t.knock.add(k); else if (t.vel) t.pushV = k; tag('吹き飛ばし', '#9effc8'); }
     }
+    // 攻撃の種類: 凍結・束縛・衝撃・蝕毒
+    for (const k of opts.atk || []) {
+      if (k === 'freeze' && !t.isMage) { const d = (2.2 + 0.6 * tier) * Math.min(1.5, pw); t.stun = Math.max(t.stun || 0, d); t.status.frozen = { t: d }; tag('凍結', '#9fe4ff'); }
+      if (k === 'freeze' && t.isMage) { t.status.slow = { t: 2.5 }; tag('凍えた', '#9fe4ff'); }
+      if (k === 'bind') { t.status.bound = { t: (3 + tier) * Math.min(1.5, pw) }; if (t.isMage) t.status.slow = { t: 3 }; tag('束縛', '#b0a0ff'); }
+      if (k === 'impact') { if (!t.isMage) t.stun = Math.max(t.stun || 0, 0.5); if (opts.dir) { const kk = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar(16 * pw); if (t.knock) t.knock.add(kk); else if (t.vel) t.pushV = kk; } tag('衝撃', '#ffd0a0'); }
+      if (k === 'water') { if (!elements.includes('ice')) t.status.wet = { t: 6 }; delete t.status.burn; if (opts.dir) { const kk = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar(8 * pw); if (t.knock) t.knock.add(kk); else if (t.vel) t.pushV = kk; } tag('濡れた', '#6ab0ff'); }
+      if (k === 'poison') { if (!t.status.poison) tag('蝕毒', '#a0ff80'); t.status.poison = { t: 8, dps: (4 + 2 * tier) * pw, src }; }
+    }
+    if (crit && !opts.silent) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 1.0, 0)), '会心!', '#ffd84a');
     // 守護
     if (t.isMage && t.shield > 0) {
       const ab = Math.min(t.shield, a); t.shield -= ab; a -= ab;
@@ -416,7 +483,7 @@ export const FX = {
     t.alive = false; t.hp = 0;
     burst(t.pos.clone().setY(1), t.type === 'slime' ? 0x6fff4a : 0xb0a080, 50, { speed: 4, grav: 6, size: 0.4, life: 1.2 });
     G.ui?.log(`${t.name}を倒した`);
-    t.dispose();
+    if (t.dieAnim) t.dieAnim(); else t.dispose();
     if (src && src.isMage) src.kills++;
     if (G.isHost) {
       G.onEnemyKilled?.(t);
@@ -429,12 +496,35 @@ export const FX = {
     G.particles.update(dt);
     updateVfx(dt);
     updateLumens(dt);
+    updateDying(dt);
+    // 衛星
+    for (let i = (G.orbits || []).length - 1; i >= 0; i--) {
+      const o = G.orbits[i];
+      o.t -= dt; o.ang += dt * 3.4;
+      const c = o.caster;
+      if (o.t <= 0 || !c.alive) { for (const m of o.meshes) { G.scene.remove(m); m.traverse(x => { x.geometry?.dispose(); x.material?.dispose(); }); } G.orbits.splice(i, 1); continue; }
+      o.meshes.forEach((m, k) => {
+        const a = o.ang + k / o.meshes.length * Math.PI * 2;
+        m.position.set(c.pos.x + Math.cos(a) * o.r, (c.pos.y || 0) + 1.15 + Math.sin(o.ang * 2 + k) * 0.15, c.pos.z + Math.sin(a) * o.r);
+        if (Math.random() < 0.3) G.particles.emit(m.position.clone(), rv(0.3), o.color, 0.35, 0.3);
+        if (!o.local || !o.pl.dmg) return;
+        for (const t of allTargets()) {
+          if (!hostile(c, t) || t.pos.distanceTo(m.position.clone().setY(t.pos.y)) > 0.8 + (t.radius || 0.4)) continue;
+          if ((o.hits.get(t) || 0) > G.time) continue;
+          o.hits.set(t, G.time + 0.55);
+          applyPayload({ ...o.spell, target: 'enemy' }, c, t, { ...o.pl, heal: 0, ward: 0, haste: 0, might: 0 }, 0.55, t.pos.clone().sub(c.pos).setY(0).normalize());
+          burst(m.position.clone(), o.color, 14, { speed: 3 });
+        }
+      });
+      // 癒し・守護を込めた衛星は、術者を少しずつ癒す
+      if (o.local && (o.pl.heal || o.pl.ward) && (o.helpT -= dt) <= 0) { o.helpT = 2; applyPayload({ ...o.spell, target: null }, c, c, { ...o.pl, dmg: 0, might: 0 }, 0.25); }
+    }
     // 弾
     for (let i = G.projectiles.length - 1; i >= 0; i--) {
       const p = G.projectiles[i];
       p.age += dt; p.life -= dt;
       const step = p.vel.clone().multiplyScalar(dt);
-      let hit = null, end = p.life <= 0;
+      let hit = null, end = p.life <= 0, ff = false;
       const sub = 4;
       for (let s = 0; s < sub && !hit && !end; s++) {
         p.pos.addScaledVector(step, 1 / sub);
@@ -455,6 +545,8 @@ export const FX = {
           const helpful = (p.pl.heal || p.pl.ward || p.pl.haste) && affects(p.spell, p.caster, t, 'help');
           if (p.team === 'monster') { if (t.team !== 'monster') hit = t; }
           else if (harmful || helpful) hit = t;
+          // 傷つける術が味方の魔導師に当たった
+          else if ((p.pl.dmg || 0) > 0 && t.isMage && p.caster?.isMage && t !== p.caster && !hostile(p.caster, t) && !t.downed && p.age > 0.12) { hit = t; ff = true; }
           if (hit) break;
         }
       }
@@ -469,7 +561,8 @@ export const FX = {
         if (end && !hit && p.team !== 'monster' && isWallAt(p.pos.x, p.pos.z)) G.onWallHit?.(p.pos.clone(), p.spell, p.local);
         G.onImpact?.(p.pos.clone(), p.spell, p.local, p.caster);
         sfx.impact(p.spell.elements, p.pos);
-        if (hit && p.local) {
+        if (hit && p.local && ff) G.onFriendlyFire?.(p.caster, hit, p.spell, p.pl);
+        else if (hit && p.local) {
           if (p.team === 'monster') FX.damage(hit, p.pl.dmg, ['void'], p.caster, {});
           else {
             applyPayload(p.spell, p.caster, hit, p.pl, 1, p.vel.clone().setY(0).normalize());
@@ -548,13 +641,14 @@ export class LightPool {
     if (d?.torchObjs) for (const t of d.torchObjs) {
       const dist = t.light.distanceTo(camPos); if (dist > 34) continue;
       const fl = 0.8 + 0.2 * Math.sin(G.time * 13 + t.phase) * Math.sin(G.time * 7.3 + t.phase * 2) + Math.random() * 0.06;
-      t.flame.scale.set(0.7 * fl, 1.0 * fl, 1); t.core.scale.set(0.3 * fl, 0.45 * fl, 1);
-      cands.push({ pos: t.light, color: 0xff9a4a, intensity: 9 * fl, dist: 15, score: dist });
+      if (t.big) { t.flame.scale.set(1.2 * fl, 1.7 * fl, 1); t.core.scale.set(0.55 * fl, 0.8 * fl, 1); }
+      else { t.flame.scale.set(0.7 * fl, 1.0 * fl, 1); t.core.scale.set(0.3 * fl, 0.45 * fl, 1); }
+      cands.push({ pos: t.light, color: 0xff9a4a, intensity: (t.big ? 16 : 9) * fl, dist: t.big ? 22 : 15, score: dist - (t.big ? 6 : 0) });
       if (Math.random() < dt * 3) G.particles.emit(t.light.clone().add(new THREE.Vector3(0, 0.2, 0)), new THREE.Vector3(rand(-0.2, 0.2), rand(0.6, 1.4), rand(-0.2, 0.2)), 0xff8030, 0.12, 1.2);
     }
     for (const p of G.projectiles) cands.push({ pos: p.pos, color: p.color, intensity: 12, dist: 10, score: p.pos.distanceTo(camPos) - 20 });
     for (const e of G.effects) if (e.kind === 'flash') { const k = e.t / e.dur; cands.push({ pos: e.pos, color: e.color, intensity: e.intensity * k, dist: e.dist, score: e.pos.distanceTo(camPos) - 30 }); }
-    for (const l of G.lumens) { const k = Math.min(1, l.t / 3); cands.push({ pos: l.pos, color: l.color, intensity: (7 + 2 * l.power) * k, dist: 18 + 4 * l.power, score: l.pos.distanceTo(camPos) - 40 }); }
+    for (const l of G.lumens) { const k = Math.min(1, l.t / 3) * (l.follow === G.player ? 1 - (G.readAmount || 0) * 0.85 : 1); cands.push({ pos: l.pos, color: l.color, intensity: (7 + 2 * l.power) * k, dist: 18 + 4 * l.power, score: l.pos.distanceTo(camPos) - 40 }); }
     if (G.sanctuary) { const fp = G.sanctuary.firePos; cands.push({ pos: fp, color: 0xffa050, intensity: 10 + Math.random() * 1.5, dist: 18, score: fp.distanceTo(camPos) - 15 }); }
     if (G.portalObj) cands.push({ pos: G.portalObj.position.clone().setY(1.5), color: 0x8a6bff, intensity: 14, dist: 14, score: G.portalObj.position.distanceTo(camPos) - 5 });
     for (const pk of G.pickups) if (pk.kind === 'scroll' && pk.mesh) cands.push({ pos: pk.mesh.position, color: 0xffe6a0, intensity: 3, dist: 5, score: pk.mesh.position.distanceTo(camPos) + 5 });

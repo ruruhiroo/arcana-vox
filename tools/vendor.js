@@ -20,7 +20,11 @@ const noJunk = s => !/\.(map|d\.ts|d\.mts)$/.test(s);
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, 'three/build'), { recursive: true });
 fs.copyFileSync(path.join(NM, 'three/build/three.module.js'), path.join(OUT, 'three/build/three.module.js'));
-for (const d of ['postprocessing', 'shaders', 'geometries']) copyDir(path.join(NM, 'three/examples/jsm', d), path.join(OUT, 'three/addons', d));
+for (const d of ['postprocessing', 'shaders', 'geometries', 'loaders', 'utils', 'environments']) copyDir(path.join(NM, 'three/examples/jsm', d), path.join(OUT, 'three/addons', d));
 copyDir(path.join(NM, '@trystero-p2p'), path.join(OUT, 'nm/@trystero-p2p'), noJunk);
 copyDir(path.join(NM, '@noble/secp256k1'), path.join(OUT, 'nm/@noble/secp256k1'), noJunk);
+// AI 音声認識 (Whisper): ライブラリ本体と、実行に使う wasm
+const HF = path.join(NM, '@huggingface/transformers/dist'), HF_OUT = path.join(OUT, 'nm/@huggingface/transformers/dist');
+fs.mkdirSync(HF_OUT, { recursive: true });
+for (const f of ['transformers.min.js', 'ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm']) fs.copyFileSync(path.join(HF, f), path.join(HF_OUT, f));
 console.log('vendor/ を作成しました');

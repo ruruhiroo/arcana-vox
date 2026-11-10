@@ -1,7 +1,7 @@
 {
   "name": "arcana-vox",
   "productName": "詠唱迷宮 ARCANA VOX",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "声で呪文を唱えるダンジョン探索ゲーム",
   "main": "electron/main.js",
   "private": true,
@@ -11,12 +11,15 @@
     "setup-voice": "node tools/fetch-voice-model.js",
     "dist": "electron-builder --win portable --publish never",
     "build-web": "node tools/build-web.js",
-    "predist": "node tools/vendor.js"
+    "predist": "node tools/vendor.js",
+    "dist:steam": "electron-builder --win dir --publish never",
+    "predist:steam": "node tools/vendor.js"
   },
   "devDependencies": {
     "electron": "^45.2.3",
     "electron-builder": "^25.1.8",
-    "vosk-browser": "^0.0.8"
+    "vosk-browser": "^0.0.8",
+    "@huggingface/transformers": "^3.7.6"
   },
   "dependencies": {
     "three": "^0.160.0",
@@ -27,7 +30,8 @@
     "productName": "ArcanaVox",
     "copyright": "ARCANA VOX",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "electron/**",
@@ -48,7 +52,8 @@
         }
       ],
       "signAndEditExecutable": false,
-      "artifactName": "ArcanaVox-${version}.${ext}"
+      "artifactName": "ArcanaVox-${version}.${ext}",
+      "icon": "build/icon.png"
     },
     "portable": {
       "unpackDirName": "ArcanaVox"

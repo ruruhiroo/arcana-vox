@@ -5,6 +5,7 @@ import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf, settleY, CLIMB } 
 import { textSprite, runeCircleTex, glowSprite } from './textures.js';
 import { sfx } from './audio.js';
 import { buildEnemyModel, animateEnemy } from './enemymodels.js';
+import { makeModel, animateGlb, dieGlb } from './glbmodels.js';
 import { compile } from './lexicon.js';
 // 写本師が唱える呪文 (プレイヤーと同じ言霊)
 import { WORD_BY_ID } from './lexicon.js';
@@ -66,7 +67,7 @@ export class Mage {
     this.root.position.copy(this.pos);
     G.scene.add(this.root);
   }
-  get speedMul() { let m = 1; if (this.status.slow) m *= 0.55; if (this.status.haste) m *= 1.6; if (this.chanting) m *= 0.55; return m; }
+  get speedMul() { let m = 1; if (this.status.slow) m *= 0.55; if (this.status.haste) m *= 1.6; if (this.chanting && this.kind !== 'player') m *= 0.55; if (this.status.tiny) m *= 1.25; if (this.status.giant) m *= 0.8; if (this.status.orb) m *= 0.72; return m; } // 自分の詠唱の遅さは main 側(言霊が聞き取れてから)
   setChant(text, words = 0) {
     this.chantText = text;
     if (this.chantLabel) this.chantLabel.userData.set(text ? `「${text}」` : '');
@@ -76,13 +77,14 @@ export class Mage {
   update(dt) {
     for (const k in this.status) {
       const s = this.status[k]; s.t -= dt;
-      if (k === 'burn' && s.t > 0 && this.isLocal()) G.fx.damage(this, s.dps * dt, [], s.src, { silent: true });
+      if ((k === 'burn' || k === 'poison') && s.t > 0 && this.isLocal()) G.fx.damage(this, s.dps * dt, [], s.src, { silent: true });
       if (s.t <= 0) delete this.status[k];
     }
     if (this.shieldT > 0) { this.shieldT -= dt; if (this.shieldT <= 0) { this.shield = 0; this.thorns = null; } }
     this.shieldMesh.material.opacity = this.shield > 0 ? 0.12 + 0.05 * Math.sin(G.time * 6) : 0;
     this.shieldMesh.visible = this.shield > 0 && this.kind !== 'player';
-    if (!this.chanting && this.alive && !this.downed) this.mp = Math.min(this.maxMp, this.mp + dt * 7 * (this.regenMul || 1));
+    if (!this.chanting && this.alive && !this.downed) this.mp = Math.min(this.maxMp, this.mp + dt * (this.kind === 'player' ? 2.5 : 6) * (this.regenMul || 1));
+    if (this.status.manaflow && this.alive) this.mp = Math.min(this.maxMp, this.mp + dt * this.status.manaflow.rate); // 魔力薬
     this.castLock = Math.max(0, this.castLock - dt);
     // 詠唱中は足元に魔法陣
     const target = this.chanting ? Math.min(1, 0.35 + (this.chantWords || 1) * 0.15) : 0;
@@ -92,7 +94,7 @@ export class Mage {
     const sc = 0.6 + (this.chantWords || 1) * 0.25; this.circle.scale.setScalar(sc);
     this.root.position.copy(this.pos);
     if (this.model) {
-      this.model.rotation.y = this.yaw + Math.PI;
+      this.model.rotation.y = this.yaw; // 顔(-Z)を視線の向きへ
       const st = this.model.userData.staff;
       st.rotation.x = this.chanting ? -0.9 + Math.sin(G.time * 8) * 0.05 : -0.15;
       this.model.userData.crystal.material.emissiveIntensity = this.chanting ? 4 + Math.sin(G.time * 12) * 1.5 : 2;
@@ -104,17 +106,49 @@ export class Mage {
   dispose() { G.scene.remove(this.root); }
 }
 
+// 倒れた魔物の後始末(毎フレーム)
+export function updateDying(dt) {
+  if (!G.dying) return;
+  for (let i = G.dying.length - 1; i >= 0; i--) {
+    const d = G.dying[i];
+    d.t -= dt;
+    d.e.body.userData.mixer?.update(dt);
+    if (d.e.rimU) d.e.rimU.strength.value = Math.max(0, d.e.rimU.strength.value - dt * 0.3); // 縁取りも消えていく
+    if (d.t < 0.6) d.e.root.position.y -= dt * 0.8; // 床に沈む
+    if (d.t <= 0) { d.e.dispose(); G.dying.splice(i, 1); }
+  }
+}
+export function clearDying() { for (const d of G.dying || []) d.e.dispose(); G.dying = []; }
+
+// 途中で現れる魔物 (呼び出し・召喚)
+export function spawnEnemy(id, type, pos, floor, summoner = null) {
+  if (G.enemies.some(e => e.id === id)) return null;
+  const e = new Enemy(id, type, pos, floor);
+  e.summoner = summoner; e.aggro = true;
+  G.enemies.push(e);
+  G.fx?.burst?.(pos.clone().setY(0.5), 0x60ff9a, 40, { speed: 3, up: 2 });
+  return e;
+}
+
 // ---------- 魔物 ----------
 export const ENEMY_TYPES = {
   skeleton: { name: '骸骨兵', hp: 70, speed: 2.7, dmg: 10, range: 1.7, cd: 1.3, radius: 0.4, undead: true, weak: ['holy', 'thunder'], resist: ['void', 'ice'], drops: ['bone', 'bone', 'iron'] },
   slime:    { name: '粘獣', hp: 62, speed: 1.9, dmg: 8, range: 1.4, cd: 1.1, radius: 0.55, weak: ['fire'], resist: ['wind'], drops: ['herb', 'crystal'] },
   wraith:   { name: '怨霊', hp: 64, speed: 2.3, dmg: 12, range: 13, cd: 2.6, radius: 0.45, undead: true, ranged: true, fly: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['crystal', 'crystal'] },
   scribe:   { name: '堕ちた写本師', hp: 72, speed: 2.1, dmg: 8, range: 13, cd: 4.2, radius: 0.42, caster: true, weak: ['fire', 'thunder'], resist: ['void'], drops: ['scroll', 'crystal'] },
+  // 追加の魔物 (層が深くなるほど出やすい)
+  ghoul:    { name: '屍食鬼', hp: 55, speed: 3.7, dmg: 9, range: 1.5, cd: 0.9, radius: 0.4, undead: true, weak: ['fire', 'holy'], resist: ['void'], drops: ['bone', 'herb'], h: 1.9 },
+  bat:      { name: '吸血大蝙蝠', hp: 32, speed: 4.4, dmg: 6, range: 1.5, cd: 1.0, radius: 0.35, fly: true, flyH: 1.5, swoop: true, drain: true, weak: ['wind', 'thunder'], resist: [], drops: ['herb'], h: 2.2 },
+  spider:   { name: '洞窟大蜘蛛', hp: 85, speed: 3.4, dmg: 11, range: 1.9, cd: 1.4, radius: 0.7, leap: true, web: true, weak: ['fire'], resist: ['ice'], drops: ['crystal', 'herb'], h: 1.4 },
+  imp:      { name: '炎小鬼', hp: 50, speed: 3.0, dmg: 10, range: 12, cd: 2.4, radius: 0.35, ranged: true, bolt: 'fire', weak: ['ice', 'holy'], resist: ['fire'], drops: ['crystal'], h: 1.5 },
+  knight:   { name: '亡霊騎士', hp: 180, speed: 2.3, dmg: 18, range: 2.1, cd: 1.6, radius: 0.5, undead: true, guard: true, weak: ['holy', 'thunder'], resist: ['ice', 'wind', 'void'], drops: ['iron', 'iron', 'crystal'], h: 2.4 },
+  ogre:     { name: '岩喰い鬼', hp: 320, speed: 1.9, dmg: 26, range: 2.7, cd: 2.4, radius: 0.9, slam: true, weak: ['ice', 'fire'], resist: ['wind'], drops: ['iron', 'herb', 'herb'], h: 3.1 },
+  lich:     { name: '屍術師', hp: 160, speed: 1.8, dmg: 14, range: 14, cd: 3.2, radius: 0.5, undead: true, ranged: true, bolt: 'void', summon: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['scroll', 'crystal', 'crystal'], h: 2.6 },
   golem:    { name: '石像兵', hp: 240, speed: 1.5, dmg: 22, range: 2.3, cd: 2.0, radius: 0.85, weak: ['thunder'], resist: ['fire', 'ice', 'wind'], drops: ['iron', 'iron', 'crystal', 'crystal'] },
 };
 
 // 種類ごとの縁取りの色 (暗がりでも輪郭と種類が分かるように)
-export const ENEMY_RIM = { skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a, scribe: 0xff4a8a };
+export const ENEMY_RIM = { skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a, scribe: 0xff4a8a, ghoul: 0xc8ff5a, bat: 0xff4a4a, spider: 0xff3a1a, imp: 0xffa040, knight: 0x60c8ff, ogre: 0xffb060, lich: 0x60ff9a };
 // 標準材質に「視線と直交する面ほど光る」縁取りを足す
 function addRim(group, U) {
   group.traverse(o => {
@@ -142,7 +176,9 @@ function addEyeGlow(group) {
 }
 
 function enemyMesh(type, scale = 1) {
-  const g = buildEnemyModel(type);
+  const glb = makeModel(type);
+  if (glb) { glb.scale.setScalar(scale); return glb; }
+  const g = buildEnemyModel(['skeleton', 'slime', 'wraith', 'scribe', 'golem'].includes(type) ? type : type === 'ghoul' || type === 'knight' ? 'skeleton' : type === 'bat' || type === 'lich' ? 'wraith' : type === 'ogre' ? 'golem' : 'slime');
   addEyeGlow(g);
   g.scale.setScalar(scale);
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
@@ -153,19 +189,22 @@ export class Enemy {
   constructor(id, type, pos, floor, boss = false) {
     const T = ENEMY_TYPES[type];
     this.id = id; this.type = type; this.T = T; this.boss = boss;
-    const scale = 1 + 0.18 * (floor - 1);
-    this.maxHp = Math.round(T.hp * scale * (boss ? 2.6 : 1)); this.hp = this.maxHp;
-    this.dmg = T.dmg * (1 + 0.1 * (floor - 1)) * (boss ? 1.4 : 1);
+    const scale = 1 + 0.2 * (floor - 1);
+    this.floor = floor;
+    this.elite = !boss && floor >= 3 && ((id.length * 7 + floor * 13 + (id.charCodeAt(id.length - 1) || 0)) % 100) < Math.min(30, (floor - 2) * 4); // 精鋭
+    this.maxHp = Math.round(T.hp * scale * (boss ? 2.6 : 1) * (this.elite ? 1.7 : 1)); this.hp = this.maxHp;
+    this.dmg = T.dmg * (1 + 0.12 * (floor - 1)) * (boss ? 1.4 : 1) * (this.elite ? 1.3 : 1);
+    this.speedMul = 1 + Math.min(0.35, 0.035 * (floor - 1)) + (this.elite ? 0.1 : 0);
     this.radius = T.radius * (boss ? 1.5 : 1);
     this.pos = pos.clone(); this.vel = new THREE.Vector3(); this.knock = new THREE.Vector3();
     this.netTarget = pos.clone();
     this.yaw = Math.random() * 6; this.team = 'monster'; this.alive = true; this.status = {};
     this.cd = rand(0.5, 1.5); this.target = null; this.aggro = false; this.stun = 0; this.attackAnim = 0;
-    this.undead = !!T.undead; this.isMage = false; this.name = (boss ? '【主】' : '') + T.name;
+    this.undead = !!T.undead; this.isMage = false; this.name = (boss ? '【主】' : this.elite ? '【精鋭】' : '') + T.name;
     this.phase = Math.random() * 6.28;
-    this.body = enemyMesh(type, boss ? 1.8 : 1);
+    this.body = enemyMesh(type, boss ? 1.8 : this.elite ? 1.18 : 1);
     this.root = new THREE.Group(); this.root.add(this.body);
-    this.rimU = { color: { value: new THREE.Color(ENEMY_RIM[type] || 0xffffff) }, strength: { value: 0.9 } };
+    this.rimU = { color: { value: new THREE.Color(this.elite ? 0xd0a040 : ENEMY_RIM[type] || 0xffffff) }, strength: { value: 0.9 } };
     addRim(this.body, this.rimU);
     this.hitT = 0;
     if (boss) {
@@ -175,7 +214,7 @@ export class Enemy {
     }
     this.root.position.copy(pos);
     if (T.caster) { this.chantLabel = textSprite('', { size: 30, color: '#ffb0c8', bg: 'rgba(40,0,20,0.55)', width: 1100, lines: 2 }); this.chantLabel.position.y = 2.6; this.root.add(this.chantLabel); }
-    this.hpBar = textSprite('', { size: 26, color: '#ff8a7a', width: 512 }); this.hpBar.scale.multiplyScalar(0.5); this.hpBar.position.y = (T.fly ? 2.6 : 2.2) * (boss ? 1.8 : 1); this.root.add(this.hpBar);
+    this.hpBar = textSprite('', { size: 26, color: '#ff8a7a', width: 512 }); this.hpBar.scale.multiplyScalar(0.5); this.hpBar.position.y = (T.h || (T.fly ? 2.6 : 2.2)) * (boss ? 1.8 : this.elite ? 1.18 : 1); this.root.add(this.hpBar);
     G.scene.add(this.root);
   }
   updateHpBar() {
@@ -187,9 +226,9 @@ export class Enemy {
     if (!this.alive) return;
     for (const k in this.status) {
       const s = this.status[k]; s.t -= dt;
-      if (k === 'burn' && G.isHost) G.fx.damage(this, s.dps * dt, [], s.src, { silent: true });
+      if ((k === 'burn' || k === 'poison') && G.isHost) G.fx.damage(this, s.dps * dt, [], s.src, { silent: true });
       // 状態の見た目: 燃える炎・霜・聖痕の光・侵蝕の靄
-      const fxc = { burn: 0xff7020, slow: 0x9fe4ff, frozen: 0xcfefff, stigma: 0xffe8a0, erosion: 0x8a40c0 }[k];
+      const fxc = { burn: 0xff7020, slow: 0x9fe4ff, frozen: 0xcfefff, stigma: 0xffe8a0, erosion: 0x8a40c0, wet: 0x4a90ff }[k];
       if (fxc && Math.random() < dt * (k === 'burn' ? 22 : 9)) G.particles.emit(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.7, 0.3 + Math.random() * 1.4, (Math.random() - 0.5) * 0.7)), new THREE.Vector3(0, k === 'burn' ? 1.6 : 0.4, 0), fxc, k === 'burn' ? 0.35 : 0.22, 0.7);
       if (s.t <= 0) delete this.status[k];
     }
@@ -202,19 +241,28 @@ export class Enemy {
     settleY(this.pos, dt); // 段差に沿う
     // 見た目のアニメーション
     this.root.position.copy(this.pos);
-    this.root.rotation.y = this.yaw + Math.PI;
+    this.root.rotation.y = this.yaw; // 顔(-Z)を狙う相手へ向ける
     const ud = this.body.userData, t = G.time, ph = this.phase, b = this.body;
     const moving = (this._lastX !== undefined) && Math.hypot(this.pos.x - this._lastX, this.pos.z - this._lastZ) > dt * 0.4;
     this._lastX = this.pos.x; this._lastZ = this.pos.z;
     this.attackAnim = Math.max(0, this.attackAnim - dt * 3);
     // 種類ごとの動き(体の揺れ・浮き) と、関節の動き(歩く・振る・漂う)
-    if (this.type === 'skeleton') b.position.y = moving ? Math.abs(Math.sin(t * 9 + ph)) * 0.04 : 0;
+    if (ud.kind === 'glb') {
+      if (T.fly) b.position.y = (T.flyH || 0.3) + Math.sin(t * 2.2 + ph) * 0.15; // 飛ぶ者は宙に
+      if (this.attackAnim > (this._prevAtk || 0) + 0.01) this._atkPending = true; this._prevAtk = this.attackAnim;
+      // 遠くの魔物は動きの計算を間引く(重くならないように)
+      this._animAcc = (this._animAcc || 0) + dt; this._animN = ((this._animN || 0) + 1) % 3;
+      const far = G.player ? this.pos.distanceTo(G.player.pos) > 28 : false;
+      if (!far || this._animN === 0 || this._atkPending) { animateGlb(ud, this._animAcc, moving, (T.speed / 2.6) * this.speedMul, this._atkPending); this._animAcc = 0; this._atkPending = false; }
+    }
+    else if (this.type === 'skeleton') b.position.y = moving ? Math.abs(Math.sin(t * 9 + ph)) * 0.04 : 0;
     else if (this.type === 'slime') b.position.y = moving ? Math.abs(Math.sin(t * 5 + ph)) * 0.22 : 0;
     else if (this.type === 'wraith') { b.position.y = 0.25 + Math.sin(t * 2 + ph) * 0.18; b.rotation.z = Math.sin(t * 1.3 + ph) * 0.06; b.rotation.x = moving ? 0.18 : 0; if (Math.random() < dt * 14) G.particles.emit(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6)), new THREE.Vector3(0, -0.3, 0), 0x3a2050, 0.5, 1.2); }
     else if (this.type === 'golem') { b.rotation.z = Math.sin(t * 1.4 + ph) * 0.04; b.position.y = moving ? -Math.abs(Math.sin(t * 3.2 + ph)) * 0.06 : 0; }
-    animateEnemy(ud, t, ph, moving, this.attackAnim, dt);
+    if (ud.kind !== 'glb') animateEnemy(ud, t, ph, moving, this.attackAnim, dt);
     this.hitT = Math.max(0, this.hitT - dt);
-    this.rimU.strength.value = (this.type === 'golem' ? 0.4 : 0.8) + Math.sin(t * 3 + ph) * 0.12 + this.hitT * 14;
+    // 縁取り: 精巧なモデルは控えめに(暗がりで輪郭が分かる程度)
+    this.rimU.strength.value = (ud.kind === 'glb' ? 0.22 : this.type === 'golem' ? 0.4 : 0.8) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (ud.kind === 'glb' ? 0.05 : 0.12) + this.hitT * 3; // 被弾の光は控えめに(強すぎると全身が白く飛ぶ)
     if (this.sigil) this.sigil.rotation.z += dt * 0.6;
   }
   think(dt) {
@@ -232,7 +280,8 @@ export class Enemy {
       if (best && !this.aggro) sfx.growl(this.pos);
       this.target = best; if (best) this.aggro = true;
     }
-    let sp = T.speed * (this.status.slow ? 0.5 : 1);
+    let sp = T.speed * this.speedMul * (this.status.slow ? 0.5 : 1) * (this.status.bound ? 0 : 1); // 束縛中は動けない
+    this.leapCd = (this.leapCd || 0) - dt; this.summonCd = (this.summonCd ?? 6) - dt;
     const move = new THREE.Vector3();
     if (this.target) {
       const tp = this.target.pos;
@@ -255,7 +304,13 @@ export class Enemy {
         if (d < 6) move.set(this.pos.x - tp.x, 0, this.pos.z - tp.z).normalize();
         else if (!los || d > T.range) { const dir = this.target.flow ? flowDir(this.target.flow, this.pos) : null; if (dir) move.copy(dir); }
         if (this.chant) move.multiplyScalar(0.3);
+      } else if (T.leap && los && d > 3.2 && d < 8 && this.leapCd <= 0) {
+        // 飛びかかる (蜘蛛)
+        this.leapCd = 4.5; this.attackAnim = 1;
+        this.knock.add(new THREE.Vector3(tp.x - this.pos.x, 0, tp.z - this.pos.z).normalize().multiplyScalar(16));
+        sfx.growl(this.pos);
       } else if (inRange) {
+        if (T.summon && this.summonCd <= 0) this.summon();
         if (T.ranged && d < 5) move.set(this.pos.x - tp.x, 0, this.pos.z - tp.z).normalize().multiplyScalar(0.6);
         this.cd -= dt;
         if (this.cd <= 0) { this.cd = T.cd * rand(0.85, 1.2); this.attack(); }
@@ -264,7 +319,10 @@ export class Enemy {
         if (los && d < 8) dir = new THREE.Vector3(tp.x - this.pos.x, 0, tp.z - this.pos.z).normalize();
         else if (this.target.flow) dir = flowDir(this.target.flow, this.pos);
         if (dir) move.copy(dir);
+        if (T.summon && this.summonCd <= 0 && d < 18) this.summon();
       }
+      // 蝙蝠: ジグザグに飛び回って狙いを外させる
+      if (T.swoop && move.lengthSq()) move.add(new THREE.Vector3(-move.z, 0, move.x).multiplyScalar(Math.sin(G.time * 3 + this.phase) * 0.9));
     }
     // 群れの分離
     for (const o of G.enemies) {
@@ -286,7 +344,7 @@ export class Enemy {
     sfx.chantStart?.();
   }
   finishChant(tp) {
-    const c = this.chant; this.chant = null; this.cd = this.T.cd * rand(0.8, 1.2);
+    const c = this.chant; this.chant = null; this.cd = this.T.cd * rand(0.8, 1.2); this.attackAnim = 1;
     this.chantLabel?.userData.set('');
     if (!this.alive || !this.target) return;
     const spell = c.spell; spell.power *= this.bossKind ? 0.9 : 0.6;
@@ -302,20 +360,61 @@ export class Enemy {
     G.ui?.floatText(this.pos, '詠唱妨害!', '#ffd76a');
     return true;
   }
+  // 屍術師: 骸骨兵を呼び出す (部屋の主が呼ぶのと同じく、全員の画面に出す)
+  summon() {
+    this.summonCd = 14;
+    const mine = G.enemies.filter(e => e.alive && e.summoner === this.id).length;
+    if (mine >= 3) return;
+    this.attackAnim = 1;
+    for (let k = 0; k < 2; k++) {
+      const a = Math.random() * Math.PI * 2, p = this.pos.clone().add(new THREE.Vector3(Math.cos(a) * 1.8, 0, Math.sin(a) * 1.8));
+      const id = this.id + '_s' + (this._sn = (this._sn || 0) + 1);
+      spawnEnemy(id, 'skeleton', p, this.floor, this.id);
+      G.net?.send({ t: 'espawn', id, type: 'skeleton', pos: p.toArray(), floor: this.floor, summoner: this.id });
+    }
+    G.ui?.floatText(this.pos.clone().add(new THREE.Vector3(0, 1, 0)), '屍よ、起きよ', '#60ff9a');
+  }
   attack() {
     const t = this.target; if (!t) return;
     this.attackAnim = 1;
-    if (this.T.ranged) {
-      const from = this.pos.clone(); from.y = 1.6;
-      const to = t.pos.clone(); to.y = 1.1;
-      G.fx.enemyBolt(this, from, to.sub(from).normalize());
+    const T = this.T;
+    if (T.slam) {
+      // 叩きつけ: 周りの者をまとめて打ち、吹き飛ばす
+      G.fx.burst(this.pos.clone().setY(0.2), 0xb09070, 60, { speed: 6, up: 2 });
+      G.shake = Math.max(G.shake || 0, 0.35);
+      for (const m of G.mages) {
+        if (!m.alive || m.downed) continue;
+        const v = m.pos.clone().sub(this.pos); v.y = 0; const dd = v.length();
+        if (dd > 3.2) continue;
+        G.fx.damage(m, this.dmg * (1.1 - dd * 0.15), [], this, { melee: true });
+        if (m.vel) m.pushV = v.normalize().multiplyScalar(9);
+      }
+      sfx.hit(this.pos);
+      return;
+    }
+    if (T.ranged) {
+      const from = this.pos.clone(); from.y = (this.pos.y || 0) + 1.5;
+      const to = t.pos.clone(); to.y = (t.pos.y || 0) + 1.1;
+      G.fx.enemyBolt(this, from, to.sub(from).normalize(), T.bolt);
     } else {
       G.fx.damage(t, this.dmg * rand(0.85, 1.15), [], this, { melee: true });
+      if (T.web && t.status) t.status.slow = { t: 2.5 }; // 糸で絡める
+      if (T.drain) { this.hp = Math.min(this.maxHp, this.hp + this.dmg * 0.6); } // 血を吸う
       sfx.hit(t.pos);
       if (t.thorns && t.shield > 0) G.fx.damage(this, 12, t.thorns, t, {});
     }
   }
   dispose() { G.scene.remove(this.root); }
+  // 倒れる動きを見せてから消える
+  dieAnim() {
+    const ud = this.body.userData;
+    if (ud.kind !== 'glb') { this.dispose(); return; }
+    this.hpBar.visible = false; if (this.chantLabel) this.chantLabel.visible = false; if (this.sigil) this.sigil.visible = false;
+    const dur = dieGlb(ud);
+    G.dying ||= [];
+    this.hitT = 0; this.rimU.strength.value = 0.2; // 倒れた後は縁取りを落ち着かせる
+    G.dying.push({ e: this, t: Math.max(1.2, dur + 0.8) });
+  }
 }
 
 // 各魔導師への流れ場を定期更新(魔物の経路探索用)

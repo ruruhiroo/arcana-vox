@@ -14,21 +14,64 @@
     --serif: 'Shippori Mincho B1', 'Yu Mincho', serif;
   }
   * { box-sizing: border-box; }
+  /* ゲーム中のクリックやドラッグで文字が選択されないように(入力欄は除く) */
+  body { -webkit-user-select: none; user-select: none; }
+  input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--ink); font-family: var(--serif); }
   canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
   .hidden { display: none !important; }
   button { font-family: var(--serif); cursor: pointer; }
 
   /* ---- ロビー ---- */
-  #lobby { position: fixed; inset: 0; display: grid; place-items: center; z-index: 50;
-    background: radial-gradient(ellipse at 50% 40%, rgba(60,30,90,0.35), rgba(0,0,0,0.92) 70%), #050308; }
-  #lobby .card { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 36px 40px; background: var(--panel);
-    border: 1px solid var(--panel-edge); box-shadow: 0 0 80px rgba(120,70,200,0.25), inset 0 0 60px rgba(0,0,0,0.6); }
-  #lobby h1 { margin: 0; text-align: center; font-size: clamp(34px, 6vw, 56px); letter-spacing: .12em; font-weight: 800;
-    background: linear-gradient(180deg, #fff3cf, #d8b46a 55%, #7a5a22); -webkit-background-clip: text; background-clip: text; color: transparent;
-    filter: drop-shadow(0 0 18px rgba(216,180,106,.35)); }
-  #lobby .sub { text-align: center; font-family: 'Cinzel', serif; letter-spacing: .5em; color: var(--gold-dim); margin: 6px 0 22px; }
-  #lobby .tag { text-align: center; color: var(--ink-dim); font-size: 17px; line-height: 1.8; margin-bottom: 22px; }
+  #lobby { position: fixed; inset: 0; z-index: 50; overflow: auto;
+    background: radial-gradient(ellipse at 28% 45%, rgba(70,40,110,0.42), transparent 55%), radial-gradient(ellipse at 50% 120%, rgba(120,60,20,0.25), transparent 60%), #050308; }
+  #lobby::after { content: ''; position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 220px rgba(0,0,0,.9); }
+  .lobbyWrap { position: relative; z-index: 1; min-height: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 4vw; padding: 32px max(32px, 6vw); max-width: 1280px; margin: 0 auto; }
+  /* 左: 題字と魔法陣 */
+  .lobbyHero { position: relative; text-align: center; padding: 40px 0; }
+  .lobbyHero .ring { position: absolute; left: 50%; top: 50%; width: min(520px, 42vw); aspect-ratio: 1; transform: translate(-50%, -50%); opacity: .5; pointer-events: none; }
+  .lobbyHero .ring svg { width: 100%; height: 100%; animation: ringSpin 90s linear infinite; }
+  .lobbyHero .ring svg .inner { transform-origin: 50% 50%; animation: ringSpin 60s linear infinite reverse; }
+  @keyframes ringSpin { to { transform: rotate(360deg); } }
+  #lobby h1 { position: relative; margin: 0; font-size: clamp(44px, 6.4vw, 92px); letter-spacing: .16em; font-weight: 800; line-height: 1.1; padding-left: .16em;
+    background: linear-gradient(180deg, #fff6da, #e0bd72 50%, #7a5a22); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 24px rgba(216,180,106,.35)); }
+  #lobby .sub { position: relative; font-family: 'Cinzel', serif; letter-spacing: .7em; padding-left: .7em; color: var(--gold-dim); margin: 14px 0 0; font-size: clamp(13px, 1.2vw, 17px); }
+  .lobbyHero .rule { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; margin: 26px auto; width: min(360px, 80%); }
+  .lobbyHero .rule::before, .lobbyHero .rule::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--gold-dim)); }
+  .lobbyHero .rule::after { transform: scaleX(-1); }
+  .lobbyHero .rule i { width: 7px; height: 7px; border: 1px solid var(--gold); transform: rotate(45deg); }
+  #lobby .tag { position: relative; color: var(--ink-dim); font-size: 16px; line-height: 2; letter-spacing: .06em; }
+  /* 右: 支度 */
+  .lobbyForm { display: flex; flex-direction: column; gap: 20px; max-width: 520px; width: 100%; justify-self: start; }
+  .field > .flabel { display: block; font-size: 13px; letter-spacing: .35em; color: var(--gold-dim); margin-bottom: 8px; }
+  .lobbyForm #nameIn { width: 100%; background: transparent; border: none; border-bottom: 1px solid var(--panel-edge); padding: 6px 2px 10px; font-size: 22px; letter-spacing: .08em; border-radius: 0; }
+  .lobbyForm #nameIn:focus { box-shadow: none; border-bottom-color: var(--gold); outline: none; }
+  .lobbyForm #nameIn::placeholder { color: rgba(233,224,204,.28); }
+  .elems { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .el { background: rgba(0,0,0,.35); border: 1px solid rgba(216,180,106,.22); color: var(--ink-dim); padding: 8px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 2px; transition: .15s; }
+  .el b { font-size: 18px; color: var(--c); font-weight: 700; letter-spacing: .05em; }
+  .el span { font-size: 11px; letter-spacing: .02em; }
+  .el:hover { border-color: var(--c); }
+  .el.sel { border-color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--c) 40%, transparent); color: var(--ink); }
+  .elhint { letter-spacing: .05em; color: var(--ink-dim); margin-left: 8px; font-size: 12px; }
+  @media (max-width: 520px) { .elems { grid-template-columns: repeat(3, 1fr); } }
+  .netrow { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .lobbyForm select#netSel { appearance: none; -webkit-appearance: none; min-width: 230px; padding: 10px 40px 10px 14px; font-size: 17px; cursor: pointer;
+    background: rgba(0,0,0,.35) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23d8b46a' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 14px center; }
+  .lobbyForm select#netSel option { background: #120d0a; }
+  #startBtn { position: relative; width: 100%; padding: 18px; font-size: 24px; letter-spacing: .5em; text-indent: .5em;
+    background: linear-gradient(180deg, rgba(216,180,106,.3), rgba(120,80,30,.18)); border: 1px solid var(--gold); clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 14px 100%, 0 50%); }
+  #startBtn:hover { background: linear-gradient(180deg, rgba(240,200,120,.42), rgba(140,95,35,.28)); box-shadow: none; filter: drop-shadow(0 0 14px rgba(216,180,106,.5)); }
+  #tutBtn { background: none; border: none; color: var(--gold); font-size: 16px; letter-spacing: .12em; padding: 4px 0; text-decoration: underline; text-underline-offset: 6px; text-decoration-color: var(--gold-dim); }
+  #tutBtn:hover { color: #fff3cf; box-shadow: none; background: none; }
+  .lobbyFoot { display: flex; flex-direction: column; gap: 6px; padding-top: 14px; border-top: 1px solid rgba(216,180,106,.15); }
+  .lobbyFoot .note { font-size: 13.5px; }
+  @media (max-width: 900px) {
+    .lobbyWrap { grid-template-columns: 1fr; gap: 8px; padding: 24px 16px; }
+    .lobbyHero { padding: 24px 0 8px; } .lobbyHero .ring { width: min(380px, 90vw); }
+    .lobbyForm { justify-self: center; }
+  }
   .row { display: flex; gap: 12px; margin: 10px 0; align-items: center; flex-wrap: wrap; }
   .row label { width: 120px; color: var(--gold); font-size: 17px; }
   input[type=text], textarea, select { background: rgba(0,0,0,.5); border: 1px solid var(--panel-edge); color: var(--ink); font-family: var(--serif);
@@ -39,6 +82,53 @@
   .mode b { display: block; color: var(--gold); font-size: 19.5px; margin-bottom: 4px; }
   .mode span { font-size: 15.5px; color: var(--ink-dim); line-height: 1.6; }
   .mode.sel { border-color: var(--gold); background: rgba(216,180,106,.12); box-shadow: 0 0 20px rgba(216,180,106,.2); }
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .slot3 { position: relative; padding: 10px 12px 12px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.35); cursor: pointer; transition: .15s; min-height: 92px; }
+  .slot3:hover { border-color: var(--gold-dim); }
+  .slot3.sel { border-color: var(--gold); background: rgba(216,180,106,.12); box-shadow: 0 0 20px rgba(216,180,106,.2); }
+  .slot3 .sn { font-size: 12px; letter-spacing: .2em; color: var(--gold-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 30px; }
+  .slot3 .sf { font-size: 19px; color: var(--gold); margin: 2px 0 4px; white-space: nowrap; }
+  .slot3 .sd { font-size: 13.5px; color: var(--ink-dim); line-height: 1.55; }
+  .slot3.empty .sf { color: var(--ink-dim); font-size: 17px; }
+  .slot3 .sdel { position: absolute; top: 6px; right: 6px; background: none; border: none; color: var(--ink-dim); font-size: 12.5px; padding: 2px 4px; cursor: pointer; }
+  .slot3 .sdel:hover { color: #ff9a8a; }
+  .slot3 .sdel.arm { color: #ff7a6a; }
+  #workRing { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; pointer-events: none; }
+  #workRing i { width: 46px; height: 46px; border-radius: 50%; background: conic-gradient(var(--gold) var(--p, 0%), rgba(0,0,0,.45) 0); -webkit-mask: radial-gradient(circle, transparent 15px, #000 16px); mask: radial-gradient(circle, transparent 15px, #000 16px); filter: drop-shadow(0 0 6px rgba(216,180,106,.5)); }
+  #workRing span { font-size: 14px; color: #fff3cf; letter-spacing: .2em; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+  .profrow { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(216,180,106,.15); font-size: 13.5px; color: var(--ink-dim); }
+  .profrow span { display: inline-flex; align-items: center; gap: 4px; }
+  .profrow b { color: var(--gold); font-weight: 700; }
+  .profrow i { display: inline-block; width: 34px; height: 4px; background: linear-gradient(90deg, #9fe4ff var(--p), rgba(255,255,255,.12) 0); }
+  /* 祭壇の前に出る属性の札 */
+  #elCard { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); width: 360px; padding: 22px 24px 20px; pointer-events: none;
+    background: linear-gradient(180deg, rgba(14,10,8,.92), rgba(6,4,4,.92)); border: 1px solid var(--elc, #d8b46a); box-shadow: 0 0 40px rgba(0,0,0,.8), inset 0 0 40px rgba(0,0,0,.6), 0 0 24px color-mix(in srgb, var(--elc) 35%, transparent); }
+  #elCard.hidden { display: none; }
+  #elCard .eln { font-size: 40px; letter-spacing: .25em; color: var(--elc); text-shadow: 0 0 18px var(--elc); line-height: 1.1; }
+  #elCard .eln ruby rt { font-size: 12px; letter-spacing: .3em; color: #cbb98f; text-shadow: none; }
+  #elCard .els { font-size: 13px; letter-spacing: .4em; color: #8a7a60; margin-top: 2px; }
+  #elCard .motto { margin: 12px 0 14px; font-size: 16px; color: #efe2c0; font-style: italic; border-left: 2px solid var(--elc); padding-left: 10px; line-height: 1.7; }
+  #elCard dl { display: grid; grid-template-columns: 74px 1fr; gap: 6px 10px; margin: 0; font-size: 13.5px; line-height: 1.6; }
+  #elCard dt { color: #a8946a; letter-spacing: .15em; }
+  #elCard dd { margin: 0; color: #e8dcc4; }
+  #elCard .pw i { display: inline-block; height: 6px; background: var(--elc); vertical-align: middle; margin-right: 6px; box-shadow: 0 0 8px var(--elc); }
+  #elCard .foot { margin-top: 14px; font-size: 13px; color: #c9a860; text-align: center; letter-spacing: .1em; }
+  #elCard.sworn .foot { color: var(--elc); }
+  /* 誓約の演出 */
+  #vowFx { position: absolute; inset: 0; pointer-events: none; display: grid; place-items: center; align-content: center; gap: 10px;
+    background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--elc) 45%, transparent), rgba(0,0,0,.75) 70%); animation: vowBg 3.6s ease forwards; }
+  #vowFx.hidden { display: none; }
+  #vowFx .vring { position: absolute; width: 70vmin; height: 70vmin; border-radius: 50%; border: 2px solid var(--elc); box-shadow: 0 0 40px var(--elc), inset 0 0 40px var(--elc);
+    background: repeating-conic-gradient(from 0deg, transparent 0 7deg, color-mix(in srgb, var(--elc) 30%, transparent) 7deg 8deg); animation: vowRing 3.6s ease forwards; }
+  #vowFx .vtitle { position: relative; font-size: 96px; letter-spacing: .5em; text-indent: .5em; color: #fff6dc; text-shadow: 0 0 30px var(--elc), 0 0 60px var(--elc); animation: vowTitle 3.6s ease forwards; }
+  #vowFx .vline { position: relative; font-size: 22px; letter-spacing: .15em; color: #f4e6c4; text-shadow: 0 0 12px #000, 0 0 20px var(--elc); animation: vowLine 3.6s ease forwards; }
+  @keyframes vowBg { 0% { opacity: 0 } 8% { opacity: 1 } 75% { opacity: 1 } 100% { opacity: 0 } }
+  @keyframes vowRing { 0% { transform: scale(.2) rotate(0); opacity: 0 } 15% { opacity: 1 } 100% { transform: scale(1.25) rotate(120deg); opacity: 0 } }
+  @keyframes vowTitle { 0% { opacity: 0; transform: scale(1.6); filter: blur(8px) } 18% { opacity: 1; transform: scale(1); filter: blur(0) } 80% { opacity: 1 } 100% { opacity: 0 } }
+  @keyframes vowLine { 0%, 25% { opacity: 0; transform: translateY(10px) } 40% { opacity: 1; transform: none } 85% { opacity: 1 } 100% { opacity: 0 } }
+  @media (prefers-reduced-motion: reduce) { #vowFx, #vowFx * { animation-duration: .01s !important; } }
+  .msavenote { text-align: center; font-size: 14px; color: var(--ink-dim); margin: 4px 0 2px; min-height: 1em; }
+  @media (max-width: 720px) { .slots { grid-template-columns: 1fr; } }
   .btn { background: linear-gradient(180deg, rgba(216,180,106,.25), rgba(216,180,106,.08)); border: 1px solid var(--gold); color: #fff3cf;
     padding: 12px 22px; font-size: 19.5px; letter-spacing: .15em; transition: .15s; }
   .btn:hover { background: rgba(216,180,106,.35); box-shadow: 0 0 20px rgba(216,180,106,.35); }
@@ -60,8 +150,15 @@
   .bar > div { height: 100%; transition: width .15s; }
   .bar span { position: absolute; inset: 0; font-size: 14.5px; line-height: 13px; padding-left: 6px; text-shadow: 0 0 3px #000; }
   #hpBar > div { background: linear-gradient(90deg, #6a1410, var(--hp)); } #mpBar > div { background: linear-gradient(90deg, #142a6a, var(--mp)); }
+  #stBar { height: 6px; margin-top: 4px; transition: opacity .6s; } #stBar > div { background: linear-gradient(90deg, #4a6a1a, #c8e67a); transition: width .08s; }
+  #stBar.full { opacity: 0.35; } #stBar.winded > div { background: #8a6a3a; animation: winded 0.5s infinite alternate; }
+  @keyframes winded { to { opacity: 0.45; } }
   #shBar { height: 5px; border: none; } #shBar > div { background: var(--sh); box-shadow: 0 0 8px var(--sh); }
   #statusIcons { margin-top: 6px; font-size: 15.5px; color: var(--gold); min-height: 16px; }
+  .buff { display: inline-block; margin-right: 8px; padding: 2px 9px; border-radius: 4px; font-size: 15px; }
+  .buff.odd { color: #ecd0ff; background: rgba(90, 30, 130, 0.55); border: 1px solid #b070ff; box-shadow: 0 0 10px rgba(170, 90, 255, 0.5); }
+  .buff.might { color: #ffd9a0; background: rgba(150, 60, 10, 0.55); border: 1px solid #ff9a40; box-shadow: 0 0 10px rgba(255, 140, 40, 0.6); }
+  #mightVignette { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.4s; box-shadow: inset 0 0 120px rgba(255, 120, 30, 0.35); z-index: 3; }
   #hotbar { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; }
   .slot { width: 104px; min-height: 64px; background: var(--panel); border: 1px solid var(--panel-edge); padding: 5px 6px; font-size: 14.5px; position: relative; }
   .slot .k { position: absolute; top: 2px; right: 5px; font-family: 'Cinzel'; color: var(--gold); font-size: 15.5px; }
@@ -70,6 +167,23 @@
   .slot.item { width: 64px; text-align: center; }
   .slot.item .c { font-size: 19.5px; color: #fff; }
   .slot.dim { opacity: .45; }
+  .slot.item.ic { width: 66px; height: 66px; min-height: 0; padding: 0; background: radial-gradient(circle at 50% 42%, rgba(70,58,44,.55), rgba(8,6,5,.88) 72%); border-color: #4a3e2c; box-shadow: inset 0 0 14px rgba(0,0,0,.9); }
+  .slot.item.ic .pic { position: absolute; inset: 3px; display: block; }
+  .slot.item.ic .pic img, .slot.item.ic .pic svg { width: 100%; height: 100%; display: block; object-fit: contain; filter: drop-shadow(0 3px 4px rgba(0,0,0,.8)); }
+  .slot.item.ic .k { top: 1px; right: 4px; font-size: 13px; text-shadow: 0 0 4px #000, 0 0 2px #000; }
+  .slot.item.ic .c { position: absolute; right: 5px; bottom: 1px; font-size: 16px; font-family: 'Cinzel', serif; text-shadow: 0 0 4px #000, 0 0 3px #000; }
+  .slot.item.ic.dim { opacity: 1; } .slot.item.ic.dim .pic { opacity: .3; filter: grayscale(1); } .slot.item.ic.dim .c { color: #8a8070; }
+  .slot.item.ic.empty { opacity: .55; }
+  /* 古文書に記された言霊の字 */
+  .wtag { position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%); font-style: normal; font-size: 13px; font-weight: 700; color: #3a1a08; background: rgba(232,208,150,.92); padding: 0 4px; border-radius: 2px; letter-spacing: .05em; box-shadow: 0 1px 3px rgba(0,0,0,.7); white-space: nowrap; pointer-events: none; }
+  .islot { position: relative; }
+  .slot.item.ic.held { border-color: var(--gold); box-shadow: inset 0 0 14px rgba(0,0,0,.9), 0 0 14px rgba(216,180,106,.55); transform: translateY(-4px); }
+  .slot.item.ic.empty.held { opacity: 1; }
+  .iquick { display: flex; gap: 6px; justify-content: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(216,180,106,.18); align-items: center; }
+  .iquick .ql { font-size: 13px; color: var(--ink-dim); letter-spacing: .2em; margin-right: 8px; }
+  .iquick .slot { cursor: pointer; }
+  .iquick .slot.over { border-color: var(--gold); box-shadow: 0 0 12px rgba(216,180,106,.5); }
+  .slot.item.ic.using { border-color: #6a8aff; box-shadow: inset 0 0 14px rgba(0,0,0,.9), 0 0 12px rgba(100,140,255,.5); }
   .slot ruby rt { font-size: 10.5px; color: var(--gold-dim); font-weight: 400; letter-spacing: 0; }
   .slot .n { padding-top: 6px; line-height: 1.5; }
   .slot .t { line-height: 1.9; }
@@ -95,6 +209,12 @@
   .eitem { background: rgba(0,0,0,.35); border: 1px solid var(--panel-edge); padding: 8px 10px; min-height: 92px; display: flex; flex-direction: column; gap: 3px; font-size: 16px; }
   .eitem.r1 { border-color: #3d5f8a; } .eitem.r2 { border-color: #6a4a90; box-shadow: 0 0 12px rgba(195,139,255,.18); } .eitem.r3 { border-color: #a07a2a; box-shadow: 0 0 16px rgba(255,201,74,.25); }
   .eitem.empty { opacity: .5; justify-content: center; }
+  .items { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-bottom: 8px; }
+  .itm { background: rgba(0,0,0,.35); border: 1px solid var(--panel-edge); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .itm b { color: var(--gold); font-size: 16px; } .itm b i { font-style: normal; color: var(--ink); margin-left: 6px; }
+  .itm small { color: var(--ink-dim); font-size: 13px; line-height: 1.5; }
+  .itm .ib { display: flex; gap: 6px; margin-top: 2px; } .itm .ib button { flex: 1; font-size: 14px; padding: 4px; }
+  .itm.tome { border-color: #a07a2a; box-shadow: 0 0 10px rgba(255,201,74,.15); }
   .eitem .rar { font-size: 14.5px; color: var(--ink-dim); }
   .eitem small { color: #d8c8a8; font-size: 15px; line-height: 1.5; }
   .eitem .ebtns { margin-top: auto; display: flex; gap: 6px; }
@@ -107,7 +227,6 @@
   .keysbox { margin-top: 14px; }
   .keysbox summary { cursor: pointer; color: var(--gold-dim); font-size: 15px; }
   .keysbox[open] summary { margin-bottom: 8px; }
-  @media (max-height: 820px) { #lobby .card { padding: 22px 32px; } #lobby h1 { font-size: 40px; } #lobby .sub { margin: 2px 0 12px; } #lobby .tag { font-size: 15px; margin-bottom: 12px; } #lobby .row { margin: 8px 0; } }
   #meieiFx { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 55%, rgba(255,230,160,.55), rgba(255,200,90,.15) 45%, rgba(0,0,0,0) 70%); }
   #chantVignette { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .5s; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(10,0,20,.85) 100%); }
   #goals .mut { font-size: 13px; color: #c8a8ff; margin-bottom: 6px; }
@@ -137,6 +256,12 @@
   #goals .keys { font-size: 14px; color: var(--ink-dim); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(216,180,106,.2); }
   #goals .keys b { color: #ffd76a; letter-spacing: .2em; margin-left: 4px; }
   #goals .keys span { font-size: 12px; }
+  .spguide { line-height: 1.85; font-size: 15px; margin-bottom: 14px; }
+  .spguide p { margin: 0 0 8px; }
+  .spguide b { color: #f0d890; }
+  .bondtable { border-collapse: collapse; margin: 6px 0 8px; font-size: 13.5px; }
+  .bondtable th, .bondtable td { border: 1px solid rgba(216,180,106,.25); padding: 3px 9px; text-align: center; }
+  .bondtable th { color: #e8d29a; font-weight: 600; }
   .spirits { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
   .spcard { padding: 12px 14px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.25); }
   .spcard.unmet { opacity: .5; }
@@ -147,7 +272,7 @@
   .spcard .bond { font-size: 13px; color: var(--gold); }
   .spcard .bar { height: 5px; background: rgba(255,255,255,.1); margin-top: 4px; }
   .spcard .bar i { display: block; height: 100%; }
-  .startrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .startrow { display: flex; flex-direction: column; gap: 12px; align-items: center; }
   #tut { position: absolute; top: 90px; left: 24px; width: 400px; padding: 14px 18px; background: rgba(12,8,18,.82); border: 1px solid var(--panel-edge); border-left: 3px solid var(--gold); pointer-events: auto; transition: .3s; }
   #tut.ok { border-left-color: #8dffb0; box-shadow: 0 0 24px rgba(141,255,176,.25); }
   #tut .tstep { font-size: 14.5px; letter-spacing: .2em; color: var(--gold-dim); }
@@ -180,6 +305,10 @@
   #chantText .w { padding: 0 4px; } #chantText .w.ok { color: #ffe08a; } #chantText .w.unk { color: #888; text-decoration: line-through; }
   #chantText .w.trig { color: #ff9a6a; }
   #chantFormula { font-size: 16px; color: var(--ink-dim); margin-top: 4px; min-height: 18px; }
+  #chantFormula .cparts { display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: center; margin-bottom: 3px; font-size: 17px; }
+  #chantFormula .cp.ok { color: #ffd76a; }
+  #chantFormula .cp.part { color: #ff8f7a; }
+  #chantFormula .cp small { font-size: 13px; opacity: .8; }
   #micState { position: absolute; left: 24px; bottom: 140px; font-size: 16px; color: var(--ink-dim); }
   #micState.on { color: #ff7a7a; text-shadow: 0 0 10px #f44; }
   #topLeft { position: absolute; left: 20px; top: 16px; }
@@ -208,6 +337,39 @@
 
   /* ---- 所持品 ---- */
   #inv { position: fixed; inset: 0; z-index: 42; display: grid; place-items: center; background: rgba(0,0,0,.55); pointer-events: auto; }
+  /* 所持品: 絵の升目 (文字は札にだけ) */
+  #inv .icard.mc { width: min(640px, calc(100vw - 32px)); }
+  .invtop { display: flex; gap: 18px; margin: 14px 0 16px; align-items: stretch; }
+  .eqcol { display: grid; grid-template-columns: repeat(3, 64px); gap: 6px; align-content: start; }
+  .invmid { flex: 1; display: flex; gap: 16px; align-items: center; padding: 10px 14px; background: rgba(0,0,0,.35); border: 1px solid rgba(216,180,106,.18); }
+  .gslot { flex: none; width: 74px; height: 98px; padding: 0; border: none; background: none; }
+  .gslot .gcover { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; background: linear-gradient(135deg, #5a1e1e, #2a0c0c); border: 2px solid #b08a3c; box-shadow: 0 0 16px rgba(216,180,106,.25); transition: .15s; }
+  .gslot .gcover { position: relative; }
+  .gslot .gcover i.gel { position: absolute; bottom: 4px; right: 6px; font-style: normal; font-size: 18px; font-weight: 700; text-shadow: 0 0 8px currentColor; }
+  .gslot .gcover b { writing-mode: vertical-rl; color: #fff3cf; font-size: 19px; letter-spacing: .1em; }
+  .gslot:hover .gcover { transform: translateY(-2px); box-shadow: 0 0 22px rgba(216,180,106,.5); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px 14px; flex: 1; }
+  .stats span { display: flex; align-items: center; gap: 6px; font-size: 18px; color: var(--ink); font-family: Cinzel, serif; }
+  .stats svg { width: 22px; height: 22px; flex: none; }
+  .igrid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; padding: 8px; background: #0a0907; border: 1px solid #2a241c; }
+  .islot { position: relative; aspect-ratio: 1; background: radial-gradient(ellipse at 50% 45%, #2a2620 0%, #12100c 70%, #070605 100%); border: 1px solid #3a3226; box-shadow: inset 0 0 0 1px #0a0806, inset 0 0 14px rgba(0,0,0,.9); padding: 4px; cursor: pointer; transition: .1s; }
+  .islot svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 3px 3px rgba(0,0,0,.8)); }
+  .islot img { width: 100%; height: 100%; display: block; object-fit: contain; filter: drop-shadow(0 4px 4px rgba(0,0,0,.85)); pointer-events: none; }
+  .islot svg.ghost { opacity: .12; filter: grayscale(1) brightness(1.6); }
+  .islot.empty { cursor: default; }
+  .islot:not(.empty):hover { border-color: #b8a070; background: radial-gradient(ellipse at 50% 45%, #3a342a 0%, #16130e 70%, #080706 100%); box-shadow: inset 0 0 0 1px #0a0806, inset 0 0 14px rgba(0,0,0,.6), 0 0 10px rgba(216,180,106,.25); }
+  .islot .n { position: absolute; right: 3px; bottom: 1px; font-family: Cinzel, serif; font-size: 14px; color: #fff; text-shadow: 1px 1px 0 #000, 0 0 3px #000; }
+  .islot.r1 { border-color: #3a4a62; } .islot.r2 { border-color: #5a4472; } .islot.r3 { border-color: #8a6a2a; box-shadow: inset 0 0 0 1px #0a0806, inset 0 0 14px rgba(0,0,0,.9), inset 0 0 18px rgba(200,150,60,.18); }
+  .islot.worn { border-color: rgba(216,180,106,.5); }
+  .islot.arm { border-color: #d04040 !important; box-shadow: inset 0 0 12px rgba(255,60,60,.5); }
+  .ikeys { display: flex; gap: 18px; justify-content: flex-end; margin-top: 8px; font-size: 12.5px; color: var(--ink-dim); }
+  .ikeys span { display: flex; align-items: center; gap: 5px; }
+  .mb { display: inline-block; width: 10px; height: 14px; border: 1.5px solid var(--ink-dim); border-radius: 5px 5px 5px 5px; position: relative; }
+  .mb::after { content: ''; position: absolute; top: 0; width: 50%; height: 45%; background: var(--gold); }
+  .mb.l::after { left: 0; border-radius: 4px 0 0 0; } .mb.r::after { right: 0; border-radius: 0 4px 0 0; }
+  .itip { position: fixed; z-index: 60; pointer-events: none; min-width: 170px; max-width: 280px; padding: 8px 11px; background: rgba(16,6,22,.96); border: 2px solid #3a1a6a; outline: 1px solid #000; box-shadow: 0 6px 20px rgba(0,0,0,.6); font-size: 14px; line-height: 1.55; }
+  .itip b { display: block; font-size: 16px; } .itip .sub { color: #8a80a0; font-size: 12px; } .itip .st { color: #9fe4a0; } .itip .hint { color: #8a80a0; font-size: 12px; margin-top: 4px; }
+  @media (max-width: 560px) { .igrid { grid-template-columns: repeat(6, 1fr); } .invtop { flex-direction: column; } }
   #inv .icard { width: min(900px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 24px 28px; background: var(--panel); border: 1px solid var(--panel-edge); box-shadow: 0 0 60px rgba(0,0,0,.8); }
   #inv .ihead { display: flex; justify-content: space-between; align-items: baseline; }
   #inv h2 { margin: 0; color: var(--gold); letter-spacing: .3em; font-size: 25.5px; }
@@ -296,6 +458,9 @@
   .chips { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 5px; }
   .chip { font-size: 16px; padding: 3px 8px; border: 1px solid var(--panel-edge); background: rgba(0,0,0,.3); color: var(--ink); cursor: pointer; }
   .chip:hover { border-color: var(--gold); }
+  .chip.locked { opacity: .5; border-style: dashed; }
+  .chipgrp { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 4px; width: 100%; }
+  .chiplbl { font-size: 12px; color: var(--ink-dim); min-width: 64px; }
   .chip.c-element { border-color: #a0502a; } .chip.c-form { border-color: #3a6aa0; } .chip.c-effect { border-color: #3aa060; }
   .chip.c-target { border-color: #a03a8a; } .chip.c-mod { border-color: #a0a03a; } .chip.c-trigger { border-color: #c06030; }
   .recipes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
@@ -307,7 +472,6 @@
 
   /* ---- スマホ幅 ---- */
   @media (max-width: 700px) {
-    #lobby .card { padding: 22px 16px; }
     .modes { grid-template-columns: 1fr; }
     #minimap { width: 120px; height: 120px; }
     #log { width: 200px; top: 145px; }
@@ -318,6 +482,22 @@
     #book nav h2 { display: none; }
   }
 </style>
+<script>
+// アプリ版: 記録はブラウザの保存領域とファイルの両方に置く。ブラウザ側はアドレス(ポート)が変わると別物になるので、
+// 起動時にファイルの中身で戻し、以後は書くたびにファイルへも写す。ファイルが空なら、今ある記録をファイルへ移す
+(function () {
+  const d = window.desktop; if (!d || !d.storeLoad) return;
+  try {
+    const saved = d.storeLoad();
+    // ブラウザ側にしか無い記録はファイルへ足す(どのアドレスで遊んだ記録も集まる)。両方にあればファイルを優先
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (!(k in saved)) d.storeSet(k, localStorage.getItem(k)); }
+    for (const k of Object.keys(saved)) localStorage.setItem(k, saved[k]);
+    const set = Storage.prototype.setItem, del = Storage.prototype.removeItem;
+    Storage.prototype.setItem = function (k, v) { set.call(this, k, v); if (this === localStorage) d.storeSet(k, v); };
+    Storage.prototype.removeItem = function (k) { del.call(this, k); if (this === localStorage) d.storeDel(k); };
+  } catch (e) { console.warn('save mirror', e); }
+})();
+</script>
 <script type="importmap">
 { "imports": {
   "three": "./vendor/three/build/three.module.js",
@@ -332,39 +512,56 @@
 <canvas id="game"></canvas>
 
 <div id="lobby">
-  <div class="card">
-    <h1>詠唱迷宮</h1>
-    <div class="sub">ARCANA&nbsp;VOX</div>
-    <div class="tag">言霊を組み、声に出して唱えよ。<br>迷宮は入るたびに姿を変える。魔導書に記し、己だけの呪文を編み上げろ。</div>
-    <div class="row"><label>魔導師名</label><input type="text" id="nameIn" maxlength="16" placeholder="漆黒の詠唱者" style="flex:1"></div>
-    <div class="row"><label>探索形式</label>
-      <div class="modes">
-        <div class="mode sel" data-mode="coop"><b>協力探索</b><span>仲間と迷宮を攻略する。倒れた仲間は「癒息」で蘇生できる。</span></div>
-        <div class="mode" data-mode="pvp"><b>探索PvP</b><span>他の魔導師とも戦う。敵の詠唱を聞き、何が来るか読め。</span></div>
+  <div class="lobbyWrap">
+    <section class="lobbyHero">
+      <div class="ring"><svg viewBox="0 0 200 200" fill="none" stroke="#d8b46a" stroke-width=".4">
+        <circle cx="100" cy="100" r="96"/><circle cx="100" cy="100" r="90" stroke-dasharray="1 3"/><circle cx="100" cy="100" r="70"/>
+        <line x1="190.0" y1="100.0" x2="196.0" y2="100.0"/><line x1="186.9" y1="123.3" x2="192.7" y2="124.8"/><line x1="177.9" y1="145.0" x2="183.1" y2="148.0"/><line x1="163.6" y1="163.6" x2="167.9" y2="167.9"/><line x1="145.0" y1="177.9" x2="148.0" y2="183.1"/><line x1="123.3" y1="186.9" x2="124.8" y2="192.7"/><line x1="100.0" y1="190.0" x2="100.0" y2="196.0"/><line x1="76.7" y1="186.9" x2="75.2" y2="192.7"/><line x1="55.0" y1="177.9" x2="52.0" y2="183.1"/><line x1="36.4" y1="163.6" x2="32.1" y2="167.9"/><line x1="22.1" y1="145.0" x2="16.9" y2="148.0"/><line x1="13.1" y1="123.3" x2="7.3" y2="124.8"/><line x1="10.0" y1="100.0" x2="4.0" y2="100.0"/><line x1="13.1" y1="76.7" x2="7.3" y2="75.2"/><line x1="22.1" y1="55.0" x2="16.9" y2="52.0"/><line x1="36.4" y1="36.4" x2="32.1" y2="32.1"/><line x1="55.0" y1="22.1" x2="52.0" y2="16.9"/><line x1="76.7" y1="13.1" x2="75.2" y2="7.3"/><line x1="100.0" y1="10.0" x2="100.0" y2="4.0"/><line x1="123.3" y1="13.1" x2="124.8" y2="7.3"/><line x1="145.0" y1="22.1" x2="148.0" y2="16.9"/><line x1="163.6" y1="36.4" x2="167.9" y2="32.1"/><line x1="177.9" y1="55.0" x2="183.1" y2="52.0"/><line x1="186.9" y1="76.7" x2="192.7" y2="75.2"/>
+        <g class="inner"><polygon points="100.0,30.0 160.6,65.0 160.6,135.0 100.0,170.0 39.4,135.0 39.4,65.0"/>
+        <polygon points="170.0,100.0 135.0,160.6 65.0,160.6 30.0,100.0 65.0,39.4 135.0,39.4"/>
+        <circle cx="100" cy="100" r="40" stroke-dasharray="6 2 1 2"/></g>
+      </svg></div>
+      <h1>詠唱迷宮</h1>
+      <div class="sub">ARCANA VOX</div>
+      <div class="rule"><i></i></div>
+      <div class="tag">言霊を組み、声に出して唱えよ。<br>迷宮は入るたびに姿を変える。<br>魔導書に記し、己だけの呪文を編み上げろ。</div>
+    </section>
+    <section class="lobbyForm">
+      <div class="field"><span class="flabel">魔導師名</span><input type="text" id="nameIn" maxlength="16" placeholder="漆黒の詠唱者"></div>
+      <div class="field"><span class="flabel">探索形式</span>
+        <div class="modes">
+          <div class="mode sel" data-mode="coop"><b>協力探索</b><span>仲間と迷宮を攻略する。倒れた仲間は「癒息」で蘇生できる。</span></div>
+          <div class="mode" data-mode="pvp"><b>探索PvP</b><span>他の魔導師とも戦う。敵の詠唱を聞き、何が来るか読め。</span></div>
+        </div>
       </div>
-    </div>
-    <div class="row" id="onlineRow"><label>接続</label>
-      <select id="netSel"><option value="solo">ひとりで</option><option value="host">ネット: 部屋を作る</option><option value="join">ネット: 部屋に入る</option><option value="lan">LAN: 直接接続</option></select>
-      <input type="text" id="roomIn" placeholder="部屋コード" maxlength="12" autocomplete="off" class="hidden" style="width:160px">
-      <button id="copyCode" class="hidden" type="button">コピー</button>
-      <input type="text" id="hostIn" placeholder="接続先(空欄=自分が部屋)" class="hidden" style="width:220px">
-    </div>
-    <div class="note" id="netNote"></div>
-    <div class="startrow"><button class="btn" id="startBtn">迷宮へ降りる</button><button class="btn ghost" id="tutBtn">手ほどき(はじめての方)</button></div>
-    <p class="dlapp" id="dlApp"><a href="https://github.com/ruruhiroo/arcana-vox/releases/latest" target="_blank" rel="noopener">⬇ アプリ版(Windows)をダウンロード</a> <span>インストール不要・オフライン音声認識つき</span></p>
-    <details class="keysbox"><summary>操作一覧(Esc → 操作設定 で変更できる)</summary>
-    <div class="keys">
-      <kbd>V</kbd><span>押している間 声で詠唱</span><kbd>C</kbd><span>常時詠唱 切替(ハンズフリー)</span>
-      <kbd>右クリック</kbd><span>魔導書を掲げて頁を読む</span><kbd>ホイール</kbd><span>頁をめくる(X/Z でも)</span>
-      <kbd>WASD</kbd><span>移動 / Shift 走る / Space ジャンプ</span><kbd>F</kbd><span>調べる・拾う・転移</span>
-      <kbd>Tab</kbd><span>魔導書を開く(呪文・言霊辞典・心得・調合)</span>
-      <kbd>E</kbd><span>所持品・装備</span><kbd>1-5</kbd><span>道具を使う</span><kbd>Esc</kbd><span>メニュー・操作設定(キー変更)</span>
-      <kbd>F11</kbd><span>全画面(デスクトップ版)</span>
-      <kbd>T</kbd><span>NPC詠唱の読み上げ 切替</span>
-      <kbd>マウス</kbd><span>視点(ドラッグ / 矢印キーでも可)</span><kbd>M</kbd><span>環境音 OFF/小/中</span>
-    </div>
-    </details>
-    <p class="note" id="voiceNote"></p>
+      <div class="field" id="onlineRow"><span class="flabel">接続</span>
+        <div class="netrow">
+          <select id="netSel"><option value="solo">ひとりで</option><option value="host">ネット: 部屋を作る</option><option value="join">ネット: 部屋に入る</option><option value="lan">LAN: 直接接続</option></select>
+          <input type="text" id="roomIn" placeholder="部屋コード" maxlength="12" autocomplete="off" class="hidden" style="width:160px">
+          <button id="copyCode" class="hidden btn small" type="button">コピー</button>
+          <input type="text" id="hostIn" placeholder="接続先(空欄=自分が部屋)" class="hidden" style="width:220px">
+        </div>
+        <div class="note" id="netNote"></div>
+      </div>
+      <div class="field"><span class="flabel">旅の記録</span><div class="slots" id="slots"></div></div>
+      <div class="startrow"><button class="btn" id="startBtn">迷宮へ降りる</button><button class="btn ghost" id="tutBtn">はじめての方は 手ほどき へ</button></div>
+      <div class="lobbyFoot">
+        <p class="dlapp" id="dlApp"><a href="https://github.com/ruruhiroo/arcana-vox/releases/latest" target="_blank" rel="noopener">アプリ版(Windows)をダウンロード</a> <span>インストール不要・オフライン音声認識つき</span></p>
+        <details class="keysbox"><summary>操作一覧(Esc → 操作設定 で変更できる)</summary>
+        <div class="keys">
+          <kbd>V</kbd><span>押している間 声で詠唱</span><kbd>C</kbd><span>常時詠唱 切替(ハンズフリー)</span>
+          <kbd>右クリック</kbd><span>魔導書を掲げて頁を読む</span><kbd>ホイール</kbd><span>頁をめくる(X/Z でも)</span>
+          <kbd>WASD</kbd><span>移動 / Shift 走る / Space ジャンプ</span><kbd>F</kbd><span>調べる・拾う・転移</span>
+          <kbd>Tab</kbd><span>魔導書を開く(呪文・言霊辞典・心得・調合)</span>
+          <kbd>E</kbd><span>所持品・装備</span><kbd>1-4</kbd><span>道具を使う</span><kbd>Esc</kbd><span>メニュー・操作設定(キー変更)</span>
+          <kbd>F11</kbd><span>全画面(デスクトップ版)</span>
+          <kbd>T</kbd><span>NPC詠唱の読み上げ 切替</span>
+          <kbd>マウス</kbd><span>視点(ドラッグ / 矢印キーでも可)</span><kbd>M</kbd><span>環境音 OFF/小/中</span>
+        </div>
+        </details>
+        <p class="note" id="voiceNote"></p>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -378,9 +575,11 @@
   <div id="micState"></div>
   <div id="vitals">
     <div id="statusIcons"></div>
+    <div id="mightVignette"></div>
     <div class="bar" id="shBar"><div style="width:0%"></div></div>
     <div class="bar" id="hpBar"><div style="width:100%"></div><span></span></div>
     <div class="bar" id="mpBar"><div style="width:100%"></div><span></span></div>
+    <div class="bar" id="stBar"><div style="width:100%"></div></div>
   </div>
   <div id="target" class="hidden"></div>
   <div id="meieiFx"></div>
@@ -392,6 +591,9 @@
   <div id="banner"><div class="big"></div><div class="small"></div></div>
   <div id="downed" class="hidden"></div>
   <div id="clickToPlay">クリックで操作開始</div>
+  <div id="workRing" class="hidden"><i></i><span></span></div>
+  <div id="elCard" class="hidden"></div>
+  <div id="vowFx" class="hidden"><div class="vring"></div><div class="vtitle">誓 約</div><div class="vline"></div></div>
 </div>
 
 <div id="typeBox" class="hidden">
@@ -400,16 +602,19 @@
 </div>
 
 <div id="inv" class="hidden">
-  <div class="icard">
-    <div class="ihead"><h2>所持品</h2><span class="muted">E / Esc で閉じる</span></div>
-    <div class="books">
-      <div class="bookitem grimoire" data-book="grimoire"><span class="cover"><b>魔導書</b><i>GRIMOIRE</i></span><span class="bdesc">常に手にしている、あなただけの魔導書。開いた頁の詠唱文を読み上げて術を放つ。呪文の書き記し・頁の並べ替え、言霊辞典・心得・調合書もここに。<span class="bbtns"><button data-open="grimoire">開く <kbd>Tab</kbd></button></span></span></div>
+  <div class="icard mc">
+    <div class="ihead"><h2>所持品</h2><span class="muted">E / Esc</span></div>
+    <div class="invtop">
+      <div class="eqcol" id="invEquip"></div>
+      <div class="invmid">
+        <button class="gslot" data-open="grimoire" title="魔導書を開く (Tab)"><span class="gcover"><b>魔導書</b></span></button>
+        <div class="stats" id="invTotals"></div>
+      </div>
     </div>
-    <h3>装備 <span class="muted" id="invTotals"></span></h3>
-    <div class="equip" id="invEquip"></div>
-    <h3>鞄</h3>
-    <div class="bag" id="invBag"></div>
+    <div class="igrid" id="invGrid"></div>
+    <div class="ikeys"><span><i class="mb l"></i>使う・装備</span><span><i class="mb r"></i>落とす・捨てる</span><span>重ねて 1〜5: 下の欄の好きな枠へ</span></div>
   </div>
+  <div class="itip hidden" id="invTip"></div>
 </div>
 
 <div id="victory" class="hidden">
@@ -428,6 +633,8 @@
     <h2>— 休息 —</h2>
     <div id="mRoom" class="hidden" style="text-align:center;margin:-4px 0 10px;color:#e8d29a;letter-spacing:1px"></div>
     <button class="btn" id="mResume">再開する</button>
+    <button class="btn ghost" id="mSave" style="width:100%;margin-top:8px">記録する</button>
+    <div id="mSaveNote" class="msavenote"></div>
     <button class="btn ghost" id="mInv" style="width:100%;margin-top:8px">所持品 (E)</button>
     <button class="btn ghost" id="mGrimoire" style="width:100%;margin-top:8px">魔導書 (Tab)</button>
     <h3>設定</h3>

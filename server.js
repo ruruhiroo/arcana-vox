@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, 'public');
 const THREE_ROOT = path.join(__dirname, 'node_modules', 'three');
 // P2P 用ライブラリ(ESM)も node_modules から配信する
 const NM_ROOT = path.dirname(THREE_ROOT);
-const NM_ALLOW = ["/@trystero-p2p/", "/@noble/secp256k1/"];
+const NM_ALLOW = ["/@trystero-p2p/", "/@noble/secp256k1/", "/@huggingface/transformers/dist/"];
 const VENDOR = path.join(__dirname, 'vendor');
 const HAS_VENDOR = fs.existsSync(path.join(VENDOR, 'three', 'build', 'three.module.js'));
 const MIME = {

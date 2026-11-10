@@ -1,0 +1,12 @@
+"AppBuild"
+{
+	"AppID"	"0000000"
+	"Desc"	"ARCANA VOX build"
+	"BuildOutput"	"output/"
+	"ContentRoot"	"../dist/win-unpacked/"
+	"SetLive"	""
+	"Depots"
+	{
+		"0000001"	"depot_build.vdf"
+	}
+}

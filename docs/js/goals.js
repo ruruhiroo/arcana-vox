@@ -14,7 +14,8 @@ export function setupGoals(floor, hooks) {
   if (d.chests.length) list.push({ id: 'chest', text: '宝箱を開ける', need: 1, cur: () => fs.chests });
   list.push({ id: 'kill', text: '魔物を討つ', need: killNeed, cur: () => fs.kills });
   if (G.enemies.some(e => e.boss)) list.push({ id: 'boss', text: 'この層の主を討つ', need: 1, cur: () => (fs.boss ? 1 : 0) });
-  if (G.sanctuary) list.push({ id: 'sanct', text: '聖域を見つける', need: 1, cur: () => (G.sanctuaryGreeted ? 1 : 0) });
+  // 聖域は降り立った部屋にあるので、探す課題は無し
+  if (false) list.push({ id: 'sanct', text: '聖域を見つける', need: 1, cur: () => (G.sanctuaryGreeted ? 1 : 0) });
   G.goals = { floor, list, rewarded: false, hooks, depth: DEPTH_GOALS.find(x => x > floor) || floor + 5 };
   renderGoals(true);
 }

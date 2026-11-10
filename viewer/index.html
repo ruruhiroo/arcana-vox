@@ -1,0 +1,289 @@
+<title>ARCANA VOX 模型庫</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho+B1:wght@500;700&family=Cinzel:wght@500&display=swap">
+<style>
+  /* 展示室: 上に回せる模型、下に品の棚。暗い一色の見た目(ゲームと同じ世界) */
+  :root {
+    --bg: #0c0907; --panel: #15100c; --edge: #3a2e20; --edge-hi: #8a6a3a;
+    --gold: #d6b36a; --ink: #e8dcc4; --ink-dim: #9a8c74;
+    --serif: 'Shippori Mincho B1', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+    --latin: 'Cinzel', 'Times New Roman', serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--serif); }
+  .wrap { max-width: 980px; margin: 0 auto; padding-block: 14px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: .2em; color: var(--gold); font-weight: 700; text-wrap: balance; }
+  h1 small { display: block; font-family: var(--latin); font-size: 11px; letter-spacing: .5em; color: var(--ink-dim); font-weight: 500; margin-top: 2px; }
+  .count { font-size: 12px; color: var(--ink-dim); letter-spacing: .1em; }
+  .stage { position: relative; width: 100%; aspect-ratio: 4 / 3; max-height: 62vh; max-width: 100%; border: 1px solid var(--edge); background: radial-gradient(circle at 50% 42%, #2a221a, #0a0705 72%); overflow: hidden; touch-action: none; }
+  .stage canvas { display: block; width: 100%; height: 100%; filter: saturate(.74) sepia(.1) contrast(1.06); }
+  .stage .hint { position: absolute; left: 12px; bottom: 10px; font-size: 12px; color: var(--ink-dim); pointer-events: none; }
+  .stage .load { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-dim); font-size: 14px; letter-spacing: .2em; }
+  .info { display: grid; gap: 4px; min-width: 0; }
+  .info .cat { font-size: 12px; color: var(--ink-dim); letter-spacing: .3em; }
+  .info h2 { margin: 0; font-size: 22px; color: var(--ink); font-weight: 700; letter-spacing: .08em; }
+  .info p { margin: 0; color: var(--ink-dim); font-size: 14px; line-height: 1.8; max-width: 62ch; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tabs button { font: inherit; font-size: 14px; background: transparent; color: var(--ink-dim); border: 1px solid var(--edge); padding: 6px 12px; letter-spacing: .15em; cursor: pointer; }
+  .tabs button[aria-pressed="true"] { color: var(--gold); border-color: var(--edge-hi); background: #1c150e; }
+  .tabs button:focus-visible, .shelf button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  .anims button { font-size: 13px; padding: 4px 10px; }
+  .shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; }
+  .shelf button { font: inherit; display: grid; gap: 2px; justify-items: center; padding: 4px 2px 6px; background: radial-gradient(circle at 50% 40%, #241c15, #090605 75%); border: 1px solid var(--edge); color: var(--ink-dim); cursor: pointer; min-width: 0; }
+  .shelf button[aria-pressed="true"] { border-color: var(--edge-hi); box-shadow: inset 0 0 14px rgba(214,179,106,.18); color: var(--gold); }
+  .shelf img { width: 100%; max-width: 96px; aspect-ratio: 1; filter: saturate(.74) sepia(.1) contrast(1.06); }
+  .shelf span { font-size: 11px; line-height: 1.3; text-align: center; overflow-wrap: anywhere; }
+  footer { font-size: 12px; color: var(--ink-dim); line-height: 1.7; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>模型庫<small>ARCANA VOX</small></h1>
+    <span class="count" id="count">読み込み中</span>
+  </header>
+  <div class="stage" id="stage">
+    <div class="load" id="load">模型を読み込んでいます…</div>
+    <div class="hint">指でなぞって回す ・ つまんで寄せる</div>
+  </div>
+  <div class="info">
+    <span class="cat" id="cat"></span>
+    <h2 id="name"></h2>
+    <p id="desc"></p>
+  </div>
+  <div class="tabs anims" id="anims" role="group" aria-label="動き" hidden></div>
+  <div class="tabs" id="tabs" role="group" aria-label="分類"></div>
+  <div class="shelf" id="shelf"></div>
+  <footer>詠唱迷宮 ARCANA VOX の道具・装備・魔物。Blender で作った模型を、ゲームと同じ光と色で見せています。魔物は動きも切り替えられます。</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/environments/RoomEnvironment.js"></script>
+<script>
+const CATS = [
+  ['tool', '道具'], ['tome', '秘伝書'], ['cover', '装丁'], ['bookmark', '栞'], ['ring', '指輪'], ['cloak', '外套'], ['necklace', '首飾り'], ['gloves', '手袋'], ['chest', '宝箱'], ['enemy', '魔物'],
+];
+// 鍵 → [分類, 名前, 説明]
+const ITEMS = {
+  ether: ['tool', '魔力薬', '曇った硝子の瓶に青い薬。1秒かけて飲み干すと、4秒かけて魔力が55戻る。'],
+  herb: ['tool', '霊草', '迷宮の湿った床に生える草。紐で束ねて持ち歩く。導灯の素材。'],
+  crystal: ['tool', '魔晶', '岩から生えた魔力の結晶。砕いて魔力薬・護符・閃光玉に調合する。'],
+  bone: ['tool', '骨片', '倒れた骸骨兵の大腿骨。護符の素材。'],
+  iron: ['tool', '鉄屑', '錆びた鉄の延べ棒と歯車と釘。閃光玉・導灯の素材。'],
+  scroll: ['tool', '古文書', '封蝋で閉じた巻物。読むと新しい言霊を一つ覚える。'],
+  frag: ['tool', '古文書の断片', '破れた頁。三枚そろうと言霊が読める。'],
+  amulet: ['tool', '護符', '朱で印を描いた札。15秒間、50の守りをまとう。'],
+  flash: ['tool', '閃光玉', '真鍮の金具の硝子玉。周り10mの魔物を2.5秒ひるませる。'],
+  lantern: ['tool', '導灯', '六角の鉄のランタン。この層の地図をすべて照らす。'],
+  tome_fire: ['tome', '紅蓮の秘伝書', '天金の小口と錠の付いた古書。炎の術の威力を上げる。'],
+  tome_ice: ['tome', '氷獄の秘伝書', '氷の術の威力を上げる。'],
+  tome_thunder: ['tome', '雷霆の秘伝書', '雷の術の威力を上げる。'],
+  tome_wind: ['tome', '颶風の秘伝書', '風の術の威力を上げる。'],
+  tome_holy: ['tome', '聖光の秘伝書', '聖の術の威力を上げる。'],
+  tome_void: ['tome', '深淵の秘伝書', '闇の術の威力を上げる。'],
+  gear_tanned: ['cover', 'なめし革の装丁', '縫い目の残る革と真鍮の留め具。魔力の上限が上がる。'],
+  gear_ebony: ['cover', '黒檀の装丁', '黒檀の彫り板に銀の花飾り。魔力の上限と術の威力。'],
+  gear_dragon: ['cover', '竜鱗の装丁', '一枚ずつ貼った竜の鱗と、琥珀の目。術の威力が上がる。'],
+  gear_starsilver: ['cover', '星銀の装丁', '星銀の板に金の八芒星。魔力の上限が上がり、消費が減る。'],
+  gear_cv_fire: ['cover', '焔紋の装丁', '炎の紋を浮き彫りにした表紙。炎属性の威力。'],
+  gear_cv_ice: ['cover', '霜紋の装丁', '氷の紋の表紙。氷属性の威力。'],
+  gear_cv_thunder: ['cover', '雷紋の装丁', '雷の紋の表紙。雷属性の威力。'],
+  gear_cv_wind: ['cover', '風紋の装丁', '風の紋の表紙。風属性の威力。'],
+  gear_cv_holy: ['cover', '聖紋の装丁', '十字と光輪の表紙。聖属性の威力。'],
+  gear_cv_void: ['cover', '闇紋の装丁', '欠けた月の表紙。闇属性の威力。'],
+  gear_silk: ['bookmark', '絹の栞', '金の房の付いた絹のリボン。魔力の回復が早まる。'],
+  gear_silver: ['bookmark', '銀の栞', '透かし彫りの銀の板。魔力の回復と詠唱の補助。'],
+  gear_moon: ['bookmark', '月光の栞', '三日月と真珠の飾り。詠唱の補助。'],
+  gear_memory: ['bookmark', '記憶の栞', '結んだ革紐と真鍮の鍵。魔力の回復と上限。'],
+  gear_salamander: ['bookmark', '火蜥蜴の栞', '金の蜥蜴の飾り。炎属性の威力。'],
+  gear_iceflower: ['bookmark', '氷華の栞', '結晶の花の飾り。氷属性の威力。'],
+  gear_thunderbird: ['bookmark', '雷鳥の栞', '翼を広げた金の鳥。雷属性の威力。'],
+  gear_windfeather: ['bookmark', '風切羽の栞', '風を切る鳥の羽。風属性の威力。'],
+  gear_angelfeather: ['bookmark', '天使の羽の栞', '金の軸の白い羽。聖属性の威力。'],
+  gear_raven: ['bookmark', '夜鴉の栞', '夜鴉の黒い羽。闇属性の威力。'],
+  gear_ruby: ['ring', '紅玉の指輪', '丸く磨いた紅玉。炎属性の威力。'],
+  gear_sapphire: ['ring', '蒼玉の指輪', '爪で留めた蒼玉。氷属性の威力。'],
+  gear_thunderstone: ['ring', '雷石の指輪', '鉄の輪から突き出た雷石。雷属性の威力。'],
+  gear_platinum: ['ring', '白金の指輪', '金剛石とそれを囲む小さな石。聖属性の威力。'],
+  gear_obsidian: ['ring', '黒曜の指輪', '棘のある黒い輪と尖った黒曜石。闇属性の威力。'],
+  gear_emerald: ['ring', '翠玉の指輪', '金の葉が巻きつく輪と角の翠玉。風属性の威力。'],
+  gear_temperance: ['ring', '節制の指輪', '幅広の銀の輪に三つの石。魔力の消費が減る。'],
+  gear_traveler: ['cloak', '旅人の外套', '継ぎの当たった毛織りの外套。生命の上限が上がる。'],
+  gear_cleric: ['cloak', '聖職者の外套', '金の縁取りと十字。生命の上限と守護の効果。'],
+  gear_shadow: ['cloak', '影織りの外套', '破れた裾と、頭巾の奥の紫の目。生命の上限と足の速さ。'],
+  gear_hunter: ['cloak', '狩人の外套', '毛皮の襟と矢筒の革帯。生命の上限と足の速さ。'],
+  gear_drake: ['cloak', '竜革の外套', '肩を覆う鱗と棘の襟。生命の上限が大きく上がり、炎も少し強まる。'],
+  gear_stargazer: ['cloak', '星読みの外套', '星座を散らした藍の布。魔力の回復と上限。'],
+  gear_healer: ['ring', '癒し手の指輪', '銀の葉に抱かれた淡い緑の石。魔力の回復と守護。'],
+  gear_warden: ['ring', '守り手の指輪', '盾の形の台座に青い石。生命の上限と守護。'],
+  gear_bonecharm: ['necklace', '骨の首飾り', '小さな骨と頭蓋の飾り。生命の上限が上がる。'],
+  gear_silvercross: ['necklace', '銀十字の首飾り', '銀の十字。守護の効果と聖属性。'],
+  gear_amber: ['necklace', '琥珀の首飾り', '虫を閉じこめた琥珀。炎属性の威力。'],
+  gear_moonstone: ['necklace', '月長石の首飾り', '淡く光る月長石。魔力の回復と氷属性。'],
+  gear_fang: ['necklace', '牙の首飾り', '革紐に下げた獣の牙。術の威力が上がる。'],
+  gear_locket: ['necklace', '星屑のロケット', '星を刻んだ金のロケット。魔力の上限が上がる。'],
+  chest: ['chest', '宝箱', '板を打ち付けた木の箱に、鉄の帯と真鍮の錠前。蓋は後ろの蝶番で開く。'],
+  chest_rich: ['chest', '豪華な宝箱', '漆塗りの箱に金の帯と唐草、錠前に紅い石。試練や仕掛けを越えた褒美。'],
+  gear_leathergl: ['gloves', '革の手袋', '縫い目のある革の手袋。詠唱の補助。'],
+  gear_silkgl: ['gloves', '絹の詠唱手袋', '甲に金の魔法陣。詠唱の補助と魔力の回復。'],
+  gear_gauntlet: ['gloves', '鉄の籠手', '鉄板を重ねた籠手。生命の上限と守護。'],
+  gear_stormgl: ['gloves', '雷紋の手甲', '鉄の拳当てと雷の紋。雷属性と術の威力。'],
+  gear_shadowgl: ['gloves', '影の手袋', '爪の伸びた黒い手袋。足の速さと闇属性。'],
+};
+
+// 魔物(骨入り・動き付きの模型を一体ずつ読み込む)
+const FOES = {
+  skeleton: ['骸骨兵', '錆びた剣を振るう骸骨。聖と雷に弱く、闇と氷は効きにくい。'],
+  ghoul: ['屍食鬼', '四つ足で素早く迫る屍。炎と聖に弱い。'],
+  bat: ['吸血大蝙蝠', '急降下して血を吸う大蝙蝠。風と雷に弱い。'],
+  spider: ['洞窟大蜘蛛', '跳びかかり、糸で足を絡めとる。炎に弱い。'],
+  slime: ['粘獣', 'ゆっくり這う粘液の塊。炎に弱く、風は効きにくい。'],
+  imp: ['炎小鬼', '離れて火の玉を投げる小鬼。氷と聖に弱い。'],
+  wraith: ['怨霊', '宙に漂い、遠くから呪いを放つ。聖と炎に弱い。'],
+  scribe: ['堕ちた写本師', '本を抱え、魔物の詠唱を唱える。炎と雷に弱い。'],
+  knight: ['亡霊騎士', '盾で受け止める重い騎士。聖と雷に弱い。'],
+  ogre: ['岩喰い鬼', '地面を叩き割る巨体。氷と炎に弱い。'],
+  lich: ['屍術師', '屍を呼び起こす術師。聖と炎に弱い。'],
+  golem: ['石像兵', '動く石像。雷しかまともに効かない。'],
+};
+for (const [k, [n, d]] of Object.entries(FOES)) ITEMS['foe_' + k] = ['enemy', n, d];
+const FOE_SRC = {}, FOE_ANIMS = {};
+const ANIM_NAMES = { idle: '待機', walk: '歩く', attack: '攻撃', die: '倒れる' };
+let mixer = null;
+const clock = new THREE.Clock();
+function loadFoe(t) {
+  if (FOE_SRC[t]) return Promise.resolve();
+  return new Promise(res => new THREE.GLTFLoader().load(t + '.json', g => {
+    g.scene.traverse(o => {
+      if (!o.isMesh) return;
+      o.frustumCulled = false;
+      const m = o.material; if (!m) return;
+      if (m.name === 'eye') m.emissiveIntensity = 1.6;
+      if (m.name === 'membrane') m.side = THREE.DoubleSide;
+      if (m.name === 'slime') { m.transparent = true; m.opacity = 0.82; m.depthWrite = false; }
+      m.envMapIntensity = 0.3;
+    });
+    FOE_SRC[t] = g.scene; FOE_ANIMS[t] = g.animations; SRC['foe_' + t] = g.scene; res();
+  }, undefined, () => res()));
+}
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
+renderer.outputEncoding = THREE.sRGBEncoding;
+stage.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+try { scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new THREE.RoomEnvironment(), 0.04).texture; } catch (e) {}
+const key = new THREE.DirectionalLight(0xffdcae, 3.2); key.position.set(-1.0, 2.6, 3.2); scene.add(key);
+const rim = new THREE.DirectionalLight(0xd8b878, 2.2); rim.position.set(2.6, 1.6, -2.4); scene.add(rim);
+const fill = new THREE.DirectionalLight(0x8a9ab8, 0.25); fill.position.set(2, 0.2, 2); scene.add(fill);
+scene.add(new THREE.HemisphereLight(0x6a6050, 0x0e0a08, 0.45));
+const cam = new THREE.PerspectiveCamera(30, 4 / 3, 0.05, 50);
+cam.position.set(0, 0.35, 3.6);
+const controls = new THREE.OrbitControls(cam, renderer.domElement);
+controls.enableDamping = true; controls.enablePan = false; controls.minDistance = 1.6; controls.maxDistance = 7;
+controls.autoRotate = !matchMedia('(prefers-reduced-motion: reduce)').matches; controls.autoRotateSpeed = 1.6;
+
+const SRC = {};
+let current = null, curKey = null, curCat = 'tool';
+
+function prep(o) {
+  o.traverse(m => {
+    if (!m.isMesh) return;
+    const mt = m.material = m.material.clone();
+    mt.envMapIntensity = mt.metalness > 0.5 ? 1.1 : 0.35;
+    if (mt.metalness > 0.75) mt.metalness = 0.75;
+    if (mt.emissiveIntensity > 0.5) mt.emissiveIntensity *= 0.6;
+    if (mt.transmission > 0) { mt.transmission = 0; mt.transparent = true; mt.opacity = 0.3; mt.depthWrite = false; mt.side = THREE.DoubleSide; }
+  });
+  return o;
+}
+function fitted(k) {
+  const foe = k.startsWith('foe_');
+  const o = foe ? SRC[k] : prep(SRC[k].clone(true)); o.position.set(0, 0, 0);
+  if (o.parent) o.parent.remove(o);
+  const box = new THREE.Box3().setFromObject(o), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const w = new THREE.Group(); o.position.sub(c); w.add(o); w.scale.setScalar(1.35 / Math.max(size.x, size.y, size.z, 0.01));
+  return w;
+}
+function resize() {
+  const r = stage.getBoundingClientRect();
+  renderer.setSize(r.width, r.height, false);
+  cam.aspect = r.width / Math.max(1, r.height); cam.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+function show(k) {
+  if (k.startsWith('foe_') && !SRC[k]) { $('name').textContent = '読み込み中…'; loadFoe(k.slice(4)).then(() => show(k)); return; }
+  if (!SRC[k]) return;
+  if (current) scene.remove(current);
+  current = fitted(k); scene.add(current); curKey = k;
+  mixer = null; $('anims').hidden = true;
+  if (k.startsWith('foe_')) {
+    const t = k.slice(4), clips = FOE_ANIMS[t] || [];
+    mixer = new THREE.AnimationMixer(SRC[k]);
+    const play = n => { mixer.stopAllAction(); const c = clips.find(c => c.name === n); if (!c) return; const a = mixer.clipAction(c); if (n === 'die' || n === 'attack') { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; } a.reset().play(); document.querySelectorAll('#anims button').forEach(b => b.setAttribute('aria-pressed', b.dataset.a === n)); };
+    $('anims').innerHTML = clips.filter(c => ANIM_NAMES[c.name]).map(c => `<button type="button" id="anim-${c.name}" data-a="${c.name}">${ANIM_NAMES[c.name]}</button>`).join('');
+    $('anims').querySelectorAll('button').forEach(b => b.onclick = () => play(b.dataset.a));
+    $('anims').hidden = false;
+    play('idle');
+  }
+  controls.reset(); cam.position.set(0, 0.35, 3.6); controls.update();
+  const [cat, name, desc] = ITEMS[k];
+  $('cat').textContent = CATS.find(c => c[0] === cat)[1];
+  $('name').textContent = name; $('desc').textContent = desc;
+  document.querySelectorAll('.shelf button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === k));
+}
+
+// 棚の小さな絵: 同じ描画で一度ずつ撮る
+const thumbs = {};
+let shotR = null, shotCam = null;
+const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+function shoot(k) {
+  if (thumbs[k]) return thumbs[k];
+  if (!shotR) {
+    shotR = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    shotR.setSize(160, 160, false); shotR.setPixelRatio(1);
+    shotR.toneMapping = THREE.ACESFilmicToneMapping; shotR.toneMappingExposure = 1.3; shotR.outputEncoding = THREE.sRGBEncoding;
+    shotCam = new THREE.PerspectiveCamera(26, 1, 0.1, 50); shotCam.position.set(0, 0.35, 3.4); shotCam.lookAt(0, 0, 0);
+  }
+  const o = fitted(k); scene.add(o); if (current) current.visible = false;
+  shotR.render(scene, shotCam);
+  scene.remove(o); if (current) current.visible = true;
+  if (k === curKey && current) { scene.remove(current); current = fitted(k); scene.add(current); }
+  return (thumbs[k] = shotR.domElement.toDataURL('image/png'));
+}
+
+function renderTabs() {
+  $('tabs').innerHTML = CATS.map(([id, label]) => `<button type="button" id="tab-${id}" data-cat="${id}" aria-pressed="${id === curCat}">${label}</button>`).join('');
+  $('tabs').querySelectorAll('button').forEach(b => b.onclick = () => { curCat = b.dataset.cat; renderTabs(); renderShelf(); const first = Object.keys(ITEMS).find(k => ITEMS[k][0] === curCat); show(first); });
+}
+function renderShelf() {
+  if (curCat === 'enemy') {
+    const keys = Object.keys(FOES).map(t => 'foe_' + t);
+    $('shelf').innerHTML = keys.map(k => `<button type="button" id="item-${k}" data-k="${k}" aria-pressed="${k === curKey}"><img alt="" src="${thumbs[k] || BLANK}"><span>${ITEMS[k][1]}</span></button>`).join('');
+    $('shelf').querySelectorAll('button').forEach(b => b.onclick = () => show(b.dataset.k));
+    (async () => { for (const k of keys) { if (thumbs[k]) continue; await loadFoe(k.slice(4)); if (!SRC[k]) continue; const wasCur = curKey === k; const url = shoot(k); if (wasCur && current) { scene.remove(current); current = fitted(k); scene.add(current); } const im = document.querySelector('#item-' + k + ' img'); if (im) im.src = url; } })();
+    return;
+  }
+  const keys = Object.keys(ITEMS).filter(k => ITEMS[k][0] === curCat && SRC[k]);
+  $('shelf').innerHTML = keys.map(k => `<button type="button" id="item-${k}" data-k="${k}" aria-pressed="${k === curKey}"><img alt="" src="${shoot(k)}"><span>${ITEMS[k][1]}</span></button>`).join('');
+  $('shelf').querySelectorAll('button').forEach(b => b.onclick = () => show(b.dataset.k));
+}
+
+new THREE.GLTFLoader().load('items.json', g => {
+  for (const o of g.scene.children) if (o.name.startsWith('item_')) SRC[o.name.slice(5)] = o;
+  $('load').remove();
+  $('count').textContent = `${Object.keys(SRC).length} 点`;
+  resize(); renderTabs(); renderShelf(); show('ether');
+}, undefined, () => { $('load').textContent = '模型を読み込めませんでした。再読み込みしてください。'; });
+
+resize();
+(function loop() { requestAnimationFrame(loop); const dt = clock.getDelta(); if (mixer) mixer.update(dt); controls.update(); renderer.render(scene, cam); })();
+</script>

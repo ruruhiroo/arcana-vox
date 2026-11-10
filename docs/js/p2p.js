@@ -1,3 +1,4 @@
+import { makeVoiceFx } from './voicefx.js';
 // インターネット越しの P2P (アプリ同士で直接 WebRTC 接続)
 // 待ち合わせ(シグナリング)だけ公開の Nostr リレーを使い、ゲームのデータと声は相手と直接やりとりする。
 // 自前サーバー不要。Net (WebSocket版) と同じインターフェースを持つので、ゲーム側は差し替えるだけでよい。
@@ -140,11 +141,13 @@ export class P2PNet {
       const pan = this.audioCtx.createPanner();
       pan.panningModel = 'HRTF'; pan.distanceModel = 'linear'; pan.refDistance = 2; pan.maxDistance = 40; pan.rolloffFactor = 1;
       const g = this.audioCtx.createGain(); g.gain.value = 1.6;
-      src.connect(g); g.connect(pan); pan.connect(this.audioCtx.destination);
-      v.panner = pan;
+      const fx = makeVoiceFx(this.audioCtx); // 茸や罠で変わった声
+      src.connect(fx.input); fx.output.connect(g); g.connect(pan); pan.connect(this.audioCtx.destination);
+      v.panner = pan; v.fx = fx; if (this.fxModes?.get(id)) fx.set(this.fxModes.get(id));
     }
     this.voice.set(id, v);
   }
+  setVoiceFx(id, mode) { (this.fxModes ||= new Map()).set(id, mode); this.voice.get(id)?.fx?.set(mode); }
   positionVoice(id, x, z) {
     const p = this.voice.get(id)?.panner;
     if (p?.positionX) { p.positionX.value = x; p.positionY.value = 1.6; p.positionZ.value = z; }

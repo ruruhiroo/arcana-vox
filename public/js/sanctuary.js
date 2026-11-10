@@ -8,6 +8,7 @@ import { runeCircleTex, glowSprite } from './textures.js';
 export function pickSanctuaryRoom(d) {
   if (d.sanctRoom !== undefined) return d.sanctRoom; // 生成時に選んだ部屋 (そこには家具を置かない)
   // 開始の部屋・転移陣の部屋を除き、その間あたりの部屋を選ぶ
+  return d.start;
   const cands = d.rooms.filter(r => r !== d.start && r !== d.portalRoom && r.w >= 4 && r.h >= 4);
   if (!cands.length) return null;
   const sx = d.start.cx, sy = d.start.cy, px = d.portalRoom.cx, py = d.portalRoom.cy;
@@ -40,7 +41,7 @@ export function buildSanctuary(room) {
   beam.position.y = 2.6; grp.add(beam);
   G.scene.add(grp);
   const lecternPos = center.clone().add(new THREE.Vector3(radius * 0.55, 0, 0));
-  return { center, radius, grp, ring, fire, lecternPos, firePos: center.clone().setY(0.6) };
+  return { center, radius, grp, ring, fire, lecternPos, firePos: center.clone().setY(0.6), reserve: 1, warned: false };
 }
 
 export const inSanctuary = (pos, pad = 0) => !!G.sanctuary && Math.hypot(pos.x - G.sanctuary.center.x, pos.z - G.sanctuary.center.z) < G.sanctuary.radius + pad;
@@ -49,9 +50,10 @@ export const inSanctuary = (pos, pad = 0) => !!G.sanctuary && Math.hypot(pos.x -
 export function updateSanctuary(dt) {
   const s = G.sanctuary; if (!s) return;
   s.ring.rotation.z += dt * 0.15;
-  const fl = 0.85 + Math.sin(G.time * 11) * 0.08 + Math.random() * 0.06;
+  const fl = (0.85 + Math.sin(G.time * 11) * 0.08 + Math.random() * 0.06) * (0.25 + 0.75 * s.reserve);
   s.fire.scale.set(0.9 * fl, 1.3 * fl, 1);
-  if (Math.random() < dt * 6) G.particles.emit(s.firePos.clone(), new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.8 + Math.random() * 0.6, (Math.random() - 0.5) * 0.3), 0xff8030, 0.1, 1.3);
+  s.ring.material.opacity = 0.2 + 0.35 * s.reserve;
+  if (s.reserve > 0 && Math.random() < dt * 6 * s.reserve) G.particles.emit(s.firePos.clone(), new THREE.Vector3((Math.random() - 0.5) * 0.3, 0.8 + Math.random() * 0.6, (Math.random() - 0.5) * 0.3), 0xff8030, 0.1, 1.3);
   for (const e of G.enemies) {
     if (!e.alive) continue;
     const dx = e.pos.x - s.center.x, dz = e.pos.z - s.center.z, d = Math.hypot(dx, dz), min = s.radius + e.radius;
@@ -59,8 +61,12 @@ export function updateSanctuary(dt) {
   }
   for (const m of G.mages) {
     if (!m.alive || m.downed || m.kind === 'remote' || !inSanctuary(m.pos)) continue;
-    m.hp = Math.min(m.maxHp, m.hp + dt * 12);
-    m.mp = Math.min(m.maxMp, m.mp + dt * 20);
     for (const k of ['burn', 'slow', 'shock', 'drain']) delete m.status[k];
+    if (s.reserve <= 0) continue;
+    // 焚き火の蓄え(1層あたり 体力 約150・魔力 約250 ぶん)を使って癒す
+    const hp = Math.min(m.maxHp - m.hp, dt * 5), mp = Math.min(m.maxMp - m.mp, dt * 9);
+    m.hp += hp; m.mp += mp;
+    s.reserve = Math.max(0, s.reserve - hp / 150 - mp / 250);
+    if (s.reserve <= 0 && !s.warned) { s.warned = true; G.ui?.log('聖域の焚き火が燃え尽きた — もう傷は癒えない', '#9fd8ff'); }
   }
 }

@@ -5,6 +5,7 @@ import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf, settleY, CLIMB } 
 import { textSprite, runeCircleTex, glowSprite } from './textures.js';
 import { sfx } from './audio.js';
 import { buildEnemyModel, animateEnemy } from './enemymodels.js';
+import { buildDragon, animateDragon } from './dragon-model.js';
 import { makeModel, animateGlb, dieGlb } from './glbmodels.js';
 import { compile, withCallName } from './lexicon.js';
 // 写本師が唱える呪文 (プレイヤーと同じ言霊)
@@ -132,6 +133,7 @@ export function spawnEnemy(id, type, pos, floor, summoner = null) {
 
 // ---------- 魔物 ----------
 export const ENEMY_TYPES = {
+  dragon: { name: '詠灰竜ヴォルグ', hp: 230, speed: 2, dmg: 24, range: 14, cd: 8, radius: 0.85, h: 3.7, weak: [], resist: [], drops: ['crystal', 'iron', 'scroll'] },
   skeleton: { name: '骸骨兵', hp: 70, speed: 2.7, dmg: 10, range: 1.7, cd: 1.3, radius: 0.4, undead: true, weak: ['holy', 'thunder'], resist: ['void', 'ice'], drops: ['bone', 'bone', 'iron'] },
   slime:    { name: '粘獣', hp: 62, speed: 1.9, dmg: 8, range: 1.4, cd: 1.1, radius: 0.55, weak: ['fire'], resist: ['wind'], drops: ['herb', 'crystal'] },
   wraith:   { name: '怨霊', hp: 64, speed: 2.3, dmg: 12, range: 13, cd: 2.6, radius: 0.45, undead: true, ranged: true, fly: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['crystal', 'crystal'] },
@@ -176,6 +178,7 @@ function addEyeGlow(group) {
 }
 
 function enemyMesh(type, scale = 1) {
+  if (type === 'dragon') return buildDragon();
   const glb = makeModel(type);
   if (glb) { glb.scale.setScalar(scale); return glb; }
   const g = buildEnemyModel(['skeleton', 'slime', 'wraith', 'scribe', 'golem'].includes(type) ? type : type === 'ghoul' || type === 'knight' ? 'skeleton' : type === 'bat' || type === 'lich' ? 'wraith' : type === 'ogre' ? 'golem' : 'slime');
@@ -259,7 +262,8 @@ export class Enemy {
     else if (this.type === 'slime') b.position.y = moving ? Math.abs(Math.sin(t * 5 + ph)) * 0.22 : 0;
     else if (this.type === 'wraith') { b.position.y = 0.25 + Math.sin(t * 2 + ph) * 0.18; b.rotation.z = Math.sin(t * 1.3 + ph) * 0.06; b.rotation.x = moving ? 0.18 : 0; if (Math.random() < dt * 14) G.particles.emit(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6)), new THREE.Vector3(0, -0.3, 0), 0x3a2050, 0.5, 1.2); }
     else if (this.type === 'golem') { b.rotation.z = Math.sin(t * 1.4 + ph) * 0.04; b.position.y = moving ? -Math.abs(Math.sin(t * 3.2 + ph)) * 0.06 : 0; }
-    if (ud.kind !== 'glb') animateEnemy(ud, t, ph, moving, this.attackAnim, dt);
+    if (ud.kind === 'dragon') animateDragon(ud, t, moving);
+    else if (ud.kind !== 'glb') animateEnemy(ud, t, ph, moving, this.attackAnim, dt);
     this.hitT = Math.max(0, this.hitT - dt);
     // 縁取り: 精巧なモデルは控えめに(暗がりで輪郭が分かる程度)
     this.rimU.strength.value = (ud.kind === 'glb' ? 0.22 : this.type === 'golem' ? 0.4 : 0.8) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (ud.kind === 'glb' ? 0.05 : 0.12) + this.hitT * 3; // 被弾の光は控えめに(強すぎると全身が白く飛ぶ)
@@ -268,6 +272,7 @@ export class Enemy {
   think(dt) {
     const T = this.T;
     if (this.stun > 0) { this.stun -= dt; return; }
+    if (this.type === 'dragon') return; // 専用AIが予兆・攻撃・反撃時間を管理する
     // 目標選択
     if (this.target && G.inSanctuary?.(this.target.pos)) { this.target = null; this.aggro = false; }
     if (!this.target || !this.target.alive || this.target.downed || Math.random() < dt * 0.5) {

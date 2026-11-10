@@ -6,6 +6,7 @@
   "main": "electron/main.js",
   "private": true,
   "scripts": {
+    "test": "node --experimental-vm-modules --test tests/*.test.cjs tests/*.test.mjs",
     "start": "electron .",
     "server": "node server.js",
     "setup-voice": "node tools/fetch-voice-model.js",

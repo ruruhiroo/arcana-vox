@@ -1,4 +1,5 @@
 // 主(ボス)ごとの仕掛け
+// 現在の主は詠灰竜。旧三種の仕掛けは互換用に残す。
 //  鏡の魔導師(第3層): こちらの術を写し取って唱え返し、写した属性には強くなる
 //  鐘の守護者(第6層): 鐘が鳴るたび、守護のない者の詠唱を乱す。鳴った直後は脆くなる
 //  崩落の番人(第9層): 天井を崩す。赤い印の上から逃げよ
@@ -6,9 +7,10 @@ import * as THREE from 'three';
 import { G } from './state.js';
 import { rubbleBurst, shake, bigImpact } from './vfx.js';
 import { sfx } from './audio.js';
+import { updateDragons, clearDragons } from './dragon-boss.js';
 
-export const BOSS_KINDS = { 3: 'mirror', 6: 'bell', 9: 'collapse' };
-export const BOSS_NAMES = { mirror: '【鏡の魔導師】', bell: '【鐘の守護者】', collapse: '【崩落の番人】' };
+export const BOSS_KINDS = { 3: 'dragon', 6: 'dragon', 9: 'dragon' };
+export const BOSS_NAMES = { dragon: '【詠灰竜ヴォルグ】', mirror: '【鏡の魔導師】', bell: '【鐘の守護者】', collapse: '【崩落の番人】' };
 export const bossKindFor = floor => BOSS_KINDS[((floor - 1) % 9) + 1] || null;
 
 const marks = [];
@@ -23,6 +25,7 @@ export function onPlayerCast(spell) {
 }
 
 export function updateBosses(dt, hooks) {
+  updateDragons(dt);
   for (const e of G.enemies) {
     if (!e.alive || !e.bossKind || !e.aggro) continue;
     e.bossT = (e.bossT ?? 4) - dt;
@@ -56,4 +59,4 @@ export function updateBosses(dt, hooks) {
     }
   }
 }
-export function clearBosses() { for (const m of marks) G.scene.remove(m.ring); marks.length = 0; }
+export function clearBosses() { clearDragons(); for (const m of marks) { G.scene.remove(m.ring); m.ring.geometry.dispose(); m.ring.material.dispose(); } marks.length = 0; }

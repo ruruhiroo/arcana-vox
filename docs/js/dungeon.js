@@ -56,13 +56,23 @@ export function generate(seed, floor) {
   const dist = bfs(grid, rooms[0].cx, rooms[0].cy);
   // 転移陣: 最初の部屋から最も遠い部屋
   let portalRoom = realRooms.find(rm => rm !== rooms[0]) || rooms[1], far = -1;
-  for (const rm of realRooms) { if (rm === rooms[0]) continue; const d = dist[rm.cy * W + rm.cx]; if (d > far) { far = d; portalRoom = rm; } }
+  // 竜の部屋は回避できる広さの平地を優先する。物置や柱の迷路を戦場にしない。
+  const arenas = realRooms.filter(rm => rm !== rooms[0] && rm.flat && rm.w >= 3 && rm.h >= 3);
+  for (const rm of arenas.length ? arenas : realRooms) { if (rm === rooms[0]) continue; const d = dist[rm.cy * W + rm.cx]; if (d > far) { far = d; portalRoom = rm; } }
+  // 選んだ部屋の柱を取り払い、段差のない戦場にする。外周の壁と出入口は保つ。
+  const arenaHeight = hgt[portalRoom.cy * W + portalRoom.cx] || 0;
+  portalRoom.cells = [];
+  for (let y = portalRoom.y; y < portalRoom.y + portalRoom.h; y++) for (let x = portalRoom.x; x < portalRoom.x + portalRoom.w; x++) {
+    grid[y * W + x] = 1; hgt[y * W + x] = arenaHeight; portalRoom.cells.push([x, y]);
+  }
+  portalRoom.flat = true;
   // 聖域の部屋(開始と転移陣の間あたり、平らな部屋)
   const sCands = realRooms.filter(rm => rm !== rooms[0] && rm !== portalRoom && rm.flat && rm.cells.length >= 9 && rm.mod !== 'pillars' && rm.mod !== 'crypt' && rm.mod !== 'gallery');
   const sx = rooms[0].cx, sy = rooms[0].cy, px = portalRoom.cx, py = portalRoom.cy;
   const midScore = rm => Math.abs(Math.hypot(rm.cx - sx, rm.cy - sy) - Math.hypot(rm.cx - px, rm.cy - py)) + Math.hypot(rm.cx - sx, rm.cy - sy) * 0.1;
   const sanctRoom = rooms[0]; // 聖域は降り立った部屋だけ (途中に安全地帯は無い)
   const used = new Set();
+  for (const [x, y] of portalRoom.cells) used.add(x + ',' + y);
   const cellPos = (cx, cy, jitter = 0) => new THREE.Vector3((cx + 0.5 + (r() - 0.5) * jitter) * CELL, hgt[cy * W + cx] || 0, (cy + 0.5 + (r() - 0.5) * jitter) * CELL);
   const floorCellsIn = rm => rm.cells ? rm.cells.filter(([xx, yy]) => grid[yy * W + xx]) : [];
   // 調度品の置かれていない床から選ぶ (魔物や宝が家具に埋まらないように)
@@ -78,6 +88,7 @@ export function generate(seed, floor) {
   rooms.forEach((rm, i) => {
     if (rm.kind !== 'room') { rm.theme = 'corridor'; return; }
     rm.theme = rm.theme || (i === 0 ? 'storage' : pickTheme());
+    if (rm === portalRoom) { rm.theme = 'arena'; return; } // 床の予兆と逃げ道を家具で隠さない
     if (rm === sanctRoom) return;
     const cells = floorCellsIn(rm).filter(([xx, yy]) => !(xx === rm.cx && yy === rm.cy));
     const nearWall = cells.filter(([xx, yy]) => wallSide(xx, yy).length);
@@ -178,7 +189,7 @@ export function generate(seed, floor) {
       crystals.push(...floorCellsIn(rm).flatMap(([xx, yy]) => wallSide(xx, yy).slice(0, 1).map(([dx, dy]) => ({ pos: new THREE.Vector3((xx + 0.5 + dx * 0.36) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.36) * CELL), dir: [dx, dy] }))).slice(0, 2));
       return;
     }
-    if (i !== 0 && rm !== sanctRoom) {
+    if (i !== 0 && rm !== sanctRoom && rm !== portalRoom) {
       const room = rm.kind === 'room';
       // 1部屋あたりの平均: 1層 約0.8体 → 5層 約1.9体 → 10層 約3.3体
       const n = room ? Math.floor(0.5 + floor * 0.28 + (rm.cells.length > 30 ? 0.35 : 0) + r()) : (r() < 0.1 + floor * 0.05 ? 1 : 0);
@@ -189,8 +200,8 @@ export function generate(seed, floor) {
       }
     }
     if (rm === portalRoom && (floor % 3 === 0 || floor === FINAL_FLOOR)) {
-      const final = floor === FINAL_FLOOR, kind = final ? null : ({ 3: 'mirror', 6: 'bell', 0: 'collapse' })[floor % 9];
-      spawns.push({ pos: cellPos(rm.cx, rm.cy), type: kind === 'mirror' ? 'scribe' : 'golem', boss: true, final, bossKind: kind });
+      const final = floor === FINAL_FLOOR;
+      spawns.push({ pos: cellPos(rm.cx, rm.cy), type: 'dragon', boss: true, final, bossKind: 'dragon' });
     }
     const chestP = rm.kind !== 'room' ? 0.05 : rm.theme === 'storage' || rm.theme === 'crypt' || rm.mod === 'closet' ? 0.7 : 0.35;
     if (r() < chestP && i !== 0) chests.push(randomCellIn(rm));
@@ -284,7 +295,7 @@ export function generate(seed, floor) {
   // 怪し茸は置かない(声の異変は避けられない魔物の技で起きる)
   // 笑気の罠: 回廊や部屋の床に、層ごとに数か所
   const gasTraps = [];
-  const trapCells = rooms.filter(rm => rm !== rooms[0] && rm !== sanctRoom).flatMap(rm => floorCellsIn(rm)).filter(([xx, yy]) => !used.has(xx + ',' + yy));
+  const trapCells = rooms.filter(rm => rm !== rooms[0] && rm !== sanctRoom && rm !== portalRoom).flatMap(rm => floorCellsIn(rm)).filter(([xx, yy]) => !used.has(xx + ',' + yy));
   for (let k = 0; k < 2 + Math.floor(floor / 3) && trapCells.length; k++) { const c = trapCells.splice(Math.floor(r() * trapCells.length), 1)[0]; used.add(c[0] + ',' + c[1]); gasTraps.push(cellPos(c[0], c[1], 0.5)); }
   return { coopEvents, oddShrooms, gasTraps, roomEvents, mushrooms, secrets, richChests, seed, floor, grid, hgt, plats, rooms: rooms.filter(rm => rm.kind !== 'secret' && rm.kind !== 'sealed'), start: rooms[0], portalRoom, sanctRoom, portal: cellPos(portalRoom.cx, portalRoom.cy), spawns, scrolls, chests, herbs, crystals, torches, decor, braziers };
 }

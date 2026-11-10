@@ -351,7 +351,7 @@ function setupFloor(seed, floor, reset = false) {
   G.enemies = d.spawns.map((s, i) => {
     const e = new Enemy(`e${floor}_${i}`, s.type, s.pos, floor, s.boss);
     if (s.bossKind) { e.bossKind = s.bossKind; e.name = BOSS_NAMES[s.bossKind]; e.maxHp = e.hp = Math.round(e.maxHp * (s.bossKind === 'mirror' ? 2.6 : 1.3)); }
-    if (s.final) { e.final = true; e.name = '【書庫の番人】'; e.maxHp = e.hp = Math.round(e.maxHp * 1.8); e.dmg *= 1.2; }
+    if (s.final) { e.final = true; e.name = '【終章の詠灰竜】'; e.maxHp = e.hp = Math.round(e.maxHp * 1.8); e.dmg *= 1.2; }
     return e;
   });
   if (reset) G.run = { keys: 0, done: false };
@@ -1661,8 +1661,7 @@ function updateChips(dt) {
 }
 
 // ---------- 門番: 各層の転移陣の前に立つ強い魔物 ----------
-// ひとりなら、ただ手強い。仲間と潜ると「結界」をまとい、二人以上が3秒のうちに術を当てないと破れない
-const GUARD_TYPES = [['skeleton', 'ghoul'], ['skeleton', 'spider', 'ghoul'], ['knight', 'ogre', 'golem', 'lich', 'spider']];
+// 詠灰竜: 大技の予兆を避け、逆鱗露出中に詠唱する。旧門番用の同期処理も下に残す。
 const guardianAlive = () => G.enemies.some(e => e.guardian && e.alive);
 G.guardianAlive = guardianAlive;
 function placeGuardian(d, floor, seed) {
@@ -1672,25 +1671,20 @@ function placeGuardian(d, floor, seed) {
   const lord = G.enemies.find(e => e.boss);
   let g = lord;
   if (!g) {
-    const rnd = seeded(seed + 991);
-    const pool = GUARD_TYPES[floor <= 1 ? 0 : floor <= 3 ? 1 : 2];
-    const type = pool[Math.floor(rnd() * pool.length)];
-    const room = d.portalRoom || d.rooms[d.rooms.length - 1];
-    const toCenter = new THREE.Vector3((room.cx + 0.5) * CELL, 0, (room.cy + 0.5) * CELL).sub(d.portal).setY(0);
-    const pos = d.portal.clone().add(toCenter.lengthSq() > 1 ? toCenter.normalize().multiplyScalar(3.5) : new THREE.Vector3(3, 0, 0));
-    g = new Enemy(`g${floor}`, type, pos, floor, true);
+    g = new Enemy(`g${floor}`, 'dragon', d.portal.clone(), floor, true);
     // ひとりでもかなり手強く(仲間がいれば人数で更に強くなる)
     g.dmg *= party > 1 ? 1.2 : 1.15; g.keen = true;
     G.enemies.push(g);
   }
   g.guardian = true;
-  g.maxHp = g.hp = Math.max(g.maxHp, Math.round(1000 * (1 + 0.15 * (floor - 1)) * (party > 1 ? 1 + 0.6 * (party - 1) : 1)));
+  g.bossKind = 'dragon';
+  g.maxHp = g.hp = Math.round((g.final ? 1200 : 640) * (1 + 0.15 * (floor - 1)) * (1 + 0.6 * (party - 1)));
   g.meteorT = 6; g.elemT = 4; g.gElem = null;
   for (const m of meteors.splice(0)) for (const o of [m.ring, m.fill, m.rock]) scene.remove(o); // 前の層の隕石を片付ける
-  applyGuardElem(g, ['fire', 'ice', 'thunder', 'wind', 'holy', 'void'][Math.floor(seeded(seed + 77)() * 6)], false);
-  g.name = (lord ? lord.name : '【門番】' + (ENEMY_TYPES[g.type]?.name || '')) ;
+  g.name = g.final ? '【終章の詠灰竜】' : BOSS_NAMES.dragon;
+  g.hpBar.position.y = 3.8;
   g.leash = d.portal.clone(); // 転移陣から離れすぎない
-  if (party > 1) { g.barrierT = 0; setBarrier(g, true, false); }
+  // 協力は既存の合唱ボーナスで報いる。人数必須の無敵結界は張らない。
   if (portal?.userData?.disc) { portal.userData.disc.material.color.setHex(0xff4040); }
 }
 // 結界の見た目と状態(部屋の主が決め、仲間へ知らせる)
@@ -1779,6 +1773,7 @@ function updateGuardians(dt) {
   for (const e of G.enemies) {
     if (!e.guardian || !e.alive) continue;
     alive = true;
+    if (e.type === 'dragon') continue; // 専用AIと重ねて隕石・属性変化を発動しない
     // 部屋の主の端末が、隕石と属性の移ろいを決めて仲間へ知らせる
     if (G.isHost !== false) {
       const heroes = G.mages.filter(m => m.team === 'hero' && m.alive && !m.downed && m.pos.distanceTo(e.pos) < 26);
@@ -1859,9 +1854,10 @@ function onNet(m) {
     case 'edmg': { const e = G.enemies.find(x => x.id === m.eid); if (e && G.isHost) G.fx.damage(e, m.amount, m.elements, findAny(m.src), { dir: m.dir, power: m.power, tier: m.tier, atk: m.atk }); break; }
     case 'es': {
       if (G.isHost) break;
-      for (const [id, x, z, yaw, hp] of m.e) {
+      for (const [id, x, z, yaw, hp, dragon] of m.e) {
         const e = G.enemies.find(o => o.id === id); if (!e || !e.alive) continue;
         e.netTarget.set(x, 0, z); e.yaw = yaw; if (e.hp !== hp) { e.hp = hp; e.updateHpBar(); }
+        if (e.type === 'dragon' && dragon) { e.dragon = dragon; if (dragon.maxHp > 0) e.maxHp = dragon.maxHp; }
       }
       break;
     }
@@ -1897,7 +1893,7 @@ function netTick(dt) {
   }
   if (G.isHost && esT <= 0) {
     esT = 0.1;
-    G.net.send({ t: 'es', e: G.enemies.filter(e => e.alive).map(e => [e.id, +e.pos.x.toFixed(2), +e.pos.z.toFixed(2), +e.yaw.toFixed(2), Math.round(e.hp)]) });
+    G.net.send({ t: 'es', e: G.enemies.filter(e => e.alive).map(e => [e.id, +e.pos.x.toFixed(2), +e.pos.z.toFixed(2), +e.yaw.toFixed(2), Math.round(e.hp), e.dragon ? { ...e.dragon, maxHp: e.maxHp } : null]) });
   }
   for (const m of G.mages) if (m.kind === 'remote') G.net.positionVoice(m.netId, m.pos.x, m.pos.z);
 }

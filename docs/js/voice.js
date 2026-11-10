@@ -49,10 +49,11 @@ export function initVoice(h) {
     if (e.error === 'aborted') return; // 自分で止めた時
     // このブラウザでは Web の音声認識が使えない → 端末の中で動く認識に切り替える
     if (e.error === 'network' || e.error === 'service-not-allowed' || e.error === 'language-not-supported') {
+      const resume = wantActive || continuous;
       wantActive = false; webFailed = true; try { rec.abort(); } catch {}
       engine = 'vosk'; loadVoskModel(); if (canAI()) loadWhisper();
       handlers.state('fallback');
-      if (vosk.wanted || continuous) startListening();
+      if (resume) startListening();
       return;
     }
     handlers.state('error:' + e.error);
@@ -62,7 +63,7 @@ export function initVoice(h) {
 }
 
 export function startListening() {
-  if (W.ready && engine === 'vosk' && !vosk.listening) engine = 'whisper'; // AI の準備ができたら切り替え
+  if (W.ready && engine === 'vosk' && !vosk.listening && !vosk.starting) engine = 'whisper'; // 録音準備中には切り替えない
   if (engine === 'whisper') { wStart(); return; }
   if (engine === 'vosk') { voskStart(); return; }
   if (!rec) return;
@@ -81,7 +82,7 @@ export function stopListening() {
 
 export function setContinuous(v) {
   continuous = v;
-  if (W.ready && engine === 'vosk' && !vosk.listening) engine = 'whisper';
+  if (W.ready && engine === 'vosk' && !vosk.listening && !vosk.starting) engine = 'whisper';
   if (engine === 'whisper') { if (v) wStart(); else wStop(true); return; }
   if (engine === 'vosk') { if (v) voskStart(); else voskStop(); return; }
   if (v) startListening(); else { wantActive = false; try { rec && rec.stop(); } catch {} }
@@ -158,6 +159,7 @@ async function ensureMic() {
 const clean = s => (s || '').replace(/\[unk\]/g, '').replace(/\s+/g, ' ').trim();
 
 function voskStart() {
+  clearTimeout(vosk.stopTimer);
   vosk.wanted = true;
   if (vosk.failed) return;
   if (!vosk.recognizer) {
@@ -173,9 +175,11 @@ function beginListen() {
 }
 function voskStop() {
   vosk.wanted = false;
+  clearTimeout(vosk.stopTimer);
   if (!vosk.listening) return;
   // 押し終わりの語尾を取りこぼさないよう少し遅らせて確定する
-  setTimeout(() => {
+  vosk.stopTimer = setTimeout(() => {
+    if (vosk.wanted || continuous) return;
     vosk.listening = false;
     try { vosk.recognizer.retrieveFinalResult(); } catch {}
     handlers.state('idle');
@@ -184,7 +188,8 @@ function voskStop() {
 // ---- AI 音声認識 (Whisper, アプリ版) ----
 // 自由な文を聞き取れるので、詠唱文を丸ごと読み上げても認識できる。準備が済むまでは Vosk を使う
 const W = { worker: null, ready: false, failed: false, ctx: null, rec: false, buf: [], n: 0, peak: 0,
-  busy: false, id: 0, sentAt: 0, silence: 0, speaking: false, stopping: false, pct: -1, voiced: 0, lastVoiced: 0 };
+  busy: false, id: 0, session: 0, request: 0, pending: new Set(), wanted: false, starting: false,
+  sentAt: 0, silence: 0, speaking: false, pct: -1, voiced: 0, lastVoiced: 0 };
 // 人の声らしさ: 声には高さ(周期)がある。ドアの音・物音・雑音には無い。
 // 80〜400Hz の周期の強さ(自己相関)で判定する。1 に近いほど声らしい
 function voicedness(x) {
@@ -211,7 +216,7 @@ function loadWhisper() {
   catch (e) { W.failed = true; return; }
   W.worker.onmessage = ({ data }) => {
     if (data.type === 'progress') { W.pct = data.p; handlers.ai?.('loading:' + data.p + ':' + data.mb); }
-    else if (data.type === 'ready') { W.ready = true; handlers.ai?.('ready:' + data.device); if (!vosk.listening && engine === 'vosk' && !continuous) engine = 'whisper'; }
+    else if (data.type === 'ready') { W.ready = true; handlers.ai?.('ready:' + data.device); if (!vosk.listening && !vosk.starting && !vosk.wanted && engine === 'vosk' && !continuous) engine = 'whisper'; }
     else if (data.type === 'error') { console.warn('Whisper failed', data.msg); W.failed = true; handlers.ai?.('failed'); }
     else if (data.type === 'result') onWhisperResult(data);
   };
@@ -259,7 +264,8 @@ function takeAudio(keep) {
 function sendWhisper(kind) {
   if (kind === 'interim') {
     W.busy = true; W.sentAt = W.n;
-    W.worker.postMessage({ type: 'run', id: W.id, kind, audio: takeAudio(true) });
+    const request = ++W.request; W.pending.add(request);
+    W.worker.postMessage({ type: 'run', id: W.id, session: W.session, request, kind, audio: takeAudio(true) });
     return;
   }
   const peak = W.peak, voiced = W.voiced; W.peak = 0; W.voiced = 0;
@@ -267,11 +273,14 @@ function sendWhisper(kind) {
   W.id++;
   if (peak < 0.015 || voiced < 0.3 || audio.length < W_RATE * 0.3) { if (!continuous) handlers.state('idle'); return; } // 声が無かった
   W.busy = true;
+  const request = ++W.request; W.pending.add(request);
   handlers.state('thinking');
-  W.worker.postMessage({ type: 'run', id: W.id, kind, audio }, [audio.buffer]);
+  W.worker.postMessage({ type: 'run', id: W.id, session: W.session, request, kind, audio }, [audio.buffer]);
 }
-function onWhisperResult({ id, kind, text }) {
-  W.busy = false;
+function onWhisperResult({ id, session, request, kind, text }) {
+  if (!W.pending.delete(request)) return; // 同じ返答を二度使わない
+  W.busy = W.pending.size > 0;
+  if (session !== W.session) return; // 次の V 詠唱に古い結果を混ぜない
   const t = HALLU.test(text) || !/[ぁ-んァ-ヶ一-龯]/.test(text) ? '' : text;
   if (kind === 'interim') { if (id === W.id && t && (W.rec || continuous)) handlers.interim(t); return; }
   if (t) handlers.final([t]);
@@ -279,15 +288,24 @@ function onWhisperResult({ id, kind, text }) {
   else if (continuous) handlers.state('listening');
 }
 async function wStart() {
-  if (!(await wMic())) return;
+  clearTimeout(W.stopTimer);
+  if (!W.wanted) W.session++;
+  W.wanted = true;
+  if (W.starting) return;
+  W.starting = true;
+  const ok = await wMic();
+  W.starting = false;
+  if (!ok || !W.wanted) { if (!ok) W.wanted = false; return; }
   W.ctx.resume();
-  if (!continuous) { W.buf = []; W.n = 0; W.peak = 0; W.voiced = 0; W.lastVoiced = 0; W.sentAt = 0; W.id++; }
+  if (!W.rec || !continuous) { W.buf = []; W.n = 0; W.peak = 0; W.voiced = 0; W.lastVoiced = 0; W.sentAt = 0; W.speaking = false; W.silence = 0; W.id++; }
   W.rec = true; handlers.state('listening');
 }
 function wStop(force) {
+  W.wanted = false;
+  clearTimeout(W.stopTimer);
   if (!W.rec) return;
   // 語尾を取りこぼさないよう少しだけ録り続けてから確定
-  setTimeout(() => { W.rec = false; if (W.n) sendWhisper('final'); else handlers.state('idle'); }, force ? 0 : 250);
+  W.stopTimer = setTimeout(() => { if (W.wanted) return; W.rec = false; if (W.n) sendWhisper('final'); else handlers.state('idle'); }, force ? 0 : 250);
 }
 
 export const isContinuous = () => continuous;

@@ -52,6 +52,6 @@ async function run(data) {
       const out = await asr(data.audio, { language: 'japanese', task: 'transcribe', max_new_tokens: 80 });
       text = (out?.text || '').trim();
     } catch (e) { console.warn('whisper', e); }
-    postMessage({ type: 'result', id: data.id, kind: data.kind, text });
+    postMessage({ type: 'result', id: data.id, session: data.session, request: data.request, kind: data.kind, text });
   }
 }

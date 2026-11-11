@@ -95,6 +95,11 @@ const ELEM_SND = {
 };
 
 export const sfx = {
+  dragonWing(pos) { if (!ctx) return; noise(.55, { freq: 350, sweep: 1200, gain: .25, pos }); },
+  dragonLand(pos) { if (!ctx) return; noise(.55, { freq: 180, sweep: 70, gain: .4, pos }); tone(50, .45, { type: 'sine', gain: .2, to: 28, pos }); },
+  dragonCharge(pos, move) { if (!ctx) return; tone(move === 'meteor' ? 110 : 52, 1.4, { type: 'sawtooth', gain: .16, to: move === 'meteor' ? 210 : 38, attack: .18, pos }); noise(.8, { freq: move === 'breath' ? 700 : 180, sweep: 450, gain: .2, pos }); },
+  dragonFire(pos) { if (!ctx) return; noise(1.8, { freq: 1800, sweep: 380, gain: .65, pos }); tone(48, 1.6, { type: 'sawtooth', gain: .18, to: 27, pos }); },
+  dragonTail(pos) { if (!ctx) return; noise(1.3, { freq: 220, sweep: 1600, gain: .45, pos }); tone(65, .8, { type: 'sawtooth', gain: .14, to: 35, pos }); },
   cast(elements, pos) { if (!ctx) return; if (!elements.length) tone(880, 0.5, { type: 'sine', gain: 0.15, to: 1320, pos }); elements.forEach(e => ELEM_SND[e]?.(pos)); },
   impact(elements, pos) { if (!ctx) return; noise(0.5, { freq: 900, gain: 0.5, pos, sweep: 150 }); tone(70, 0.35, { gain: 0.25, to: 35, pos }); },
   heal(pos) { if (!ctx) return; [660, 880, 1100, 1320].forEach((f, i) => setTimeout(() => tone(f, 0.6, { gain: 0.08, pos }), i * 60)); },

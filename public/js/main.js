@@ -1,3 +1,5 @@
+import { dragonElement, DRAGON_PROFILES } from './dragon-profiles.js';
+import { dragonHp } from './dragon-rules.js';
 // 詠唱迷宮 ARCANA VOX — 本体
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -1678,10 +1680,11 @@ function placeGuardian(d, floor, seed) {
   }
   g.guardian = true;
   g.bossKind = 'dragon';
-  g.maxHp = g.hp = Math.round((g.final ? 1200 : 640) * (1 + 0.15 * (floor - 1)) * (1 + 0.6 * (party - 1)));
+  g.dragonElement = dragonElement(floor, g.final);
+  g.maxHp = g.hp = dragonHp(floor, party, g.final);
   g.meteorT = 6; g.elemT = 4; g.gElem = null;
   for (const m of meteors.splice(0)) for (const o of [m.ring, m.fill, m.rock]) scene.remove(o); // 前の層の隕石を片付ける
-  g.name = g.final ? '【終章の詠灰竜】' : BOSS_NAMES.dragon;
+  g.name = `【${g.final ? '終章・' : ''}${DRAGON_PROFILES[g.dragonElement].name}】`;
   g.hpBar.position.y = 11;
   g.leash = d.portal.clone(); // 転移陣から離れすぎない
   // 協力は既存の合唱ボーナスで報いる。人数必須の無敵結界は張らない。
@@ -1848,10 +1851,10 @@ function onNet(m) {
     }
     case 'chant': { const r = findMage(m.id); if (r) { r.setChant(m.text, m.n); if (m.text) G.hearChant(r, m.text); } break; }
     case 'cast': { const r = findMage(m.id); if (r) { G.fx.cast(r, G.fx.spellFromIds(m.words), m.aim); noteCast(r.id, m.words); if (m.chorus) UI.log(`${r.name}と合唱詠唱!`, '#ffd76a'); } break; }
-    case 'dmg': G.fx.damage(G.player, m.amount, m.elements, findAny(m.src), { melee: m.opts?.melee, dir: m.opts?.dir }); break;
+    case 'dmg': G.fx.damage(G.player, m.amount, m.elements, findAny(m.src), { melee: m.opts?.melee, dir: m.opts?.dir, power: m.opts?.power, tier: m.opts?.tier, silent: m.opts?.silent }); break;
     case 'heal': G.fx.heal(G.player, m.amount, findAny(m.src)); break;
     case 'shield': G.fx.shield(G.player, m.amount, m.dur, m.thorns); break;
-    case 'edmg': { const e = G.enemies.find(x => x.id === m.eid); if (e && G.isHost) G.fx.damage(e, m.amount, m.elements, findAny(m.src), { dir: m.dir, power: m.power, tier: m.tier, atk: m.atk }); break; }
+    case 'edmg': { const e = G.enemies.find(x => x.id === m.eid); if (e && G.isHost) G.fx.damage(e, m.amount, m.elements, findAny(m.src), { dir: m.dir, power: m.power, tier: m.tier, atk: m.atk, hitPoint: m.hitPoint }); break; }
     case 'es': {
       if (G.isHost) break;
       for (const [id, x, z, yaw, hp, dragon] of m.e) {

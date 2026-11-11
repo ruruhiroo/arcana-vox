@@ -1,11 +1,12 @@
 // 魔導師と魔物: 見た目・状態・魔物AI
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
-import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf, settleY, CLIMB } from './dungeon.js';
+import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf, settleY, CLIMB, FINAL_FLOOR } from './dungeon.js';
 import { textSprite, runeCircleTex, glowSprite } from './textures.js';
 import { sfx } from './audio.js';
 import { buildEnemyModel, animateEnemy } from './enemymodels.js';
-import { buildDragon, animateDragon } from './dragon-model.js';
+import { buildGuardian, animateGuardian } from './guardian-model.js';
+import { dragonElement, DRAGON_PROFILES } from './dragon-profiles.js';
 import { makeModel, animateGlb, dieGlb } from './glbmodels.js';
 import { compile, withCallName } from './lexicon.js';
 // 写本師が唱える呪文 (プレイヤーと同じ言霊)
@@ -177,8 +178,8 @@ function addEyeGlow(group) {
   }
 }
 
-function enemyMesh(type, scale = 1) {
-  if (type === 'dragon') return buildDragon();
+function enemyMesh(type, scale = 1, floor = 1) {
+  if (type === 'dragon') return buildGuardian(DRAGON_PROFILES[dragonElement(floor, floor === FINAL_FLOOR)].kind);
   const glb = makeModel(type);
   if (glb) { glb.scale.setScalar(scale); return glb; }
   const g = buildEnemyModel(['skeleton', 'slime', 'wraith', 'scribe', 'golem'].includes(type) ? type : type === 'ghoul' || type === 'knight' ? 'skeleton' : type === 'bat' || type === 'lich' ? 'wraith' : type === 'ogre' ? 'golem' : 'slime');
@@ -205,7 +206,7 @@ export class Enemy {
     this.cd = rand(0.5, 1.5); this.target = null; this.aggro = false; this.stun = 0; this.attackAnim = 0;
     this.undead = !!T.undead; this.isMage = false; this.name = (boss ? '【主】' : this.elite ? '【精鋭】' : '') + T.name;
     this.phase = Math.random() * 6.28;
-    this.body = enemyMesh(type, boss ? 1.8 : this.elite ? 1.18 : 1);
+    this.body = enemyMesh(type, boss ? 1.8 : this.elite ? 1.18 : 1, floor);
     this.root = new THREE.Group(); this.root.add(this.body);
     this.rimU = { color: { value: new THREE.Color(this.elite ? 0xd0a040 : ENEMY_RIM[type] || 0xffffff) }, strength: { value: 0.9 } };
     addRim(this.body, this.rimU);
@@ -262,11 +263,11 @@ export class Enemy {
     else if (this.type === 'slime') b.position.y = moving ? Math.abs(Math.sin(t * 5 + ph)) * 0.22 : 0;
     else if (this.type === 'wraith') { b.position.y = 0.25 + Math.sin(t * 2 + ph) * 0.18; b.rotation.z = Math.sin(t * 1.3 + ph) * 0.06; b.rotation.x = moving ? 0.18 : 0; if (Math.random() < dt * 14) G.particles.emit(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.4 + Math.random() * 0.6, (Math.random() - 0.5) * 0.6)), new THREE.Vector3(0, -0.3, 0), 0x3a2050, 0.5, 1.2); }
     else if (this.type === 'golem') { b.rotation.z = Math.sin(t * 1.4 + ph) * 0.04; b.position.y = moving ? -Math.abs(Math.sin(t * 3.2 + ph)) * 0.06 : 0; }
-    if (ud.kind === 'dragon') animateDragon(ud, t, moving);
+    if (this.type === 'dragon') animateGuardian(ud, t, moving);
     else if (ud.kind !== 'glb') animateEnemy(ud, t, ph, moving, this.attackAnim, dt);
     this.hitT = Math.max(0, this.hitT - dt);
     // 縁取り: 精巧なモデルは控えめに(暗がりで輪郭が分かる程度)
-    const subduedRim = ud.kind === 'glb' || ud.kind === 'dragon';
+    const subduedRim = ud.kind === 'glb' || this.type === 'dragon';
     this.rimU.strength.value = (subduedRim ? 0.22 : this.type === 'golem' ? 0.4 : 0.8) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (subduedRim ? 0.05 : 0.12) + this.hitT * 3; // 巨竜の広い翼が白く飛ばないよう、輪郭だけを控えめに照らす
     if (this.sigil) this.sigil.rotation.z += dt * 0.6;
   }

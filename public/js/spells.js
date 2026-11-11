@@ -1,3 +1,4 @@
+import { guardianDefense } from './guardian-mechanics.js';
 // 呪文の発現: 弾・環・雨・壁・罠、ダメージ/回復/守護、粒子演出
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
@@ -161,11 +162,11 @@ function payload(spell) {
   };
 }
 
-function applyPayload(spell, caster, t, pl, mult = 1, dir = null) {
+function applyPayload(spell, caster, t, pl, mult = 1, dir = null, hitPoint = null) {
   if (!t.alive) return false;
   let did = false;
   if (pl.dmg > 0 && affects(spell, caster, t, 'harm') && !(t.isMage && t.downed)) {
-    FX.damage(t, pl.dmg * mult, spell.elements, caster, { dir, power: spell.power, tier: spell.tier || 0, atk: pl.atk }); did = true;
+    FX.damage(t, pl.dmg * mult, spell.elements, caster, { dir, hitPoint: hitPoint?.toArray(), power: spell.power, tier: spell.tier || 0, atk: pl.atk }); did = true;
   }
   if (affects(spell, caster, t, 'help') && t.isMage) {
     if (pl.heal) { FX.heal(t, pl.heal * mult, caster); did = true; }
@@ -385,10 +386,24 @@ export const FX = {
       this.damage(t, amount, elements, src, { ...opts, enchantHit: true });
       return this.damage(t, 10 * en.power, en.elements, src, { enchantHit: true, power: en.power, tier: 0 });
     }
-    if (t.isMage && t.kind === 'remote') { G.net?.send({ t: 'dmg', to: t.netId, amount, elements, src: src?.id, opts: { melee: opts.melee, dir: opts.dir?.toArray?.() } }); return; }
+    if (t.isMage && t.kind === 'remote') { G.net?.send({ t: 'dmg', to: t.netId, amount, elements, src: src?.id, opts: { melee: opts.melee, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, silent: opts.silent } }); return; }
     if (t === G.player && src && !src.isMage && amount > 0 && !opts.silent) G.onEnemyHit?.(src); // 魔物の技(声を狂わせる など)
-    if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, atk: opts.atk }); return; }
+    if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, atk: opts.atk, hitPoint: opts.hitPoint }); return; }
     let a = amount;
+    if (t.type === 'dragon' && t.dragon && src?.team === 'hero' && amount > 0) {
+      if (!t.body.visible && !opts.silent) return;
+      const offset = src.pos.clone().sub(t.pos).setY(0), forward = new THREE.Vector3(-Math.sin(t.yaw), 0, -Math.cos(t.yaw));
+      const mouth = t.body.userData.head.getWorldPosition(new THREE.Vector3());
+      const mouthHit = Array.isArray(opts.hitPoint) && opts.hitPoint.length === 3 && opts.hitPoint.every(Number.isFinite)
+        && new THREE.Vector3(...opts.hitPoint).distanceTo(mouth) < 2.3;
+      const defense = guardianDefense(t.dragon, { distance: offset.length(), front: offset.normalize().dot(forward) > .3, mouthHit, silent: opts.silent });
+      a *= defense.mult;
+      if (defense.reflect) this.damage(src, defense.reflect, [], t, {});
+      if (defense.stagger) { t.dragon.stage = 'recover'; t.dragon.remaining = 3.8; t.vulnUntil = G.time + 3.8; t.stun = 0; }
+      if (defense.hint && !opts.silent && (t.guardianHintAt === undefined || G.time - t.guardianHintAt > 1)) {
+        t.guardianHintAt = G.time; G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 5, 0)), defense.hint, '#dfd6ff');
+      }
+    }
     let crit = false;
     for (const e of elements) {
       if (t.T?.weak?.includes(e) && !crit) { a *= 2.5; crit = true; }
@@ -566,7 +581,7 @@ export const FX = {
         else if (hit && p.local) {
           if (p.team === 'monster') FX.damage(hit, p.pl.dmg, ['void'], p.caster, {});
           else {
-            applyPayload(p.spell, p.caster, hit, p.pl, 1, p.vel.clone().setY(0).normalize());
+            applyPayload(p.spell, p.caster, hit, p.pl, 1, p.vel.clone().setY(0).normalize(), p.pos);
             if (p.spell.elements.includes('thunder')) this.chain(p, hit);
           }
         }

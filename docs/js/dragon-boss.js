@@ -1,4 +1,5 @@
 import { frostExposure } from './guardian-mechanics.js';
+import { insideArena } from './arena-room.js';
 import { animateGuardian } from './guardian-model.js';
 import { dragonProfile, dragonElement } from './dragon-profiles.js';
 import * as THREE from 'three';
@@ -49,7 +50,7 @@ export function updateDragons(dt) {
     if (!e.alive || e.type !== 'dragon') continue;
     living.add(e.id);
     if (G.isHost) {
-      const targets = G.mages.filter(m => m.team === 'hero' && m.alive && !m.downed && !G.inSanctuary?.(m.pos) && m.pos.distanceTo(e.pos) < 42 && lineOfSight(e.pos, m.pos));
+      const targets = G.mages.filter(m => m.team === 'hero' && m.alive && !m.downed && (!G.dungeon?.arena || G.dungeon.arena.phase==='active'&&insideArena(m.pos)) && !G.inSanctuary?.(m.pos) && m.pos.distanceTo(e.pos) < 42 && lineOfSight(e.pos, m.pos));
       const target = targets.sort((a, b) => a.pos.distanceToSquared(e.pos) - b.pos.distanceToSquared(e.pos))[0];
       e.dragon ||= createDragonState(e.dragonElement || dragonElement(G.floor, e.final));
       const s = e.dragon;
@@ -115,7 +116,7 @@ export function updateDragons(dt) {
     if (e.dragon) drawDragon(e, dt);
   }
   for (const id of visuals.keys()) if (!living.has(id)) disposeVisual(id);
-  const boss = G.enemies.find(e => e.alive && e.type === 'dragon' && e.dragon && G.player?.alive && e.pos.distanceTo(G.player.pos) < 42 && lineOfSight(e.pos, G.player.pos));
+  const boss = G.enemies.find(e => e.alive && e.type === 'dragon' && e.dragon && G.player?.alive && (!G.dungeon?.arena||G.dungeon.arena.phase==='active'&&insideArena(G.player.pos)) && e.pos.distanceTo(G.player.pos) < 42 && lineOfSight(e.pos, G.player.pos));
   const hud = document.getElementById('dragonHud');
   if (hud) {
     hud.classList.toggle('hidden', !boss);

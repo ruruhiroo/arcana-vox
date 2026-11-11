@@ -1,8 +1,9 @@
+import { makeItemGrip, itemGripProfile } from './item-grip.js';
 // 一人称の手元: 片手で抱える魔導書(開いた頁に呪文が書かれている)
 // 頁は Canvas に描き、めくると書き換わる。右クリックで顔の前に掲げて読む。
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { seeded } from './state.js';
+import { G, seeded } from './state.js';
 import { glowSprite, runeCircleTex } from './textures.js';
 import { rubyPieces } from './lexicon.js';
 import { itemModel } from './icons3d.js';
@@ -114,8 +115,8 @@ function wrapPlain(g, text, maxW) {
 }
 
 // ---------- 手 ----------
-const skinMat = new THREE.MeshStandardMaterial({ color: 0xd9a383, roughness: 0.55, metalness: 0, emissive: 0x2a0c04, emissiveIntensity: 0.25 });
-const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x1c1226, roughness: 0.9 });
+const skinMat = new THREE.MeshStandardMaterial({ color: 0xe6bb9d, roughness: 0.8, metalness: 0, emissive: 0x2a0c04, emissiveIntensity: 0 });
+const sleeveMat = new THREE.MeshStandardMaterial({ color: 0x293955, roughness: 0.9 });
 const cuffMat = new THREE.MeshStandardMaterial({ color: 0xc9a050, metalness: 0.85, roughness: 0.35 });
 function capsule(r, len) { return new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 4, 10), skinMat); }
 // side: -1 左手 / +1 右手。本の下端の外側の角を、親指を頁に掛けて支える形
@@ -312,17 +313,7 @@ function makeToolRig() {
 }
 
 // 右手に持った道具(魔晶・薬・巻物…どれでも)
-function makeHeldRig() {
-  const root = new THREE.Group();
-  const holder = new THREE.Group(); root.add(holder);
-  const palm = new THREE.Mesh(new RoundedBoxGeometry(0.07, 0.03, 0.08, 3, 0.012), skinMat); palm.position.set(0, -0.005, 0); root.add(palm);
-  for (let i = 0; i < 4; i++) { const f = capsule(0.009, 0.035); f.rotation.x = Math.PI / 2 - 0.4; f.position.set(-0.027 + i * 0.018, 0.012, -0.045); root.add(f); }
-  const th = capsule(0.01, 0.035); th.rotation.z = 1.2; th.position.set(-0.045, 0.012, 0.0); root.add(th);
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, 0.22, 14), skinMat); arm.rotation.x = Math.PI / 2 - 0.3; arm.position.set(0.01, -0.04, 0.11); root.add(arm);
-  const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.064, 0.26, 18, 1, true), sleeveMat); sleeve.rotation.x = Math.PI / 2 - 0.3; sleeve.position.set(0.015, -0.08, 0.25); root.add(sleeve);
-  root.visible = false;
-  return { root, holder, key: null };
-}
+function makeHeldRig(){const root=new THREE.Group(),holder=new THREE.Group(),hand=new THREE.Group();root.add(holder,hand);root.visible=false;return {root,holder,hand,key:null};}
 
 // Blender で作った手に差し替える(読み込めた後に呼ぶ)。仮の手(箱と筒)は隠す
 const PRIM_MATS = () => [skinMat, sleeveMat, cuffMat];
@@ -428,12 +419,12 @@ export function buildViewModel(camera) {
     heldRig.root.visible = which === 'item' && !!key;
     if (which === 'item' && key && heldRig.key !== key) {
       heldRig.holder.clear(); heldRig.key = key;
-      const m = itemModel(key.startsWith('tome_') ? key : key);
+      const m = key.startsWith('gear_')?G.carriedModel?.(key):itemModel(key.startsWith('scroll_')?'scroll':key);
       if (m) {
         // 手のひらに収まる大きさにそろえる
         const box = new THREE.Box3().setFromObject(m), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
-        const sc = 0.14 / Math.max(size.x, size.y, size.z, 0.01);
-        m.position.sub(c); const w = new THREE.Group(); w.add(m); w.scale.setScalar(sc); w.position.y = 0.075;
+        const sc = .16 / Math.max(size.x,size.y,size.z,.01);
+        m.position.sub(c); const w = new THREE.Group(); w.add(m); w.scale.setScalar(sc); const profile=itemGripProfile(key,size.clone().multiplyScalar(sc));w.position.y=profile.offset;heldRig.hand.clear();heldRig.hand.add(makeItemGrip(profile));
         w.traverse(o => { o.renderOrder = 11; });
         heldRig.holder.add(w);
       }
@@ -484,7 +475,7 @@ export function buildViewModel(camera) {
       heldRig.root.visible = !!show;
       heldRig.root.position.set(0.24 + Math.cos(bob * 0.5) * 0.01, -0.26 + Math.abs(Math.sin(bob * 0.5)) * 0.01 - st.swap * 0.2 - st.kick * 0.05, -0.48);
       heldRig.root.rotation.set(-0.25 - st.kick * 0.6, -0.35, 0.08);
-      heldRig.holder.rotation.y += dt * 0.4;
+      heldRig.holder.rotation.y = 0;
     }
     st.swap = Math.max(st.swap, dUp * 0.9, wUp * 0.9);
     st.kick = Math.max(0, st.kick - dt * 4);
@@ -515,17 +506,10 @@ export function buildViewModel(camera) {
     holder, renderPages, setHeld, update, setElement, get readAmount() { return st.read; }, get flipAmount() { return st.flip; },
     refreshItems() {
       drink.setBottle();
-      if (!itemModel('hand_palm')) return;
-      // 持つ: 掌を上に向けて物を乗せる
-      hidePrimHands(heldRig.root);
-      const palm = blHand('hand_palm', heldRig.root, [0, 0, 0], [-1.15, 0.5, 0.25]); if (palm) palm.scale.multiplyScalar(1.25);
-      heldRig.holder.position.set(0, 0.02, 0); heldRig.holder.scale.setScalar(0.75);
-      // 飲む: 瓶を握る(腕は右下から)
-      hidePrimHands(drink.tilt); hidePrimHands(drink.root); drink.hand = blHand('hand_grip', drink.tilt, [0.004, 0.05, 0], [0.3, -0.9, Math.PI / 2]);
-      // 掘る: 小槌の柄を握る
-      hidePrimHands(tool.hammer); tool.fist = blHand('hand_fist', tool.hammer, [0, 0.0, 0], [0, -Math.PI / 2, Math.PI / 2]); if (tool.fist) tool.fist.scale.setScalar(1.45);
-      // こじ開ける: 両手を蓋の下に差し入れる
-      hidePrimHands(tool.hands); tool.hands.children.forEach((h, i) => { h.userData.bl = blHand('hand_reach', h, [0, 0, 0], [-1.25, Math.PI, 0], i === 0); });
+      // The same rounded hand is used while carrying and while drinking.
+      hidePrimHands(drink.tilt);hidePrimHands(drink.root);
+      drink.hand?.removeFromParent();drink.hand=makeItemGrip({radiusX:.039,radiusZ:.039});drink.hand.position.y=.035;drink.tilt.add(drink.hand);
+
     },
     debug: { get held() { return heldRig; }, get drink() { return drink; }, get tool() { return tool; } },
     kick() { st.kick = 1; },

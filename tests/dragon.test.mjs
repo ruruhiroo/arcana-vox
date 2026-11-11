@@ -131,10 +131,10 @@ test('damage windows match the tail swing and ground impact, including skipped f
   assert.ok(!dragonHits(s,[0,0,12],0,1));
   s.move='meteor'; assert.ok(!dragonHits(s,[0,0,0],0,.71)); assert.ok(dragonHits(s,[0,0,0],.7,.8));
 });
-test('hard dragon takes sustained offense and unhealed mistakes are lethal', () => {
-  assert.equal(dragonHp(1),3200); assert.equal(dragonHp(1,2),5120);
+test('exploration gear makes the first guardian manageable while missed dodges still hurt', () => {
+  assert.equal(dragonHp(1),1400); assert.equal(dragonHp(1,2),2240);
   assert.ok(dragonHp(10,1,true)>dragonHp(10));
-  assert.ok(DRAGON_ATTACKS.breath.damage+DRAGON_ATTACKS.slam.damage>100);
+  assert.ok(DRAGON_ATTACKS.breath.damage+DRAGON_ATTACKS.slam.damage>=85);
   const cycle=Object.values(DRAGON_ATTACKS).reduce((n,a)=>n+a.warn+a.active+a.recover+1.1,0)/4;
   assert.ok(cycle<7.5, 'average attack cadence must stay below 7.5s');
 });
@@ -172,7 +172,7 @@ test('six elemental bosses cycle by floor and retain distinct attacks and scalin
     const attacks=[];
     for(let i=0;i<16;i++) { const ev=stepDragon(s,100,input); if(ev==='windup')attacks.push(s.move); }
     assert.deepEqual(attacks,profile.order);
-    s.move='breath';const a=dragonAttack(s);assert.equal(a.range,profile.range);assert.ok(a.damage>35&&a.damage<60);
+    s.move='breath';const a=dragonAttack(s);assert.equal(a.range,profile.range);assert.ok(a.damage>=30&&a.damage<50);
     assert.ok(dragonHp(7)>dragonHp(1));
   }
   assert.equal(names.size,6);assert.equal(colors.size,6);assert.ok(cycles.size>=5);
@@ -213,7 +213,7 @@ test('live damage pipeline applies reflection and mouth interruption without rec
   Object.assign(G,{isHost:true,time:1,player:p,fx:FX});
   FX.damage(e,100,[],p,{});assert.equal(e.hp,955);assert.equal(p.hp,92);
   s.element='fire';const head=body.userData.head.getWorldPosition(new THREE.Vector3());
-  FX.damage(e,50,[],p,{hitPoint:head.toArray()});assert.equal(s.stage,'recover');assert.ok(e.vulnUntil>G.time);
+  FX.damage(e,50,[],p,{hitPoint:head.toArray()});assert.equal(s.stage,'recover');assert.ok(e.vulnUntil>G.time);assert.equal(e.hp,875,'interrupt receives the exposure multiplier once');
 });
 
 test('movement uses species-specific arcs, landings and a short untargetable blink',()=>{

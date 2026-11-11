@@ -8,6 +8,8 @@ import { glowSprite } from './textures.js';
 let H = null;            // main から渡される道具 (ui, sfx, addPickup, learnWord, spawn, inv)
 let events = [];
 let searched = new Set();
+export const roomProgress=()=>({searched:[...searched],done:events.filter(e=>e.done).map(e=>e.i)});
+export function restoreRoomProgress(p={}){searched=new Set(p.searched||[]);for(const e of events)if(p.done?.includes(e.i))e.done=true;}
 
 const SEARCH_NAME = { barrel: '樽', crate: '木箱', coffin: '棺', shelf: '書棚', desk: '書き物机', books: '本の山' };
 const LORE = [
@@ -299,8 +301,8 @@ function searchResult(i, d) {
 }
 // 古文書の断片: 3枚そろうと言霊を一つ覚える
 function fragment() {
-  G.inv.frag = (G.inv.frag || 0) + 1;
-  if (G.inv.frag >= 3) { G.inv.frag = 0; H.ui.log('古文書の断片が三枚そろった — 一つの頁になった', '#ffe08a'); H.learnWord(); }
+  if(!G.invAdd('frag',1)){H.inv('frag',1);H.ui.log('断片を持つ空き枠がない — 足元に置いた');return;}
+  if (G.inv.frag >= 3) { G.inv.frag -= 3; H.ui.log('古文書の断片が三枚そろった — 一つの頁になった', '#ffe08a'); H.learnWord(); }
   else H.ui.log(`古文書の断片を見つけた (${G.inv.frag}/3) — 三枚そろうと言霊が読める`, '#ffe08a');
 }
 

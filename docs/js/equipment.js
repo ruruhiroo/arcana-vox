@@ -92,7 +92,12 @@ export function rollItem(floor = 1, rng = Math.random) {
   const m = RARITY[rar].mult, stats = {};
   for (const [k, v] of Object.entries(base.stats)) stats[k] = typeof v === 'number' ? +(v * m * (0.85 + rng() * 0.3)).toFixed(3) : v;
   for (const k of ['maxMp', 'maxHp']) if (stats[k]) stats[k] = Math.round(stats[k]);
-  return { uid: 'e' + (uid++), slot, bid: base.id, name: (PREFIX[rar] ? PREFIX[rar] + ' ' : '') + base.name, rarity: rar, stats };
+  return tuneEquipment({ uid: 'e' + (uid++), slot, bid: base.id, name: (PREFIX[rar] ? PREFIX[rar] + ' ' : '') + base.name, rarity: rar, stats });
+}
+export function tuneEquipment(it){
+  if(!it||it.balanceVersion>=2)return it;
+  for(const [key,mul]of Object.entries({power:1.7,elemPow:1.6,maxHp:1.5,maxMp:1.3,regen:1.6,ward:1.3}))if(it.stats[key])it.stats[key]=['maxHp','maxMp'].includes(key)?Math.round(it.stats[key]*mul):+(it.stats[key]*mul).toFixed(3);
+  it.balanceVersion=2;return it;
 }
 
 // 装備の見た目の鍵(以前の版の品は名前から探す)
@@ -128,5 +133,5 @@ export function totals(equip) {
       else t[k] += v;
     }
   }
-  return t;
+  t.costMul=Math.max(-.5,t.costMul);return t;
 }

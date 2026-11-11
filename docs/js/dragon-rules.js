@@ -1,12 +1,12 @@
 import { dragonProfile } from './dragon-profiles.js';
 // モーションと命中が共有する時間・角度。床の予測表示は使わない。
 export const DRAGON_ATTACKS = {
-  breath: { label: '薙ぎ払う劫火', warn: 2.4, active: 1.8, recover: 1.8, range: 28, angle: Math.PI / 9, damage: 52, hitStart: .12, hitEnd: .88 },
-  sweep: { label: '旋回尾撃', warn: 1.65, active: 1.35, recover: 1.5, range: 16, inner: 4, angle: .38, damage: 48, hitStart: .08, hitEnd: .92 },
-  slam: { label: '崩山の叩きつけ', warn: 1.9, active: 1, recover: 3.4, range: 17, angle: Math.PI * .36, damage: 64, hitStart: .48, hitEnd: .48 },
-  meteor: { label: '墜ちる竜星', warn: 2.2, active: 1, recover: 3.8, range: 6.5, damage: 70, hitStart: .72, hitEnd: .72 },
+  breath: { label: '薙ぎ払う劫火', warn: 2.4, active: 1.8, recover: 2.2, range: 28, angle: Math.PI / 9, damage: 40, hitStart: .12, hitEnd: .88 },
+  sweep: { label: '旋回尾撃', warn: 1.65, active: 1.35, recover: 1.8, range: 16, inner: 4, angle: .38, damage: 36, hitStart: .08, hitEnd: .92 },
+  slam: { label: '崩山の叩きつけ', warn: 1.9, active: 1, recover: 3.4, range: 17, angle: Math.PI * .36, damage: 50, hitStart: .48, hitEnd: .48 },
+  meteor: { label: '墜ちる竜星', warn: 2.2, active: 1, recover: 3.8, range: 6.5, damage: 58, hitStart: .72, hitEnd: .72 },
 };
-export const dragonHp = (floor, party = 1, final = false) => Math.round((final ? 5200 : 3200) * (1 + .15 * (floor - 1)) * (1 + .6 * (party - 1)));
+export const dragonHp = (floor, party = 1, final = false) => Math.round((final ? 2600 : 1400) * (1 + .15 * (floor - 1)) * (1 + .6 * (party - 1)));
 export const DRAGON_ROAM = 3.5;
 export const GUARDIAN_TRAVEL = { dragon:1.4, giant:1.65, beast:1.1, griffin:1.6, sentinel:1.3, reaper:1.25 };
 export function createDragonState(element = 'fire') {

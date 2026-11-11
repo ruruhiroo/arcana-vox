@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { glowSprite } from './textures.js';
 import { G } from './state.js';
-import { itemModel } from './icons3d.js';
+import { itemModel, equipmentModel } from './icons3d.js';
 // Blender の模型の中から名前で部品を探す(書き出しで lid → lid001 のように番号が付くことがある)
 const part = (o, name) => { let hit = null; const re = new RegExp('^' + name + '(_?\\.?\\d+)?$'); o.traverse(x => { if (!hit && re.test(x.name)) hit = x; }); return hit; };
 // ときどき小さくきらめく(見つけやすさのため。光の輪や浮遊はしない)
@@ -280,6 +280,8 @@ function makeLoot(mat, color) {
 }
 
 export function makePickupMesh(kind, data = {}, matColors = {}) {
+  if(data.gear){const root=new THREE.Group(),m=equipmentModel(data.gear);if(m){const b=new THREE.Box3().setFromObject(m),size=b.getSize(new THREE.Vector3()),c=b.getCenter(new THREE.Vector3());m.position.sub(c);const wrap=new THREE.Group();wrap.add(m);wrap.scale.setScalar(.45/Math.max(size.x,size.y,size.z,.01));wrap.position.y=.25;root.add(wrap);}return root;}
+  if(kind==='loot'&&data.mat){const key=data.mat.startsWith('scroll_')?'scroll':data.mat,m=itemModel(key);if(m){const b=new THREE.Box3().setFromObject(m),size=b.getSize(new THREE.Vector3()),center=b.getCenter(new THREE.Vector3());m.position.sub(center);const root=new THREE.Group();root.add(m);root.scale.setScalar(.4/Math.max(size.x,size.y,size.z,.01));m.position.y+=size.y*.5;return root;}}
   if (kind === 'scroll') return makeScroll();
   if (kind === 'herb') return makeHerb();
   if (kind === 'crystal') return makeCrystal();

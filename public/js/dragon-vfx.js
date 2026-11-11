@@ -75,7 +75,7 @@ export function updateDragonVisual(v, e, p, dt) {
   const travelling=s.stage==='idle'&&s.travel;
   if(travelling&&!v.travelling){v.travelling=true;G.fx.burst(e.pos.clone().add(new THREE.Vector3(0,.3,0)),profile.kind==='reaper'?profile.color:0xb2a28b,20,{speed:3,up:1,size:.5,life:.65});sfx.dragonWing?.(e.pos);}
   if(!travelling&&v.travelling){v.travelling=false;G.fx.burst(e.pos.clone().add(new THREE.Vector3(0,.3,0)),profile.kind==='reaper'?profile.color:0xb2a28b,34,{speed:4,up:1.3,size:.6,life:.75});sfx.dragonLand?.(e.pos);}
-  const mouth = e.body.userData.head.localToWorld(new THREE.Vector3(0, 0, -1.35));
+  const mouth = e.body.userData.head.localToWorld(e.body.userData.mouthOffset?.clone() || new THREE.Vector3(0, 0, -1.35));
   const fire = s.move === 'breath' && strike ? smooth(p / .12) * (1 - smooth((p - .86) / .14)) : 0;
   v.glow.position.copy(mouth); v.glow.scale.setScalar(charge ? .4 + p * 1.1 : 1.4);
   v.glow.material.opacity = s.move === 'breath' ? charge ? p * .75 : fire * .8 : 0;

@@ -1,7 +1,7 @@
 // 魔導師と魔物: 見た目・状態・魔物AI
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
-import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf, settleY, CLIMB, FINAL_FLOOR } from './dungeon.js';
+import { moveWithCollision, flowDir, lineOfSight, bfs, cellOf, settleY, CLIMB, FINAL_FLOOR, findFreePosition } from './dungeon.js';
 import { textSprite, runeCircleTex, glowSprite } from './textures.js';
 import { sfx } from './audio.js';
 import { buildEnemyModel, animateEnemy } from './enemymodels.js';
@@ -125,7 +125,9 @@ export function clearDying() { for (const d of G.dying || []) d.e.dispose(); G.d
 // 途中で現れる魔物 (呼び出し・召喚)
 export function spawnEnemy(id, type, pos, floor, summoner = null) {
   if (G.enemies.some(e => e.id === id)) return null;
-  const e = new Enemy(id, type, pos, floor);
+  const free=findFreePosition(pos,ENEMY_TYPES[type]?.radius||.4,{occupied:[...G.enemies,...G.mages].filter(e=>e.alive),maxDistance:12});
+  if(!free)return null;
+  const e = new Enemy(id, type, free, floor);
   e.summoner = summoner; e.aggro = true;
   G.enemies.push(e);
   G.fx?.burst?.(pos.clone().setY(0.5), 0x60ff9a, 40, { speed: 3, up: 2 });
@@ -157,10 +159,12 @@ function addRim(group, U) {
   group.traverse(o => {
     if (!o.isMesh || !o.material || !(o.material.isMeshStandardMaterial)) return;
     const m = o.material = o.material.clone();
+    const rimScale=group.userData.asset==='nox-v2' ? .18 : 1;
     m.onBeforeCompile = sh => {
       sh.uniforms.rimColor = U.color; sh.uniforms.rimStrength = U.strength;
-      sh.fragmentShader = 'uniform vec3 rimColor;\nuniform float rimStrength;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\n  float rimF = 1.0 - clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0);\n  totalEmissiveRadiance += rimColor * pow(rimF, 2.2) * rimStrength;');
+      sh.uniforms.rimScale={value:rimScale};
+      sh.fragmentShader = 'uniform vec3 rimColor;\nuniform float rimStrength;\nuniform float rimScale;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\n  float rimF = 1.0 - clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0);\n  totalEmissiveRadiance += rimColor * pow(rimF, 2.2) * rimStrength * rimScale;');
     };
     m.customProgramCacheKey = () => 'enemy-rim';
   });

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { guardianSurface } from './guardian-materials.js';
 
 // Detail geometry stays on the existing animated joints. Collision ellipsoids
 // remain separate, so a feather or a horn cannot make attacks miss the body.
@@ -29,7 +30,7 @@ export function ellipsoid(parent, material, position, scale) {
 }
 export function taperedCurve(parent, material, points, radii, segments = 18, sides = 10) {
   const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
-  const frames = curve.computeFrenetFrames(segments, false), vertices = [], indices = [];
+  const frames = curve.computeFrenetFrames(segments, false), vertices = [], indices = [], uvs=[];
   for (let i = 0; i <= segments; i++) {
     const t = i / segments, p = curve.getPointAt(t), r = t * (radii.length - 1), k = Math.min(radii.length - 2, Math.floor(r));
     const radius = THREE.MathUtils.lerp(radii[k], radii[k + 1], r - k);
@@ -37,10 +38,11 @@ export function taperedCurve(parent, material, points, radii, segments = 18, sid
       const a = j / sides * Math.PI * 2;
       const v = p.clone().addScaledVector(frames.normals[i], Math.cos(a) * radius).addScaledVector(frames.binormals[i], Math.sin(a) * radius);
       vertices.push(v.x, v.y, v.z);
+      uvs.push(j/sides,t);
       if (i < segments && j < sides) { const n = i * (sides + 1) + j; indices.push(n, n + 1, n + sides + 1, n + 1, n + sides + 2, n + sides + 1); }
     }
   }
-  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); geo.setIndex(indices); geo.computeVertexNormals();
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2)); geo.setIndex(indices); geo.computeVertexNormals();
   const mesh = new THREE.Mesh(geo, material); parent.add(mesh); return mesh;
 }
 export function plate(parent, material, outline, position, depth = .08, bevel = .035) {
@@ -63,15 +65,16 @@ export function wingSail(parent, material, points) {
   // Curved, densely sampled panels between the wing fingers, with scalloped edges.
   for(let k=2;k<points.length-1;k++) {
     const a=new THREE.Vector3(...points[1]),b=new THREE.Vector3(...points[k]),c=new THREE.Vector3(...points[k+1]);
-    const vertices=[],indices=[],n=12;
+    const vertices=[],indices=[],uvs=[],n=12;
     for(let i=0;i<=n;i++)for(let j=0;j<=n;j++) {
       const u=i/n,v=j/n,edge=b.clone().lerp(c,v),p=a.clone().lerp(edge,u);
       p.y-=Math.sin(Math.PI*v)*(.18*u+.22*Math.sin(Math.PI*u));vertices.push(p.x,p.y,p.z);
+      uvs.push(u,v);
       if(i<n&&j<n){const x=i*(n+1)+j;indices.push(x,x+n+1,x+1,x+1,x+n+1,x+n+2);}
     }
-    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.setIndex(indices);geo.computeVertexNormals();parent.add(new THREE.Mesh(geo,material));
+    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(uvs,2));geo.setIndex(indices);geo.computeVertexNormals();parent.add(new THREE.Mesh(geo,material));
   }
-  const inner=new THREE.BufferGeometry();inner.setAttribute('position',new THREE.Float32BufferAttribute([...points[0],...points[1],...points[points.length-1]],3));inner.computeVertexNormals();parent.add(new THREE.Mesh(inner,material));
+  const inner=new THREE.BufferGeometry();inner.setAttribute('position',new THREE.Float32BufferAttribute([...points[0],...points[1],...points[points.length-1]],3));inner.setAttribute('uv',new THREE.Float32BufferAttribute([0,0,1,0,1,1],2));inner.computeVertexNormals();parent.add(new THREE.Mesh(inner,material));
 }
 function drape(parent, material, hood=false, mantle=false) {
   const v=[],idx=[],rows=24,cols=64;
@@ -108,6 +111,9 @@ export function sculptGuardian(root, kind) {
   const o=(p,mat,pos,size)=>ellipsoid(p,mat,pos,size),c=(p,mat,pts,r)=>taperedCurve(p,mat,pts,r);
   core.scale.multiplyScalar(.73);
   if(kind==='dragon') {
+    Object.assign(m.scales,guardianSurface('scales'));m.scales.bumpMap=null;m.scales.normalScale=new THREE.Vector2(1.4,1.4);m.scales.roughness=1;
+    Object.assign(m.armor,guardianSurface('stone'));m.armor.bumpMap=null;m.armor.roughness=1;
+    Object.assign(m.membrane,guardianSurface('membrane'));m.membrane.roughness=1;m.membrane.emissiveIntensity=.08;
     for(const side of [-1,1]) {
       c(head,m.horn,[[side*.3,.5,-.1],[side*.48,.85,.05],[side*.66,1.04,.5],[side*.62,1.13,.92]],[.17,.14,.07,0]);
       c(head,m.horn,[[side*.34,.13,0],[side*.7,.2,.2],[side*.81,.4,.62]],[.12,.09,0]);

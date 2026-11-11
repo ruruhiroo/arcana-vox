@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
-export const GLB_TYPES = ['skeleton', 'ghoul', 'knight', 'ogre', 'imp', 'scribe', 'lich', 'golem', 'spider', 'bat', 'wraith', 'slime'];
+export const GLB_TYPES = ['skeleton', 'ghoul', 'knight', 'ogre', 'imp', 'scribe', 'lich', 'golem', 'spider', 'bat', 'wraith', 'slime', 'guardian-reaper'];
 const cache = {};
 let loading = null;
 

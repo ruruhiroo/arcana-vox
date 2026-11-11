@@ -1,5 +1,6 @@
 import { badges as mischiefBadges } from './mischief.js';
 import { itemIcon } from './icons.js';
+import { canCraft } from './carry.js';
 // HUD・魔導書・調合・ミニマップ
 import * as THREE from 'three';
 import { G, clamp } from './state.js';
@@ -118,6 +119,7 @@ export function loadBook() {
     BOOK.chantVer = 10;
   }
   BOOK.mastery ||= {};
+  ensureUtilityBook();
   G.known = new Set(BOOK.known);
 }
 export function saveBook() {
@@ -143,14 +145,18 @@ export const rubify = str => esc(str).replace(RUBY_RE, m => RUBY_MAP[m]);
 // ホットバー用: 呪文を核の語だけに縮めて表示 (紅蓮・穿槍・放て)
 const coreLine = text => tokenize(text).map(t => RUBY_MAP[WORD_BY_ID[t.id].core]).join('<i class="sep">・</i>');
 
-// 道具枠(1〜5キー)。どの道具でも入れられる。所持品で道具に重ねて数字キーを押すか、ここへ引きずって入れる
-export const QUICK_DEFAULT = [null, null, null, null, null];
+// 持ち物6枠(1〜6キー)。素材・道具・未装着の装備はすべてこの枠に収まる。
+export function ensureUtilityBook(){
+  BOOK.known=[...new Set([...(BOOK.known||[]),'blink','survey'])];
+  for(const [id,name]of [['blink','短距離転移'],['survey','気配の探知']])if(!BOOK.spells.some(s=>compile(s.text,null).effects.includes(id))){const base=expandChant('我に '+WORD_BY_ID[id].core);BOOK.spells.push({name,text:base+' '+callName(compile(base,null)),memo:WORD_BY_ID[id].meaning});}
+}
+export const QUICK_DEFAULT = [null, null, null, null, null, null];
 export function quickSlotsHtml(withKeys) {
   return G.quick.map((k, i) => {
     const c = k ? G.inv[k] || 0 : 0, key = withKeys ? `<span class="k">${keyOf('item' + (i + 1))}</span>` : `<span class="k">${i + 1}</span>`;
     const held = G.held === 'item' && G.heldSlot === i ? ' held' : '';
     if (!k || !c) return `<div class="slot item ic empty${held}" data-q="${i}">${key}</div>`;
-    return `<div class="slot item ic${held} ${k === 'ether' && G.player?.status?.drinking ? 'using' : ''}" data-q="${i}" title="${esc(G.itemName?.(k) || k)}"><span class="pic">${itemIcon(k)}</span>${key}${c > 1 ? `<span class="c">${c}</span>` : ''}</div>`;
+    return `<div class="slot item ic${held} ${k === 'ether' && G.player?.status?.drinking ? 'using' : ''}" data-q="${i}" title="${esc(G.itemName?.(k) || k)}"><span class="pic">${G.carriedIcon?.(k)||itemIcon(k)}</span>${key}${c > 1 ? `<span class="c">${c}</span>` : ''}</div>`;
   }).join('');
 }
 
@@ -388,21 +394,22 @@ function renderBook() {
     pg.innerHTML = `<h3>調合</h3>
       <div class="inv">${Object.entries(names).map(([k, n]) => `<span>${n} <b>${G.inv[k] || 0}</b></span>`).join('')}</div>
       <div class="recipes">${RECIPES.map((r, i) => {
-        const ok = Object.entries(r.need).every(([k, n]) => (G.inv[k] || 0) >= n);
+        const ok = canCraft(G.inv,r);
         return `<div class="recipe"><b>${r.name}</b> <span class="muted">所持 ${G.inv[r.id] || 0}</span><p>${r.desc}</p>
           <p>素材: ${Object.entries(r.need).map(([k, n]) => `${names[k]}×${n}`).join(' ')}</p>
           <button class="btn small ${ok ? '' : 'ghost'}" data-craft="${i}" ${ok ? '' : 'disabled'}>調合する</button></div>`;
       }).join('')}</div>
-      <p class="muted" style="margin-top:14px">素材は迷宮の霊草・壁の魔晶・宝箱・倒した魔物から得られる。道具は 1〜4 キーで使う(魔力薬 1・護符 2・閃光玉 3・導灯 4)。</p>`;
+      <p class="muted" style="margin-top:14px">素材は迷宮の霊草・壁の魔晶・宝箱・倒した魔物から得られる。持ち物は下の6枠だけ。1〜6で持ち替え、左クリックで使用・装備、Gで落とす。</p>`;
     pg.querySelectorAll('[data-craft]').forEach(b => b.onclick = () => {
       const r = RECIPES[+b.dataset.craft];
+      if(!canCraft(G.inv,r)){UI.log('材料か空き枠が足りない');return;}
       for (const [k, n] of Object.entries(r.need)) G.inv[k] -= n;
-      G.inv[r.id] = (G.inv[r.id] || 0) + 1;
+      G.invAdd(r.id,1);
       UI.log(`${r.name}を調合した`, '#ffe08a'); renderBook(); UI.renderHotbar();
     });
   } else {
     pg.innerHTML = `<h3>魔導師の心得</h3><div style="line-height:2;font-size:15px">
-      <p>■ <b>詠唱</b> — <b>V</b>を押しながら呪文を声に出す(離すと発動)。<b>C</b>で常時詠唱(ハンズフリー)。マイクが無い場合は<b>Enter</b>で文字詠唱。声でも文字でも、詠唱には時間がかかり、その間は足が鈍る。</p>
+      <p>■ <b>詠唱</b> — <b>V</b>を押しながら呪文を声に出す(離すと発動)。<b>C</b>で常時詠唱(ハンズフリー)。<b>Enter</b>は仲間とのチャット。チャットでは術は発動しない。詠唱中は足が鈍る。</p>
       <p>■ <b>魔法の名</b> — 最後に魔法の名(ファイア・ヒーリング など)を唱えて締めると完全詠唱。無いと略式(威力70%)。</p>
       <p>■ <b>詠唱妨害</b> — 詠唱中に強打(12以上)を受けると術が霧散する。「守護」で防げる。仲間が長い呪文を唱えている間は守ってやれ。</p>
       <p>■ <b>読み合い</b> — 敵の魔導師の詠唱は頭上に表示され、声も聞こえる。「穿槍」が聞こえたら「城壁」で阻め。「天雨」なら足元の魔法陣から離れろ。</p>

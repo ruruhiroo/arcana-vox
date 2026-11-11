@@ -53,6 +53,7 @@ function sealTex(core) {
 export function buildSecrets(d, scene) {
   clearSecrets(scene);
   for (const s of d.secrets || []) {
+    if(d.grid[s.cell[1]*52+s.cell[0]])continue;
     const [fx, fy] = s.from, dx = s.cell[0] - fx, dy = s.cell[1] - fy;
     // 扉側から見た壁の面
     const face = new THREE.Vector3((fx + 0.5 + dx * 0.5) * CELL - dx * 0.03, (s.h || 0) + 1.7, (fy + 0.5 + dy * 0.5) * CELL - dy * 0.03);

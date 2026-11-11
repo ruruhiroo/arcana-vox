@@ -9,6 +9,8 @@ import { glowSprite } from './textures.js';
 
 let H = null;       // main から: ui, sfx, addPickup(id, kind, pos, data), damage(mage, n)
 let gims = [];
+export const coopProgress=()=>gims.map((g,i)=>g.done?i:-1).filter(i=>i>=0);
+export function restoreCoopProgress(ids=[]){for(const i of ids)if(gims[i])gims[i].done=true;}
 const casts = [];   // 最近の詠唱 { id, t }
 
 export function initCoop(hooks) { H = hooks; }

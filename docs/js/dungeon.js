@@ -4,6 +4,7 @@ import { G, seeded } from './state.js';
 import { stoneWall, stoneFloor, ceilingTex, glowSprite } from './textures.js';
 import { buildDecor } from './decor.js';
 import { buildLayout } from './layout.js';
+import { buildArena, arenaBlocksMove, arenaDoorCollision, insideArena } from './arena-room.js';
 
 export const CELL = 4, WALL_H = 6.4, W = 52, H = 52;
 export const DRAGON_HALL_HEIGHT = 16;
@@ -450,6 +451,7 @@ export function buildMeshes(dg) {
     }
   }
   for (const b of dg._brz || []) dg.solids.push(b); // 篝火台にはぶつかる
+  buildArena(dg, group);
   return group;
 }
 
@@ -464,7 +466,11 @@ export function rebuildStructure(dg, group) {
   });
 }
 // 壊せる壁か(外周は壊せない)
-export const breakable = (x, y) => x >= 1 && y >= 1 && x < W - 1 && y < H - 1;
+export const breakable = (x, y) => {
+  const a=G.dungeon?.arena;
+  if(a && insideArena({x:(x+.5)*CELL,z:(y+.5)*CELL},a,-CELL))return false;
+  return x >= 1 && y >= 1 && x < W - 1 && y < H - 1;
+};
 
 // ---- 高さ ----
 export function heightAt(x, z) {
@@ -497,19 +503,51 @@ function blockedByObstacle(x, z, r, team) {
 }
 
 function blockedBySolid(x, z, r) {
-  for (const s of G.dungeon?.solids || []) { const dx = x - s.x, dz = z - s.z; if (dx * dx + dz * dz < (s.r + r) * (s.r + r)) return true; }
+  for (const s of G.dungeon?.solids || []) {
+    const dx=x-s.x,dz=z-s.z;
+    if(s.halfX!==undefined){const lx=dx*s.cos-dz*s.sin,lz=dx*s.sin+dz*s.cos;
+      if(Math.hypot(Math.max(0,Math.abs(lx)-s.halfX),Math.max(0,Math.abs(lz)-s.halfZ))<r)return true;
+    }else if(dx*dx+dz*dz<(s.r+r)*(s.r+r))return true;
+  }
   return false;
 }
 
+// Shared by initial spawns, summons and multiplayer reinforcements. A floor cell
+// alone is not enough: the entire body and its escape space must be clear.
+export function findFreePosition(origin, radius=.4, {room=null, occupied=[], maxDistance=Infinity}={}) {
+  const dg=G.dungeon;if(!dg)return null;
+  const candidates=[origin.clone()];
+  const cells=room?.cells||dg.rooms.flatMap(r=>r.cells||[]);
+  for(const [x,z]of cells)for(const [dx,dz]of [[0,0],[-.23,0],[.23,0],[0,-.23],[0,.23]])
+    candidates.push(new THREE.Vector3((x+.5+dx)*CELL,dg.hgt[z*W+x]||0,(z+.5+dz)*CELL));
+  candidates.sort((a,b)=>a.distanceToSquared(origin)-b.distanceToSquared(origin));
+  for(const p of candidates){
+    p.y=heightAt(p.x,p.z);
+    if(p.distanceTo(origin)>maxDistance)continue;
+    if(room&&!room.cells.some(([x,z])=>Math.floor(p.x/CELL)===x&&Math.floor(p.z/CELL)===z))continue;
+    if(collides(p.x,p.z,radius+.16,'spawn')||tooHigh(p.x,p.z,radius+.16,p.y,.15))continue;
+    if(occupied.some(o=>Math.hypot(p.x-o.pos.x,p.z-o.pos.z)<radius+(o.radius||.4)+.25))continue;
+    if((dg.hazards||[]).some(h=>h.alive&&p.distanceTo(h.pos)<radius+(h.r||1)))continue;
+    // At least one full step can be taken without hitting furniture or a ledge.
+    if(![[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dz])=>!collides(p.x+dx*(radius+.5),p.z+dz*(radius+.5),radius,'spawn')&&!tooHigh(p.x+dx*(radius+.5),p.z+dz*(radius+.5),radius,p.y,STEP)))continue;
+    return p;
+  }
+  return null;
+}
+
 export function collides(x, z, r, team) {
-  return isWallAt(x - r, z - r) || isWallAt(x + r, z - r) || isWallAt(x - r, z + r) || isWallAt(x + r, z + r) || blockedByObstacle(x, z, r, team) || blockedBySolid(x, z, r);
+  return isWallAt(x - r, z - r) || isWallAt(x + r, z - r) || isWallAt(x - r, z + r) || isWallAt(x + r, z + r) || blockedByObstacle(x, z, r, team) || blockedBySolid(x, z, r) || arenaDoorCollision(x,z,r);
 }
 
 // step: 一度に越えられる段差 (魔物はよじ登れるので大きい)
 export function moveWithCollision(pos, dx, dz, r, team, step = STEP) {
   const feet = pos.y || 0;
-  if (!collides(pos.x + dx, pos.z, r, team) && !tooHigh(pos.x + dx, pos.z, r, feet, step)) pos.x += dx;
-  if (!collides(pos.x, pos.z + dz, r, team) && !tooHigh(pos.x, pos.z + dz, r, feet, step)) pos.z += dz;
+  // Substeps also prevent sprint/knockback from tunnelling through thin furniture.
+  const n=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/.2));
+  for(let i=0;i<n;i++){
+    if(!arenaBlocksMove(pos,{x:pos.x+dx/n,z:pos.z},r,team)&&!collides(pos.x+dx/n,pos.z,r,team)&&!tooHigh(pos.x+dx/n,pos.z,r,feet,step))pos.x+=dx/n;
+    if(!arenaBlocksMove(pos,{x:pos.x,z:pos.z+dz/n},r,team)&&!collides(pos.x,pos.z+dz/n,r,team)&&!tooHigh(pos.x,pos.z+dz/n,r,feet,step))pos.z+=dz/n;
+  }
 }
 // 地面に沿わせる: 段差は上がり、高い所からは落ちる
 export function settleY(pos, dt, vy = null) {

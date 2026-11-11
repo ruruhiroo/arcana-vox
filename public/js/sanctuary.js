@@ -17,7 +17,7 @@ export function pickSanctuaryRoom(d) {
 }
 
 export function buildSanctuary(room) {
-  const center = new THREE.Vector3((room.cx + 0.5) * CELL, 0, (room.cy + 0.5) * CELL);
+  const center = new THREE.Vector3((room.cx + 0.5) * CELL, G.dungeon?.hgt?.[room.cy*52+room.cx]||0, (room.cy + 0.5) * CELL);
   const radius = Math.min(6.5, Math.min(room.w, room.h) * CELL * 0.4);
   const grp = new THREE.Group(); grp.position.copy(center);
   // 床の結界
@@ -41,7 +41,7 @@ export function buildSanctuary(room) {
   beam.position.y = 2.6; grp.add(beam);
   G.scene.add(grp);
   const lecternPos = center.clone().add(new THREE.Vector3(radius * 0.55, 0, 0));
-  return { center, radius, grp, ring, fire, lecternPos, firePos: center.clone().setY(0.6), reserve: 1, warned: false };
+  return { center, radius, grp, ring, fire, lecternPos, firePos: center.clone().add(new THREE.Vector3(0,.6,0)), reserve: 1, warned: false };
 }
 
 export const inSanctuary = (pos, pad = 0) => !!G.sanctuary && Math.hypot(pos.x - G.sanctuary.center.x, pos.z - G.sanctuary.center.z) < G.sanctuary.radius + pad;

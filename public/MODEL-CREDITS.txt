@@ -1,0 +1,11 @@
+ARCANA VOX - additional model credits
+
+guardian-reaper.glb: skull mesh and ambient-occlusion source
+Human Skull by CDmir
+https://opengameart.org/content/human-skull-0
+CC0 / Public Domain Dedication
+https://creativecommons.org/publicdomain/zero/1.0/
+Adapted orientation, scale and materials. Original archive: skull-obj.zip.
+
+Robe, scythe, hand geometry, rig, cloth textures and runtime animation were
+created for ARCANA VOX. Editable source and build notes: art/guardians/README.md.

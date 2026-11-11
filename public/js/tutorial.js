@@ -7,7 +7,7 @@ const $ = id => document.getElementById(id);
 
 function steps(h) {
   let baseSpells = 0; // 「呪文を書く」課題を始めた時の頁数
-  const typedNote = h.voiceOK ? '' : '<br><small>(マイクが使えない環境では Enter で文字詠唱できる)</small>';
+  const typedNote = h.voiceOK ? '' : '<br><small>(詠唱にはマイクが必要。Enterはチャット専用)</small>';
   return [
     { title: '歩く', text: `<kbd>${keyOf('forward')}</kbd><kbd>${keyOf('left')}</kbd><kbd>${keyOf('back')}</kbd><kbd>${keyOf('right')}</kbd> で歩いてみよう。`, done: () => G.stats.moved > 5 },
     { title: '見回す', text: 'マウスを動かして辺りを見回そう。', done: () => G.stats.looked > 3 },
@@ -15,7 +15,7 @@ function steps(h) {
     { title: '頁をめくる', text: `<kbd>ホイール</kbd>(または <kbd>${keyOf('pageNext')}</kbd>/<kbd>${keyOf('pagePrev')}</kbd>)で頁をめくる。頁ごとに一つの呪文が書いてある。`, done: () => G.stats.flips >= 2 },
     {
       title: '灯火を唱える', enter: () => h.openPageOf('灯火'),
-      text: `「灯火」の頁を開いた。<kbd>${keyOf('voice')}</kbd> を押しながら、右の頁の文を<b>最後まで声に出して</b>唱えよ。<br>核の語だけでは術は形を成さない。` + typedNote,
+      text: `「灯火」の頁を開いた。<kbd>${keyOf('voice')}</kbd> を押しながら、右の頁の文を<b>最後まで声に出して</b>唱えよ。<br>核の語だけの短縮詠唱は威力が落ちる。` + typedNote,
       done: () => G.lumens.length > 0,
     },
     {
@@ -40,7 +40,7 @@ function steps(h) {
       done: () => (h.spellCount?.() || 0) > baseSpells,
     },
     { title: '宝箱', enter: () => h.spawnChest(), text: `近くに宝箱が現れた。近づいて <kbd>${keyOf('interact')}</kbd> で開けよ。中から<b>装備</b>が出る。`, done: () => G.stats.chests >= 1 },
-    { title: '装備する', text: `<kbd>${keyOf('inventory')}</kbd> で所持品を開き、手に入れた装備を身に着けよ。<br>装丁・栞・指輪・外套の四つの部位がある。`, done: () => h.equipped() },
+    { title: '装備する', text: `下の6枠にある装備を<b>数字キー</b>で持ち、<b>左クリック</b>で身に着けよ。<br><kbd>${keyOf('inventory')}</kbd> で装着中の装備と能力を確認できる。`, done: () => h.equipped() },
     { title: '手ほどき完了', text: `以上で手ほどきは終わり。<br>迷宮の奥の<b>転移陣</b>(${keyOf('interact')})から次の層へ。古文書から新たな出し方(設置・衛星・付与…)や言霊を集め、魔導書(${keyOf('grimoire')})に自分だけの呪文を書き記せ。`, done: () => false, last: true },
   ];
 }

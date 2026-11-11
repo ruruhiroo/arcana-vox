@@ -93,13 +93,21 @@ const BUILD = {
     for (let i = 0; i <= 4; i++) parts.push(['wood', W, 0.05, D, 0, 0.05 + i * (H - 0.1) / 4, 0]);
     for (const sx of [-1, 1]) parts.push(['wood', 0.08, H, D, sx * W / 2, H / 2, 0]);
     const g = merged(m, parts);
-    const cols = [0x40d070, 0xd04060, 0x4080e0, 0xe0b040, 0xa060e0];
+    const cols = [0x465b38, 0x663b2d, 0x3b5360, 0x826435, 0x514258];
     for (let i = 0; i < 4; i++) for (let k = 0; k < 7; k++) {
       if (Math.random() < 0.25) continue;
       const c = cols[Math.floor(Math.random() * cols.length)];
-      const mat = (m['potion' + c] ||= new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.5, transparent: true, opacity: 0.8, roughness: 0.15 }));
-      const fl = new THREE.Mesh(Math.random() < 0.5 ? new THREE.SphereGeometry(0.1, 8, 6) : new THREE.CylinderGeometry(0.06, 0.08, 0.26, 8), mat);
-      fl.position.set(-W / 2 + 0.3 + k * (W - 0.6) / 6, 0.2 + i * (H - 0.1) / 4, 0); g.add(fl);
+      const mat = (m['potion' + c] ||= new THREE.MeshStandardMaterial({ color: c, roughness: 0.24, metalness: 0.08 }));
+      const fl = new THREE.Group(), tall = (i + k) % 3 === 0;
+      // A continuous shoulder, narrow neck and cork read as a bottle even in torchlight.
+      const profile = (tall ? [[0,0],[.085,0],[.09,.04],[.09,.22],[.045,.27],[.035,.28],[.035,.37],[0,.37]]
+        : [[0,0],[.075,0],[.12,.06],[.13,.15],[.1,.23],[.037,.28],[.035,.35],[0,.35]]).map(p=>new THREE.Vector2(...p));
+      fl.add(new THREE.Mesh(new THREE.LatheGeometry(profile,16),mat));
+      fl.add(cyl(.032,.03,.055,m.wood,0,tall?.39:.37,0,10));
+      fl.add(cyl(.041,.041,.025,m.iron,0,tall?.35:.33,0,12));
+      const label=box(.1,.09,.008,m.paper,0,.15,.116); label.rotation.z=(k%3-1)*.08;fl.add(label);
+      fl.add(box(.055,.008,.009,m.darkWood,0,.17,.122),box(.038,.008,.009,m.darkWood,0,.14,.122));
+      fl.position.set(-W / 2 + 0.3 + k * (W - 0.6) / 6, .08 + i * (H - .1) / 4, .03); g.add(fl);
     }
     return { g, r: 0 };
   },
@@ -654,6 +662,19 @@ export function buildDecor(dg, group) {
     if (b.g.userData.spin) (dg.spinners ||= []).push(b.g.userData.spin);
     let solid = null;
     if (b.r) dg.solids.push(solid = { x: d.pos.x, z: d.pos.z, r: b.r * (d.s || 1) });
+    // Tall shelves/tables previously had no collider, or a small circle that did
+    // not cover their corners. Use their actual local footprint, including scale.
+    if(!['chains','shackles','crack','puddle','rubble','bones'].includes(d.type)) {
+      const box=new THREE.Box3();
+      b.g.updateMatrixWorld(true);
+      const inverse=b.g.matrixWorld.clone().invert();
+      b.g.traverse(o=>{if(o.isMesh){o.geometry.computeBoundingBox();const m=new THREE.Matrix4().multiplyMatrices(inverse,o.matrixWorld);box.union(o.geometry.boundingBox.clone().applyMatrix4(m));}});
+      if(!box.isEmpty()&&box.max.y>.55&&box.min.y<.35){
+        if(solid)dg.solids.splice(dg.solids.indexOf(solid),1);
+        const s=d.s||1,c=box.getCenter(new THREE.Vector3()),cos=Math.cos(d.rot||0),sin=Math.sin(d.rot||0);
+        solid={x:d.pos.x+s*(c.x*cos+c.z*sin),z:d.pos.z+s*(-c.x*sin+c.z*cos),halfX:(box.max.x-box.min.x)*s/2,halfZ:(box.max.z-box.min.z)*s/2,cos,sin};dg.solids.push(solid);
+      }
+    }
     if (b.hazard) dg.hazards.push({ type: b.hazard, pos: d.pos.clone(), group: b.g, alive: true, r: (b.hr || 1) * (d.s || 1), mat: b.mat, solid });
     if (b.glow) dg.candleGlows.push(d.pos.clone().setY(0.4));
   }

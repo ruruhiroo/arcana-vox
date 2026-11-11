@@ -1,4 +1,7 @@
+import { payload } from './spell-payload.js';
+import { castUtility } from './utility-magic.js';
 import { guardianDefense } from './guardian-mechanics.js';
+import { insideArena } from './arena-room.js';
 // 呪文の発現: 弾・環・雨・壁・罠、ダメージ/回復/守護、粒子演出
 import * as THREE from 'three';
 import { G, rand, clamp } from './state.js';
@@ -11,7 +14,6 @@ import { bigImpact, updateVfx } from './vfx.js';
 import { updateDying } from './entities.js';
 
 // 中級(威力1.0)で与える基本ダメージ。初級は約0.58倍、上級は約1.6倍
-const BASE = { fire: 60, ice: 55, thunder: 66, holy: 58, void: 76, wind: 45 };
 let GLOW = null, RUNE = null;
 
 // ---------- 粒子 ----------
@@ -145,22 +147,6 @@ function findById(id) { return G.mages.find(m => m.id === id) || G.enemies.find(
 const isLocalOwner = c => c && (c.isMage ? c.isLocal() : G.isHost);
 
 // 呪文の効能 (数式)
-function payload(spell) {
-  const p = spell.power;
-  const els = spell.elements;
-  const atk = ATTACK_FX.filter(a => spell.effects.includes(a));
-  // 属性が無くても、攻撃の種類があれば無属性の傷を与える(衝撃は重い)
-  const dmg = els.length ? els.reduce((s, e) => s + BASE[e], 0) / els.length * p * (atk.includes('impact') ? 1.15 : 1) : atk.length ? (atk.includes('impact') ? 62 : 44) * p : 0;
-  const holyB = els.includes('holy') ? 1.5 : 1;
-  return {
-    dmg,
-    heal: spell.effects.includes('heal') ? 28 * p * holyB : 0,
-    ward: spell.effects.includes('ward') ? 35 * p * holyB : 0,
-    haste: spell.effects.includes('haste') ? 6 * (spell.eternal ? 1.6 : 1) * (els.includes('wind') ? 1.5 : 1) : 0,
-    might: spell.effects.includes('might') ? 20 * (spell.eternal ? 1.6 : 1) : 0,
-    atk,
-  };
-}
 
 function applyPayload(spell, caster, t, pl, mult = 1, dir = null, hitPoint = null) {
   if (!t.alive) return false;
@@ -196,6 +182,7 @@ export const FX = {
       flash(caster.pos.clone().setY(1.5), color, 18, 0.3);
       burst(caster.pos.clone().setY(1.4), color, 25, { speed: 3, up: 1 });
     }
+    if(castUtility(caster,spell,aim,local,this))return;
     const pl = payload(spell);
     const count = spell.dual ? 2 : 1;
     const dur = spell.eternal ? 1.6 : 1;
@@ -247,6 +234,8 @@ export const FX = {
     }
     // 衛星: 術者の周りを巡る光弾
     if (form === 'orbit') {
+      // Recasting refreshes a constellation; it cannot stack unlimited damage.
+      for(const old of G.orbits||[])if(old.caster===caster)old.t=0;
       const n = 2 * count, meshes = [];
       for (let i = 0; i < n; i++) {
         const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -255,7 +244,7 @@ export const FX = {
         const g = new THREE.Group(); g.add(core, inner); G.scene.add(g); meshes.push(g);
       }
       G.orbits ||= [];
-      G.orbits.push({ caster, spell, pl, color, meshes, r: 1.7, t: 8 * dur, ang: 0, hits: new Map(), helpT: 0, local });
+      G.orbits.push({ caster, spell, pl, color, meshes, r: 1.7, t: 8 * dur, ang: 0, hits: new Map(), hitCounts:new Map(), maxHits:4*count, helpT: 0, local });
       return;
     }
     if (spell.target === 'self' && (form === 'lance' || !form)) { // 自分に向けた術
@@ -380,6 +369,7 @@ export const FX = {
   // ---------- 効果の適用 (権限を持つクライアントのみ) ----------
   damage(t, amount, elements, src, opts = {}) {
     if (!t || !t.alive) return;
+    if(t.type==='dragon'&&src?.team==='hero'&&G.dungeon?.arena&&!insideArena(src.pos))return;
     // 付与: 属性を宿した者の攻撃には、その属性の追撃が乗る
     const en = src?.status?.enchant;
     if (en && !opts.enchantHit && !opts.silent && amount > 0 && src !== t) {
@@ -389,7 +379,7 @@ export const FX = {
     if (t.isMage && t.kind === 'remote') { G.net?.send({ t: 'dmg', to: t.netId, amount, elements, src: src?.id, opts: { melee: opts.melee, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, silent: opts.silent } }); return; }
     if (t === G.player && src && !src.isMage && amount > 0 && !opts.silent) G.onEnemyHit?.(src); // 魔物の技(声を狂わせる など)
     if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, atk: opts.atk, hitPoint: opts.hitPoint }); return; }
-    let a = amount;
+    let a = amount, mouthStagger = false;
     if (t.type === 'dragon' && t.dragon && src?.team === 'hero' && amount > 0) {
       if (!t.body.visible && !opts.silent) return;
       const offset = src.pos.clone().sub(t.pos).setY(0), forward = new THREE.Vector3(-Math.sin(t.yaw), 0, -Math.cos(t.yaw));
@@ -399,7 +389,7 @@ export const FX = {
       const defense = guardianDefense(t.dragon, { distance: offset.length(), front: offset.normalize().dot(forward) > .3, mouthHit, silent: opts.silent });
       a *= defense.mult;
       if (defense.reflect) this.damage(src, defense.reflect, [], t, {});
-      if (defense.stagger) { t.dragon.stage = 'recover'; t.dragon.remaining = 3.8; t.vulnUntil = G.time + 3.8; t.stun = 0; }
+      if (defense.stagger) { mouthStagger=true; t.dragon.stage = 'recover'; t.dragon.remaining = 3.8; t.vulnUntil = G.time + 3.8; t.stun = 0; }
       if (defense.hint && !opts.silent && (t.guardianHintAt === undefined || G.time - t.guardianHintAt > 1)) {
         t.guardianHintAt = G.time; G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 5, 0)), defense.hint, '#dfd6ff');
       }
@@ -412,7 +402,7 @@ export const FX = {
     }
     if (elements.length) a /= Math.max(1, elements.length * 0.6); // 多属性の相性補正をならす
     if (t.resistElem && elements.includes(t.resistElem)) a *= 0.35; // 鏡の魔導師: 写し取った属性
-    if (t.vulnUntil > (G.time || 0)) a *= 1.6; // 鐘の余韻
+    if (!mouthStagger && t.vulnUntil > (G.time || 0)) a *= 1.6; // Interrupt hit already received the same exposure bonus.
     if (t.status?.stigma) a *= 1.25; // 聖痕
     if (t.status?.cursed) a *= 1.25; // 付与の呪い
     if (t.guardian && t.barrier && !opts.silent) { const k = G.guardHit?.(t, src) ?? 1; a *= k; if (k < 1) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 1.6, 0)), '結界', '#d0a0ff'); }
@@ -527,6 +517,8 @@ export const FX = {
         for (const t of allTargets()) {
           if (!hostile(c, t) || t.pos.distanceTo(m.position.clone().setY(t.pos.y)) > 0.8 + (t.radius || 0.4)) continue;
           if ((o.hits.get(t) || 0) > G.time) continue;
+          if((o.hitCounts.get(t)||0)>=o.maxHits)continue;
+          o.hitCounts.set(t,(o.hitCounts.get(t)||0)+1);
           o.hits.set(t, G.time + 0.55);
           applyPayload({ ...o.spell, target: 'enemy' }, c, t, { ...o.pl, heal: 0, ward: 0, haste: 0, might: 0 }, 0.55, t.pos.clone().sub(c.pos).setY(0).normalize());
           burst(m.position.clone(), o.color, 14, { speed: 3 });

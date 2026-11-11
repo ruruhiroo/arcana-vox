@@ -207,6 +207,7 @@ function gearModel(it) {
 
 // 手に持つ時などに使う、道具の模型そのもの
 export function itemModel(k) { const b = blender(k); if (b) { b.rotation.set(0, 0, 0); return b; } const g = MODELS[k]?.(); if (g) g.rotation.set(0, 0, 0); return g || null; }
+export function equipmentModel(it){return it?(blenderGear(it)||gearModel(it)):null;}
 function blenderIcon(k) {
   return blender(k);
 }

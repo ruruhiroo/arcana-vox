@@ -79,7 +79,7 @@ export function buildLayout(r, floor, W, H) {
   const ri = (a, b) => a + Math.floor(r() * (b - a + 1));
   const pick = arr => arr[Math.floor(r() * arr.length)];
   const want = Math.min(26, 13 + floor);   // 区画の数 (深いほど広い)
-  for (let attempt = 0; attempt < 12; attempt++) {
+  for (let attempt = 0; attempt < 40; attempt++) {
     const owner = new Int16Array(W * H).fill(-1);
     const grid = new Uint8Array(W * H), hgt = new Float32Array(W * H);
     const rooms = [];
@@ -117,13 +117,21 @@ export function buildLayout(r, floor, W, H) {
     let fails = 0;
     let bigPlaced = false, dragonHallPlaced = false;
     while (rooms.length < want && open.length && fails < 900) {
-      const di = Math.floor(r() * open.length), d = open[di];
+      const distances = new Int16Array(W * H).fill(-1), queue = [[rooms[0].cx, rooms[0].cy]];
+      distances[queue[0][1] * W + queue[0][0]] = 0;
+      for (let qi=0; qi<queue.length; qi++) { const [x,y]=queue[qi]; for (const [dx,dy] of Object.values(DIRS)) {
+        const nx=x+dx,ny=y+dy,k=ny*W+nx;
+        if(nx>=0&&ny>=0&&nx<W&&ny<H&&grid[k]&&distances[k]<0){distances[k]=distances[y*W+x]+1;queue.push([nx,ny]);}
+      }}
+      const distant = open.map((d,i)=>({d,i})).filter(({d})=>distances[d.y*W+d.x]>=30 && Math.hypot(d.x-rooms[0].cx,d.y-rooms[0].cy)>=13 && (rooms[d.room].depth||0)>=3);
+      const placingArena = !dragonHallPlaced && rooms.length >= 5 && distant.length > 0;
+      const di = placingArena ? pick(distant).i : Math.floor(r() * open.length), d = open[di];
       const from = rooms[d.room];
       // 回廊の先は部屋、部屋の先は回廊か階段が多い (部屋どうしが直に並びすぎないように)
       const roll = r();
       let kind = from.kind === 'room' ? (roll < 0.62 ? 'corridor' : roll < 0.82 ? 'stairs' : 'room') : (roll < 0.68 ? 'room' : roll < 0.84 ? 'corridor' : 'stairs');
       const cands = VARIANTS.filter(v => v.kind === kind && (!v.big || (!bigPlaced && rooms.length > 4)) && (v.id !== 'closet' || r() < 0.4));
-      const v = !dragonHallPlaced && rooms.length >= 5 ? DRAGON_HALL : pick(cands);
+      const v = placingArena ? DRAGON_HALL : pick(cands);
       const dl = v.doors.filter(x => x.dir === OPP[d.dir]);
       if (!dl.length) { fails++; continue; }
       const vd = pick(dl);
@@ -132,13 +140,16 @@ export function buildLayout(r, floor, W, H) {
       const ox = tx - vd.x, oy = ty - vd.y, elev = d.h - vd.h;
       const gx = d.x + dx, gy = d.y + dy;
       if (!free(gx, gy) || grid[gy * W + gx] || !fits(v, ox, oy, elev)) { fails++; continue; }
-      place(v, ox, oy, elev);
+      const placed = place(v, ox, oy, elev);
+      placed.depth=(from.depth||0)+(from.kind==='room'?1:0);
       if (v.id === 'dragon_hall') dragonHallPlaced = true;
       if (v.big) bigPlaced = true;
       grid[gy * W + gx] = 1; hgt[gy * W + gx] = d.h;      // つなぎの通路
       open.splice(di, 1);
       const ni = open.findIndex(o => o.x === tx && o.y === ty);
       if (ni >= 0) open.splice(ni, 1);
+      // The boss hall is a destination, never a shortcut to another room.
+      if (v.id === 'dragon_hall') for(let i=open.length-1;i>=0;i--)if(open[i].room===placed.id)open.splice(i,1);
     }
     const nRooms = rooms.filter(rm => rm.kind === 'room').length;
     if (!dragonHallPlaced) continue;
@@ -149,7 +160,7 @@ export function buildLayout(r, floor, W, H) {
       const gx = a.x + dx, gy = a.y + dy, bx = a.x + dx * 2, by = a.y + dy * 2;
       if (!free(gx, gy) || grid[gy * W + gx]) continue;
       if (bx < 0 || by < 0 || bx >= W || by >= H || !grid[by * W + bx]) continue;
-      if (owner[by * W + bx] === a.room || Math.abs(hgt[by * W + bx] - a.h) > 0.65) continue;
+      if (rooms[owner[by * W + bx]]?.mod === 'dragon_hall' || owner[by * W + bx] === a.room || Math.abs(hgt[by * W + bx] - a.h) > 0.65) continue;
       grid[gy * W + gx] = 1; hgt[gy * W + gx] = Math.max(a.h, hgt[by * W + bx]);
     }
     // 隠し部屋: 使われずに残った扉の先、壁一枚(1マス)向こうに小部屋を置く。その1マスは壁のまま
@@ -192,6 +203,11 @@ export function buildLayout(r, floor, W, H) {
       const cells = rm.cells.filter(([x, y]) => hgt[y * W + x] >= top - 0.01 && top - base >= 1.1);
       if (cells.length) plats.push({ rm, cells, top });
     }
+    const start=rooms[0], arena=rooms.find(r=>r.mod==='dragon_hall');
+    const distance=new Int16Array(W*H).fill(-1), q=[[start.cx,start.cy]];distance[start.cy*W+start.cx]=0;
+    for(let i=0;i<q.length;i++){const [x,y]=q[i];for(const [dx,dy]of Object.values(DIRS)){const nx=x+dx,ny=y+dy,k=ny*W+nx;if(nx>=0&&ny>=0&&nx<W&&ny<H&&grid[k]&&distance[k]<0){distance[k]=distance[y*W+x]+1;q.push([nx,ny]);}}}
+    const nearest=Math.min(...arena.cells.map(([x,y])=>distance[y*W+x]));
+    if(nearest<32)continue; // At least 128 m of walking before the entrance, including loop shortcuts.
     return { grid, hgt, rooms, plats, secrets };
   }
   throw new Error('layout failed');

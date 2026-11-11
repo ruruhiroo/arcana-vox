@@ -1,4 +1,4 @@
-import { frostExposure, guardianHint } from './guardian-mechanics.js';
+import { frostExposure } from './guardian-mechanics.js';
 import { animateGuardian } from './guardian-model.js';
 import { dragonProfile, dragonElement } from './dragon-profiles.js';
 import * as THREE from 'three';
@@ -123,8 +123,6 @@ export function updateDragons(dt) {
       const s = boss.dragon; hud.dataset.stage = s.stage;
       document.getElementById('dragonName').textContent = `【${boss.final ? '終章・' : ''}${dragonProfile(s).name}】 ${dragonProfile(s).title}` + (s.phase === 2 ? ' ― 激昂' : '');
       document.getElementById('dragonHealth').style.width = `${Math.max(0, boss.hp / boss.maxHp * 100)}%`;
-      const frost = s.frost?.find(x=>x.id===G.player.id)?.value || 0;
-      document.getElementById('dragonCue').textContent = (s.stage === 'strike' ? dragonAttack(s).label + ' ｜ ' : '') + guardianHint(s, boss.pos.distanceTo(G.player.pos), frost);
     }
   }
 }

@@ -24,8 +24,6 @@
   #dragonName { color: #f1d3a1; letter-spacing: .12em; font-size: 18px; }
   #dragonHud .dragonHp { height: 5px; margin: 8px 0; background: #3a2028; border: 1px solid #795440; }
   #dragonHealth { height: 100%; background: linear-gradient(90deg, #a12b3f, #f29455); transition: width .15s; }
-  #dragonCue { min-height: 24px; color: #ffe3ac; font-size: 14px; }
-  #dragonHud[data-stage="recover"] #dragonCue { color: #a5fff0; }
   button { font-family: var(--serif); cursor: pointer; }
 
   /* ---- ロビー ---- */
@@ -516,10 +514,9 @@
 </head>
 <body>
 <canvas id="game"></canvas>
-<div id="dragonHud" class="hidden" role="status" aria-label="ドラゴンとの戦闘">
+<div id="dragonHud" class="hidden" role="status" aria-label="ボスとの戦闘">
   <div id="dragonName">詠灰竜ヴォルグ</div>
   <div class="dragonHp"><div id="dragonHealth"></div></div>
-  <div id="dragonCue"></div>
 </div>
 
 <div id="lobby">

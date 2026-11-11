@@ -11,6 +11,22 @@ import { G } from '../public/js/state.js';
 import { updateDragons, clearDragons } from '../public/js/dragon-boss.js';
 
 const input = { health: 1, distance: 5, origin: [0, 0, 0], target: [0, 0, -5], yaw: 0 };
+test('reaper staff stays inside its gripping palm throughout attacks and travel', () => {
+  const model=buildGuardian('reaper'),ud=model.userData;
+  const palm=new THREE.Vector3(),vertex=new THREE.Vector3();
+  const axis=new THREE.Vector3(0,1,-.5).normalize(),staffGeometry=ud.weaponStaff.geometry;
+  const radial=new THREE.Vector3().fromBufferAttribute(staffGeometry.attributes.position,0);
+  radial.addScaledVector(axis,-radial.dot(axis)).normalize();
+  assert.ok(radial.dot(new THREE.Vector3().fromBufferAttribute(staffGeometry.attributes.normal,0))>.8,'staff surface must face outward');
+  for(const stage of ['idle','windup','strike','recover'])for(const move of Object.keys(DRAGON_ATTACKS))for(let i=0;i<=10;i++) {
+    Object.assign(ud,{stage,move,progress:i/10,travelProgress:stage==='idle'?i/10:-1});
+    animateGuardian(ud,i*.1,false);model.updateWorldMatrix(true,true);
+    ud.weaponHand.getWorldPosition(palm);
+    const positions=ud.weaponStaff.geometry.attributes.position;let nearest=Infinity;
+    for(let j=0;j<positions.count;j++)nearest=Math.min(nearest,vertex.fromBufferAttribute(positions,j).applyMatrix4(ud.weaponStaff.matrixWorld).distanceTo(palm));
+    assert.ok(nearest<.22,`${move} ${stage}: staff detached from palm (${nearest})`);
+  }
+});
 test('dragon always winds up, then attacks and exposes its head', () => {
   const s = createDragonState();
   assert.equal(stepDragon(s, 10, input), 'windup'); assert.equal(s.remaining, 2.4);

@@ -1,24 +1,25 @@
 import * as THREE from 'three';
+import { sculptGuardian, wingSail, taperedCurve } from './guardian-sculpt.js';
 import { DRAGON_PROFILES } from './dragon-profiles.js';
 import { smooth, breathTurn, sweepTurn } from './dragon-rules.js';
 
-// 自作のローポリ竜。外部アセット不要でオフライン版にも同じ姿を載せる。
+// 自作の曲面リグ付き成竜。外部アセット不要でオフライン版にも同じ姿を載せる。
 export function buildDragon() {
   const root = new THREE.Group();
   root.scale.setScalar(2.2); // 全長約20m、翼開長約21m。人の視点から見上げる成竜。
   const hitParts = [];
-  const scales = new THREE.MeshStandardMaterial({ color: 0x50232e, roughness: 0.65, metalness: 0.22, flatShading: true });
-  const armor = new THREE.MeshStandardMaterial({ color: 0x171d2c, roughness: 0.55, metalness: 0.45, flatShading: true });
+  const scales = new THREE.MeshStandardMaterial({ color: 0x50232e, roughness: 0.65, metalness: 0.22, flatShading: false });
+  const armor = new THREE.MeshStandardMaterial({ color: 0x171d2c, roughness: 0.55, metalness: 0.45, flatShading: false });
   const horn = new THREE.MeshStandardMaterial({ color: 0xd9b879, roughness: 0.5, metalness: 0.35 });
-  const membrane = new THREE.MeshStandardMaterial({ color: 0x8d3540, emissive: 0x3a0b12, emissiveIntensity: 0.35, side: THREE.DoubleSide, flatShading: true });
+  const membrane = new THREE.MeshStandardMaterial({ color: 0x8d3540, emissive: 0x3a0b12, emissiveIntensity: 0.35, side: THREE.DoubleSide, flatShading: false });
   const coreMat = new THREE.MeshStandardMaterial({ color: 0xffb450, emissive: 0xff5418, emissiveIntensity: 1.4 });
   for (const [name,m] of Object.entries({ scales, armor, membrane, coreMat, horn })) m.name = 'guardian-' + name;
   const orb = (parent, mat, pos, size) => {
-    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), mat); m.position.set(...pos); m.scale.set(...size); parent.add(m); return m;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), mat); m.position.set(...pos); m.scale.set(...size); parent.add(m); return m;
   };
   const bone = (parent, a, b, r1, r2, mat) => {
     const from = new THREE.Vector3(...a), to = new THREE.Vector3(...b), d = to.clone().sub(from);
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(r2, r1, d.length(), 7), mat);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r2, r1, d.length(), 16), mat);
     m.position.copy(from).add(to).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()); parent.add(m); return m;
   };
   const torso = orb(root, scales, [0, 1.6, 0.4], [0.82, 0.8, 1.65]); hitParts.push(torso);
@@ -33,8 +34,7 @@ export function buildDragon() {
   hitParts.push(orb(jaw, armor, [0, -0.04, -0.45], [0.31, 0.1, 0.6]));
   const core = orb(neck, coreMat, [0, 0.55, -0.84], [0.23, 0.5, 0.15]);
   for (const side of [-1, 1]) {
-    bone(head, [side * 0.3, 0.5, -0.1], [side * 0.65, 1.15, 0.8], 0.16, 0.01, horn);
-    bone(head, [side * 0.34, 0.1, 0], [side * 0.8, 0.35, 0.5], 0.1, 0.01, horn);
+
     const eye = orb(head, coreMat, [side * 0.37, 0.4, -0.61], [0.065, 0.035, 0.11]); eye.userData.eye = true;
     for (let i = 0; i < 4; i++) bone(head, [side * 0.24, 0.1, -0.7 - i * 0.18], [side * 0.24, -0.06, -0.7 - i * 0.18], 0.04, 0, horn);
   }
@@ -51,19 +51,15 @@ export function buildDragon() {
   for (const side of [-1, 1]) {
     const wing = new THREE.Group(); wing.position.set(side * 0.65, 2.1, 0); root.add(wing); wings.push(wing);
     const points = [[0, 0, 0], [side * 1.7, 1.6, -0.55], [side * 4.2, 1.1, 0.5], [side * 3.55, 0.2, 1.25], [side * 2.85, 0.35, 2.05], [side * 1.85, -0.1, 2.65], [0, -0.2, 1.5]];
-    const vertices = [];
-    for (let i = 1; i < points.length - 1; i++) vertices.push(...points[0], ...points[i], ...points[i + 1]);
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); geo.computeVertexNormals();
-    wing.add(new THREE.Mesh(geo, membrane));
+    wingSail(wing, membrane, points);
     for (const tip of points.slice(2)) bone(wing, points[1], tip, 0.055, 0.02, horn);
     bone(wing, points[0], points[1], 0.16, 0.1, armor); bone(wing, points[1], points[2], 0.1, 0.02, armor);
   }
   const tail = new THREE.Group(); tail.position.set(0, 1.25, 1.65); root.add(tail);
-  bone(tail, [0, 0, 0], [0, -0.45, 1.7], 0.48, 0.25, scales);
-  bone(tail, [0, -0.45, 1.7], [0, -0.65, 3.2], 0.25, 0.12, scales);
-  bone(tail, [0, -0.65, 3.2], [0, -0.35, 4.2], 0.12, 0.01, armor);
+  taperedCurve(tail, scales, [[0,0,0],[0,-.45,1.7],[0,-.65,3.2],[0,-.35,4.2]], [.48,.25,.12,0], 28, 16);
   for (let i = 0; i < 7; i++) bone(root, [0, 2.2, -0.8 + i * 0.45], [0, 2.85 - i * 0.06, -0.5 + i * 0.45], 0.15, 0, horn);
   root.userData = { materials: { scales, armor, membrane, coreMat, horn }, kind: 'dragon', neck, head, jaw, core, torso, wings, tail, legs, hitParts, stage: 'idle', move: 'breath' };
+  sculptGuardian(root, 'dragon');
   root.traverse(o => { if (o.isMesh) o.castShadow = true; });
   return root;
 }

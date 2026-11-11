@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { sculptGuardian } from './guardian-sculpt.js';
 import { buildDragon, animateDragon } from './dragon-model.js';
 import { smooth, sweepTurn } from './dragon-rules.js';
 
@@ -7,16 +8,16 @@ export function buildGuardian(kind = 'dragon') {
   if (kind === 'dragon') return buildDragon();
   const root=new THREE.Group(); root.scale.setScalar(2.2);
   const materials={
-    scales:new THREE.MeshStandardMaterial({color:0x516779,roughness:.75,flatShading:true}),
-    armor:new THREE.MeshStandardMaterial({color:0x283748,roughness:.5,metalness:.35,flatShading:true}),
-    membrane:new THREE.MeshStandardMaterial({color:0x668baa,side:THREE.DoubleSide,roughness:.9,flatShading:true}),
+    scales:new THREE.MeshStandardMaterial({color:0x516779,roughness:.75,flatShading:false}),
+    armor:new THREE.MeshStandardMaterial({color:0x283748,roughness:.5,metalness:.35,flatShading:false}),
+    membrane:new THREE.MeshStandardMaterial({color:0x668baa,side:THREE.DoubleSide,roughness:.9,flatShading:false}),
     coreMat:new THREE.MeshStandardMaterial({color:0xccedff,emissive:0x68cfff,emissiveIntensity:1.2}),
     horn:new THREE.MeshStandardMaterial({color:0xdbce9c,roughness:.45,metalness:.25}),
   };
   for(const [name,m] of Object.entries(materials))m.name='guardian-'+name;
   const {scales,armor,membrane,coreMat,horn}=materials,hitParts=[],legs=[],wings=[],arms=[];
-  const orb=(parent,mat,pos,size,hit=false)=>{const m=new THREE.Mesh(new THREE.IcosahedronGeometry(1,1),mat);m.position.set(...pos);m.scale.set(...size);parent.add(m);if(hit)hitParts.push(m);return m;};
-  const bone=(parent,a,b,r,mat)=>{const aa=new THREE.Vector3(...a),bb=new THREE.Vector3(...b),d=bb.clone().sub(aa);const m=new THREE.Mesh(new THREE.CylinderGeometry(r*.7,r,d.length(),7),mat);m.position.copy(aa).add(bb).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());parent.add(m);return m;};
+  const orb=(parent,mat,pos,size,hit=false)=>{const m=new THREE.Mesh(new THREE.SphereGeometry(1,24,16),mat);m.position.set(...pos);m.scale.set(...size);parent.add(m);if(hit)hitParts.push(m);return m;};
+  const bone=(parent,a,b,r,mat)=>{const aa=new THREE.Vector3(...a),bb=new THREE.Vector3(...b),d=bb.clone().sub(aa);const m=new THREE.Mesh(new THREE.CylinderGeometry(r*.7,r,d.length(),16),mat);m.position.copy(aa).add(bb).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());parent.add(m);return m;};
   const pivot=(parent,pos)=>{const g=new THREE.Group();g.position.set(...pos);parent.add(g);return g;};
   let torso,neck,head,jaw,core,tail;
   if(kind==='beast'||kind==='griffin') {
@@ -33,19 +34,15 @@ export function buildGuardian(kind = 'dragon') {
     tail=pivot(root,[0,1.45,1.8]);bone(tail,[0,0,0],[0,-.2,2.5],.25,scales);
     if(kind==='griffin') {
       // 鷲の鉤嘴、羽根を重ねた翼、獅子の後肢。
-      orb(head,horn,[0,.02,-.83],[.35,.32,.65],true);bone(head,[0,0,-1.15],[0,-.4,-1.15],.17,horn);
+
       for(const side of [-1,1]) {
         const wing=pivot(root,[side*.7,2.1,0]);wings.push(wing);
         bone(wing,[0,0,0],[side*2.1,1.1,-.2],.2,armor);
-        for(let i=0;i<9;i++) {
-          const feather=orb(wing,i%2?horn:membrane,[side*(1.2+i*.32),.7-i*.07,.4+i*.16],[.2,.13,1.5-i*.035]);feather.rotation.y=side*(.2+i*.075);
-        }
-        for(let i=0;i<4;i++)orb(tail,horn,[side*i*.16,0,2+i*.1],[.16,.1,.8]);
+
       }
     } else {
       for(const side of [-1,1]) {
-        bone(head,[side*.32,.4,-.3],[side*.65,1.8,-.15],.18,horn);
-        bone(head,[side*.5,1.2,-.2],[side*1.1,1.65,.1],.12,coreMat);
+
         for(let i=0;i<7;i++) {const spike=orb(root,i%2?coreMat:armor,[side*.5,2.3,.1+i*.3],[.2,.7-i*.045,.3]);spike.rotation.z=side*.45;}
       }
     }
@@ -57,10 +54,7 @@ export function buildGuardian(kind = 'dragon') {
     jaw=pivot(head,[0,-.35,-.15]);orb(jaw,armor,[0,-.1,-.08],[.32,.22,.27],true);
     core=orb(root,coreMat,[0,2.5,-.66],[.3,.45,.14]);
     tail=pivot(root,[0,1.5,.5]);
-    if(kind==='reaper') {
-      const robe=new THREE.Mesh(new THREE.ConeGeometry(1.5,3.5,9,1,true),membrane);robe.position.y=1.8;root.add(robe);
-      const hood=orb(head,armor,[0,.05,.22],[.75,.8,.6]);hood.scale.z=.7;
-    } else for(const side of [-1,1]) {
+    if(kind!=='reaper') for(const side of [-1,1]) {
       const leg=pivot(root,[side*.6,1.45,0]);legs.push(leg);
       orb(leg,armor,[0,-.6,0],[.4,.75,.42],true);orb(leg,scales,[0,-1.3,-.25],[.5,.15,.7],true);
     }
@@ -72,22 +66,15 @@ export function buildGuardian(kind = 'dragon') {
       orb(arm,armor,[side*.4,-1.45,-.15],[.45,.35,.5],true);
     }
     if(kind==='giant') {
-      for(let i=0;i<7;i++){const c=orb(head,coreMat,[(i-3)*.17,.65+Math.abs(i-3)*.03,.05],[.13,.65-Math.abs(i-3)*.1,.16]);c.rotation.z=(i-3)*.13;}
-      for(const side of [-1,1])for(let i=0;i<3;i++)orb(root,coreMat,[side*(1.2+i*.18),3.1+i*.12,0],[.2,.6,.28]);
-      bone(arms[1],[.4,-1.4,0],[.4,-1.4,-2.8],.15,horn);orb(arms[1],armor,[.4,-1.4,-3],[.9,.85,.7]);
+      bone(arms[1],[.4,-1.4,0],[.4,-1.4,-2.8],.15,horn);
     } else if(kind==='sentinel') {
-      const halo=new THREE.Mesh(new THREE.TorusGeometry(.95,.09,8,24),horn);halo.position.set(0,.3,.25);head.add(halo);
+      const halo=new THREE.Mesh(new THREE.TorusGeometry(.95,.055,12,64),horn);halo.position.set(0,.3,.25);head.add(halo);
       for(const side of [-1,1])for(let i=0;i<3;i++)orb(root,horn,[side*(1+i*.3),3.05-i*.22,.2],[.18,.7,.35]);
-      bone(arms[1],[.4,-1.2,-.1],[.4,-1.2,-4],.12,horn);
-      const blade=new THREE.Mesh(new THREE.BoxGeometry(.45,.18,3.2),horn);blade.position.set(.4,-1.2,-2.8);arms[1].add(blade);
-      const shield=new THREE.Mesh(new THREE.BoxGeometry(1.5,1.8,.3),armor);shield.position.set(-.4,-.9,-.5);arms[0].add(shield);
-    } else {
-      bone(arms[1],[.4,-1.7,.5],[.4,2.1,-1.4],.1,horn);
-      const blade=new THREE.Mesh(new THREE.TorusGeometry(1.6,.14,5,16,Math.PI*.72),coreMat);blade.position.set(-1,1.2,-1.4);blade.rotation.z=-.5;arms[1].add(blade);
     }
   }
-  for(const side of [-1,1]) {const eye=orb(head,coreMat,[side*.28,.1,-.43],[.08,.06,.07]);eye.userData.eye=true;}
+  if(kind!=='reaper')for(const side of [-1,1]) {const eye=orb(head,coreMat,[side*.28,.1,-.43],[.08,.06,.07]);eye.userData.eye=true;}
   root.userData={kind:'guardian',species:kind,materials,torso,neck,head,jaw,core,tail,legs,wings,arms,hitParts,stage:'idle',move:'breath',progress:0};
+  sculptGuardian(root,kind);
   root.traverse(o=>{if(o.isMesh)o.castShadow=true;});return root;
 }
 export function animateGuardian(ud,t,moving) {

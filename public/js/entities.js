@@ -150,7 +150,7 @@ export const ENEMY_TYPES = {
 };
 
 // 種類ごとの縁取りの色 (暗がりでも輪郭と種類が分かるように)
-export const ENEMY_RIM = { skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a, scribe: 0xff4a8a, ghoul: 0xc8ff5a, bat: 0xff4a4a, spider: 0xff3a1a, imp: 0xffa040, knight: 0x60c8ff, ogre: 0xffb060, lich: 0x60ff9a };
+export const ENEMY_RIM = { dragon: 0xb98763, skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a, scribe: 0xff4a8a, ghoul: 0xc8ff5a, bat: 0xff4a4a, spider: 0xff3a1a, imp: 0xffa040, knight: 0x60c8ff, ogre: 0xffb060, lich: 0x60ff9a };
 // 標準材質に「視線と直交する面ほど光る」縁取りを足す
 function addRim(group, U) {
   group.traverse(o => {
@@ -266,7 +266,8 @@ export class Enemy {
     else if (ud.kind !== 'glb') animateEnemy(ud, t, ph, moving, this.attackAnim, dt);
     this.hitT = Math.max(0, this.hitT - dt);
     // 縁取り: 精巧なモデルは控えめに(暗がりで輪郭が分かる程度)
-    this.rimU.strength.value = (ud.kind === 'glb' ? 0.22 : this.type === 'golem' ? 0.4 : 0.8) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (ud.kind === 'glb' ? 0.05 : 0.12) + this.hitT * 3; // 被弾の光は控えめに(強すぎると全身が白く飛ぶ)
+    const subduedRim = ud.kind === 'glb' || ud.kind === 'dragon';
+    this.rimU.strength.value = (subduedRim ? 0.22 : this.type === 'golem' ? 0.4 : 0.8) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (subduedRim ? 0.05 : 0.12) + this.hitT * 3; // 巨竜の広い翼が白く飛ばないよう、輪郭だけを控えめに照らす
     if (this.sigil) this.sigil.rotation.z += dt * 0.6;
   }
   think(dt) {

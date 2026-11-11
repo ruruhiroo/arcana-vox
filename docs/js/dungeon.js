@@ -433,6 +433,22 @@ export function buildMeshes(dg) {
     dg._brz = (dg._brz || []).concat([{ x: p.x, z: p.z, r: 0.45 }]);
   }
   buildDecor(dg, group);
+  // 巨竜の広間は壁の松明から中央まで遠い。頭・翼と床の逃げ道を高所の灯りで照らす。
+  // 影なしの4灯に限定し、通路上に当たり判定のある家具を増やさない。
+  if (dg.portalRoom?.mod === 'dragon_hall') {
+    const center = dg.portal, ceiling = ceilingAt(center.x, center.z, dg);
+    const iron = new THREE.MeshStandardMaterial({ color: 0x453728, metalness: .6, roughness: .6 });
+    for (const [dx, dz, color] of [[-11, -11, 0xffd3a0], [11, 11, 0xffd3a0], [-11, 11, 0xaac8ff], [11, -11, 0xaac8ff]]) {
+      const lamp = new THREE.Group(); lamp.position.set(center.x + dx, center.y + 12, center.z + dz);
+      lamp.add(new THREE.PointLight(color, 500, 44, 2));
+      const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(.38), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2 }));
+      crystal.scale.y = 1.6; lamp.add(crystal);
+      const crown = new THREE.Mesh(new THREE.TorusGeometry(.65, .07, 6, 12), iron); crown.rotation.x = Math.PI / 2; lamp.add(crown);
+      const drop = ceiling - lamp.position.y;
+      const chain = new THREE.Mesh(new THREE.CylinderGeometry(.035, .035, drop, 5), iron); chain.position.y = drop / 2; lamp.add(chain);
+      group.add(lamp);
+    }
+  }
   for (const b of dg._brz || []) dg.solids.push(b); // 篝火台にはぶつかる
   return group;
 }

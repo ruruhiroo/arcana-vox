@@ -2,20 +2,13 @@
 
 声に出して呪文を唱えて戦う、3D 一人称の迷宮探索ゲーム（協力 / PvP）。
 
-## 遊ぶ（どちらか好きなほうで）
-
-### ブラウザで遊ぶ（インストール不要）
-Chrome か Edge で次の URL を開くだけ。
-
-https://ruruhiroo.github.io/arcana-vox/
-
-### Windows のアプリで遊ぶ
+## 遊ぶ
 1. [Releases](https://github.com/ruruhiroo/arcana-vox/releases/latest) を開く
 2. 「Assets」の中の `ArcanaVox-〇.〇.〇.exe` をダウンロードする（「Source code」は不要）
-3. ダブルクリックで起動する（インストール不要）
+3. ダブルクリックで起動する（インストール不要・Windows）
 4. 「Windows によって PC が保護されました」と出たら「詳細情報 → 実行」
 
-どちらもマイクを使う。最初にマイクの使用を許可すること。
+マイクを使う。最初にマイクの使用を許可すること。
 
 ## 操作
 | 操作 | キー |
@@ -59,12 +52,11 @@ npm install
 npm start          # アプリとして起動する
 ```
 
-ブラウザで動かす場合は `node server.js` を実行して http://localhost:8080 を開く。
+確かめる時だけブラウザで動かしたい場合は `node server.js` を実行して http://localhost:8080 を開く。
 
 | やること | コマンド |
 |---|---|
 | テスト | `npm test` |
-| ブラウザ版（docs/）を作り直す | `npm run build-web` |
 | Windows の exe を作る | `npm run dist` |
 
 `v0.4.0` のようなタグを push すると、GitHub が exe を作って Releases に載せる。

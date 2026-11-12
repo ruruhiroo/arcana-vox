@@ -7,8 +7,9 @@ http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', '*');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
-  const n = +(new URL(req.url, 'http://x').searchParams.get('n') || 0);
+  const q = new URL(req.url, 'http://x').searchParams, n = +(q.get('n') || 0);
+  const file = (q.get('file') || '').replace(/[^\w.-]/g, '');   // ?file=bgm.wav のように名前を付ければ、その名で保存する(音楽など)
   const chunks = [];
   req.on('data', c => chunks.push(c));
-  req.on('end', () => { fs.writeFileSync(path.join(dir, 'f' + String(n).padStart(5, '0') + '.jpg'), Buffer.concat(chunks)); res.writeHead(200); res.end('ok'); });
+  req.on('end', () => { fs.writeFileSync(path.join(dir, file || 'f' + String(n).padStart(5, '0') + '.jpg'), Buffer.concat(chunks)); res.writeHead(200); res.end('ok'); });
 }).listen(port, () => console.log('capture server on', port, '->', dir));

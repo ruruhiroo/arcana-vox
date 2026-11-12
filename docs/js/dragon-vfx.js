@@ -78,16 +78,19 @@ export function updateDragonVisual(v, e, p, dt) {
   const mouth = e.body.userData.head.localToWorld(e.body.userData.mouthOffset?.clone() || new THREE.Vector3(0, 0, -1.35));
   const flame = s.move === 'breath' || !!a.flame; // 吐息と、吐きながら回る大技
   const fire = flame && strike ? smooth(p / .12) * (1 - smooth((p - .86) / .14)) : 0;
-  v.glow.position.copy(mouth); v.glow.scale.setScalar(charge ? .4 + p * 1.1 : 1.4);
-  v.glow.material.opacity = flame ? charge ? p * .75 : fire * .8 : 0;
+  v.glow.scale.setScalar(charge ? .18 + p * .38 : .5);
+  v.glow.material.opacity = flame ? charge ? p * .5 : fire * .32 : 0;
   v.light.position.copy(mouth); v.light.color.setHex(profile.color); v.glow.material.color.setHex(profile.hot);
-  v.light.intensity = fire * 180 + (charge && flame ? p * 45 : 0);
-  const end = at(s, a.range, a.shape === 'spin' ? spinTurn(a, p) : breathTurn(p), .7), dir = end.clone().sub(mouth), length = dir.length();
+  v.light.intensity = fire * 70 + (charge && flame ? p * 20 : 0); // 強すぎると頭が白く飛んで、口から出ているのが見えなくなる
+  const end = at(s, a.range, a.shape === 'spin' ? spinTurn(a, p) : a.shape === 'line' ? 0 : breathTurn(p), .7), dir = end.clone().sub(mouth), length = dir.length();
+  // 帯の根元を、吐く向きと逆へ少し引いて口の中に入れる(口先に浮いて見えないように)
+  const root = mouth.clone().addScaledVector(dir.clone().normalize(), -0.45);
+  v.glow.position.copy(root);
   v.flames.forEach((f, i) => {
     f.visible = fire > .001; if (!f.visible) return;
-    f.position.copy(mouth); f.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+    f.position.copy(root); f.quaternion.setFromUnitVectors(up, dir.clone().normalize());
     const radius = a.range * Math.tan(a.angle) * [1, .6, .15][i];
-    f.scale.set(radius, length * (1 - i * .07), radius * .6);
+    f.scale.set(radius, (length + 0.45) * (1 - i * .07), radius * .6);
     f.material.uniforms.uTime.value = (G.time || 0) + i * 7.1;
     f.material.uniforms.uOpacity.value = fire * [.65,.5,.3][i] * (s.element === 'wind' ? .65 : 1);
     f.material.uniforms.uColor.value.setHex(profile.color); f.material.uniforms.uHot.value.setHex(profile.hot);

@@ -46,6 +46,23 @@
   .lobbyHero .rule::after { transform: scaleX(-1); }
   .lobbyHero .rule i { width: 7px; height: 7px; border: 1px solid var(--gold); transform: rotate(45deg); }
   #lobby .tag { position: relative; color: var(--ink-dim); font-size: 16px; line-height: 2; letter-spacing: .06em; }
+  /* ---- 立体の背景(js/title.js)がある時: 左は大書庫の景色、右の支度の欄は暗い板の上に載せる ---- */
+  #titleBg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; display: block; }
+  #lobby.has3d { background: #050308; }
+  #lobby.has3d::before { content: ''; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(5,3,8,.15) 0%, rgba(5,3,8,0) 30%, rgba(5,3,8,.78) 58%, rgba(5,3,8,.94) 100%), linear-gradient(180deg, rgba(5,3,8,.55) 0%, rgba(5,3,8,0) 22%, rgba(5,3,8,0) 70%, rgba(5,3,8,.7) 100%); }
+  #lobby.has3d .lobbyHero .ring { opacity: .16; }
+  #lobby.has3d .lobbyHero { align-self: start; padding-top: clamp(40px, 12vh, 130px); }
+  #lobby.has3d h1 { font-size: clamp(50px, 7.2vw, 108px); background: linear-gradient(180deg, #fff9e6 0%, #f0cf84 42%, #9a7430 78%, #5a3e14 100%); -webkit-background-clip: text; background-clip: text;
+    filter: drop-shadow(0 0 30px rgba(255,190,110,.5)) drop-shadow(0 4px 2px rgba(0,0,0,.9)); animation: titleIn 2.6s cubic-bezier(.2,.7,.2,1) both; }
+  #lobby.has3d .sub { animation: titleIn 2.6s .5s cubic-bezier(.2,.7,.2,1) both; color: #e0c48a; text-shadow: 0 0 14px rgba(0,0,0,.9); }
+  #lobby.has3d .rule { animation: ruleIn 2.2s 1s ease-out both; }
+  #lobby.has3d .tag { animation: titleIn 2.4s 1.5s ease-out both; text-shadow: 0 0 12px #000, 0 0 4px #000; color: #d8cdb6; }
+  #lobby.has3d .lobbyForm { animation: titleIn 1.8s .8s ease-out both; }
+  @keyframes titleIn { from { opacity: 0; letter-spacing: .5em; filter: blur(10px); } to { opacity: 1; } }
+  #lobby.has3d .tag, #lobby.has3d .lobbyForm, #lobby.has3d .sub { animation-name: fadeUp; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+  @keyframes ruleIn { from { opacity: 0; transform: scaleX(.1); } to { opacity: 1; transform: none; } }
   /* 右: 支度 */
   .lobbyForm { display: flex; flex-direction: column; gap: 20px; max-width: 520px; width: 100%; justify-self: start; }
   .field > .flabel { display: block; font-size: 13px; letter-spacing: .35em; color: var(--gold-dim); margin-bottom: 8px; }
@@ -428,6 +445,28 @@
   #menu .mset { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 10px 0; font-size: 17px; }
   #menu .mset input[type=range] { width: 180px; accent-color: var(--gold); }
   #menu .mset input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--gold); }
+  /* ---- 設定: 左に分類、右に項目(名前・つまみ・いまの値)、下にその項目の説明 ---- */
+  #menu .mcard.wide { width: min(880px, calc(100vw - 32px)); }
+  #menu .setwrap { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 22px; min-height: 340px; }
+  #setTabs { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--panel-edge); padding-right: 14px; }
+  #setTabs button { all: unset; cursor: pointer; padding: 10px 12px; font-size: 18px; letter-spacing: .12em; color: var(--ink-dim); border-left: 2px solid transparent; transition: color .15s, background .15s; }
+  #setTabs button:hover { color: var(--ink); background: rgba(216,180,106,.06); }
+  #setTabs button.sel { color: var(--gold); border-left-color: var(--gold); background: linear-gradient(90deg, rgba(216,180,106,.14), transparent); }
+  #setBody { max-height: min(52vh, 460px); overflow-y: auto; padding-right: 6px; }
+  #setBody h3 { margin: 16px 0 6px; }
+  #setBody h3:first-child { margin-top: 0; }
+  .srow { display: grid; grid-template-columns: minmax(0, 1fr) 220px 62px; align-items: center; gap: 14px; padding: 9px 10px; font-size: 17.5px; border-bottom: 1px solid rgba(216,180,106,.1); }
+  .srow:hover, .srow:focus-within { background: rgba(216,180,106,.07); }
+  .srow .sval { text-align: right; color: var(--gold); font-variant-numeric: tabular-nums; font-size: 16.5px; }
+  .srow input[type=range] { width: 100%; accent-color: var(--gold); height: 4px; cursor: pointer; }
+  .srow .tog { justify-self: end; grid-column: 2 / 4; display: inline-flex; border: 1px solid var(--panel-edge); }
+  .srow .tog button { all: unset; cursor: pointer; padding: 4px 16px; font-size: 15.5px; color: var(--ink-dim); }
+  .srow .tog button.on { background: rgba(216,180,106,.22); color: var(--gold); }
+  .srow .act { grid-column: 2 / 4; justify-self: end; }
+  #setBody .krow { padding: 6px 10px; font-size: 17.5px; }
+  #setDesc { min-height: 52px; margin-top: 14px; padding: 10px 12px; border-top: 1px solid var(--panel-edge); color: var(--ink-dim); font-size: 15.5px; line-height: 1.7; }
+  #menu .setfoot { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; }
+  @media (max-width: 640px) { #menu .setwrap { grid-template-columns: 1fr; } #setTabs { flex-direction: row; flex-wrap: wrap; border-right: none; padding-right: 0; } .srow { grid-template-columns: 1fr 120px 54px; } }
   #menu #mFull { margin-top: 6px; }
 
   /* ---- 魔導書 ---- */
@@ -732,19 +771,17 @@
     <div id="mSaveNote" class="msavenote"></div>
     <button class="btn ghost" id="mInv" style="width:100%;margin-top:8px">装備と能力 (E)</button>
     <button class="btn ghost" id="mGrimoire" style="width:100%;margin-top:8px">魔導書 (Tab)</button>
-    <h3>設定</h3>
-    <label class="mset"><span>全体音量</span><input type="range" id="mVol" min="0" max="100"></label>
-    <label class="mset"><span>音楽</span><select id="mBgm"><option value="0">OFF</option><option value="1">小</option><option value="2">中</option></select></label>
-    <label class="mset"><span>環境音</span><select id="mAmb"><option value="0">OFF</option><option value="1">小</option><option value="2">中</option></select></label>
-    <label class="mset"><span>NPCの詠唱を読み上げる</span><input type="checkbox" id="mNpc"></label>
-    <label class="mset"><span>感度</span><input type="range" id="mSens" min="30" max="300"></label>
-    <div class="mrow2"><button class="btn ghost small" id="mKeys">操作設定</button><button class="btn ghost small" id="mFull">全画面 切替 (F11)</button></div>
+    <button class="btn ghost" id="mSettings" style="width:100%;margin-top:8px">設定</button>
     <div class="mrow2" style="margin-top:18px"><button class="btn ghost" id="mTitle">タイトルへ戻る</button><button class="btn ghost" id="mQuit">ゲームを終了</button></div>
     </div>
-    <div id="keysPanel" class="hidden">
-      <h2>— 操作設定 —</h2>
-      <div id="keysBody"></div>
-      <div class="mrow2" style="margin-top:14px"><button class="btn ghost small" id="kReset">初期設定に戻す</button><button class="btn small" id="kBack">戻る</button></div>
+    <div id="setPanel" class="hidden">
+      <h2>— 設定 —</h2>
+      <div class="setwrap">
+        <nav id="setTabs"></nav>
+        <div id="setBody"></div>
+      </div>
+      <div id="setDesc"></div>
+      <div class="setfoot"><button class="btn ghost small" id="setReset">この頁を初期設定に戻す</button><button class="btn small" id="setBack">戻る (Esc)</button></div>
     </div>
   </div>
 </div>

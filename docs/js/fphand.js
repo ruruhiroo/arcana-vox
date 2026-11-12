@@ -14,7 +14,7 @@ export function makeFpHand({ mirror = false } = {}) {
   const bones = {};
   m.traverse(o => {
     if (o.isBone) bones[o.name] = o;
-    if (o.isMesh) { o.frustumCulled = false; o.renderOrder = 11; o.castShadow = false; o.material = o.material.clone(); o.material.envMapIntensity = 0; if (o.material.normalMap) o.material.normalScale.set(0.7, 0.7); o.material.color.setScalar(0.8); } // 灯りで白く飛ばないよう、少し落とす
+    if (o.isMesh) { o.frustumCulled = false; o.renderOrder = 11; o.castShadow = false; o.material = o.material.clone(); o.material.envMapIntensity = 0; if (o.material.normalMap) o.material.normalScale.set(0.7, 0.7); o.material.color.setScalar(0.8); o.material.emissive?.setHex(0x3a1409); o.material.emissiveIntensity = 0.3; } // 灯りで白く飛ばないよう、少し落とす
   });
   if (!bones.i1 || !bones.t1) return null;
   const root = new THREE.Group(); root.name = 'fp_hand'; root.add(m);

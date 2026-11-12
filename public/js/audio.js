@@ -1,5 +1,10 @@
 // WebAudio による手続き的効果音・環境音 (3D定位つき)
-let ctx = null, master = null, noiseBuf = null, listenerPos = { x: 0, z: 0 };
+let ctx = null, master = null, sfxBus = null, noiseBuf = null, listenerPos = { x: 0, z: 0 };
+let sfxVol = 1, ambGain = null;
+// 効果音(魔法・魔物・足音)の音量 0〜1
+export function setSfxVolume(v) { sfxVol = v; if (sfxBus) sfxBus.gain.setTargetAtTime(v, ctx.currentTime, 0.05); }
+// 環境音の音量 0〜1(設定画面の ％)。M キーの切り替えは、この値を 0 / 40% / 100% に動かす
+export function setAmbienceVolume(v) { ambGain = v * 0.7; ambLevel = v > 0 ? 1 : 0; if (ambBus) ambBus.gain.setTargetAtTime(ambGain, ctx.currentTime, 0.2); }
 
 export const getAudioCtx = () => ctx;
 export const getMaster = () => master;
@@ -8,6 +13,8 @@ export function initAudio() {
   if (ctx) return;
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   master = ctx.createGain(); master.gain.value = 0.7 * masterVol;
+  sfxBus = ctx.createGain(); sfxBus.gain.value = sfxVol; sfxBus.connect(master);
+  sfxBus = ctx.createGain(); sfxBus.gain.value = sfxVol; sfxBus.connect(master);
   const comp = ctx.createDynamicsCompressor();
   // 石造りの残響
   const conv = ctx.createConvolver();
@@ -29,11 +36,11 @@ export function setListener(x, z, yaw) {
 }
 
 function out(pos) {
-  if (!pos) return master;
+  if (!pos) return sfxBus;
   const p = ctx.createPanner();
   p.panningModel = 'HRTF'; p.distanceModel = 'inverse'; p.refDistance = 3; p.rolloffFactor = 1.2;
   if (p.positionX) { p.positionX.value = pos.x; p.positionY.value = pos.y ?? 1; p.positionZ.value = pos.z; }
-  p.connect(master); return p;
+  p.connect(sfxBus); return p;
 }
 
 function noise(dur, { freq = 1000, q = 1, type = 'lowpass', gain = 0.5, attack = 0.01, pos, sweep } = {}) {
@@ -72,7 +79,7 @@ export function setMasterVolume(v) {
 
 function ambience() {
   // 低いうなりと遠い滴り — 控えめな専用バスに流す
-  ambBus = ctx.createGain(); ambBus.gain.value = AMB_LEVELS[ambLevel]; ambBus.connect(master);
+  ambBus = ctx.createGain(); ambBus.gain.value = ambGain ?? AMB_LEVELS[ambLevel]; ambBus.connect(master);
   const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain();
   o1.frequency.value = 55; o2.frequency.value = 55.4; o1.type = o2.type = 'sine';
   const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 120;
@@ -82,7 +89,7 @@ function ambience() {
   const wg = ctx.createGain(); wg.gain.value = 0.03; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
   setInterval(() => {
     if (!ambLevel || Math.random() > 0.35) return;
-    tone(1800 + Math.random() * 900, 0.25, { gain: 0.02 * AMB_LEVELS[ambLevel], to: 600, pos: { x: listenerPos.x + (Math.random() - 0.5) * 30, z: listenerPos.z + (Math.random() - 0.5) * 30, y: 3 } });
+    tone(1800 + Math.random() * 900, 0.25, { gain: 0.02 * (ambGain ?? AMB_LEVELS[ambLevel]), to: 600, pos: { x: listenerPos.x + (Math.random() - 0.5) * 30, z: listenerPos.z + (Math.random() - 0.5) * 30, y: 3 } });
   }, 3000);
 }
 

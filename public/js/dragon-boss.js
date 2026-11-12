@@ -6,7 +6,7 @@ import { dragonProfile, dragonElement } from './dragon-profiles.js';
 import * as THREE from 'three';
 import { G } from './state.js';
 import { lineOfSight, moveWithCollision, CLIMB } from './dungeon.js';
-import { createDragonState, stepDragon, DRAGON_ROAM, dragonHits, dragonProgress, dragonDuration, dragonAttack, smooth } from './dragon-rules.js';
+import { createDragonState, stepDragon, DRAGON_ROAM, dragonHits, dragonProgress, dragonDuration, dragonAttack, smooth, spinTurn } from './dragon-rules.js';
 
 import { colorDragon } from './dragon-model.js';
 import { createDragonVisual, updateDragonVisual } from './dragon-vfx.js';
@@ -38,7 +38,8 @@ function drawDragon(e, dt) {
   }
   if (intro > 0 && intro < 1 && !e.introShown) { e.introShown = true; G.ui?.bossTitle?.(dragonProfile(s).name, dragonProfile(s).title); }
   if (intro >= 0.5 && intro < 1 && !e.roared) { e.roared = true; G.shake = Math.max(G.shake || 0, 0.9); sfx.dragonCharge?.(e.pos, 'meteor'); sfx.growl?.(e.pos); G.fx?.burst(e.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xb2a28b, 60, { speed: 7, up: 1.5, size: 0.6, life: 0.9 }); }
-  Object.assign(e.body.userData, { intro, stage: s.stage, move: dragonAttack(s).anim || s.move, progress: v.progress, travelProgress: s.stage === 'idle' && s.travel ? v.progress : -1 });
+  // 体ごと回る技は、首を振らず正面へ向けたまま吐く(体が回るので、帯は体の向きと合う)
+  Object.assign(e.body.userData, { intro, stage: s.stage, move: dragonAttack(s).anim || s.move, progress: dragonAttack(s).follow && s.stage === 'strike' ? .5 : v.progress, travelProgress: s.stage === 'idle' && s.travel ? v.progress : -1 });
   if (e.root) { e.root.position.copy(e.pos); e.root.rotation.y = e.yaw; }
   const walking = G.isHost ? e.dragonWalking : v.lastPos && v.lastPos.distanceToSquared(e.pos) > dt * dt * .16;
   v.lastPos = e.pos.clone();
@@ -132,6 +133,7 @@ export function updateDragons(dt) {
         moveDragon(e, new THREE.Vector3(-Math.sin(s.yaw), 0, -Math.cos(s.yaw)).multiplyScalar(dt * 2.3));
         s.origin = e.pos.toArray(); // 踏み込みの実位置から衝撃を出す。照準は追尾しない。
       }
+      if (s.stage === 'strike' && atk.follow) e.yaw = s.yaw + spinTurn(atk, dragonProgress(s)); // 吐きながら回る・光の腕を回す: 体ごと回る
       const oldStage = s.stage, from = dragonProgress(s);
       const facing = Math.atan2(e.pos.x - target.pos.x, e.pos.z - target.pos.z), off = Math.abs(Math.atan2(Math.sin(facing - e.yaw), Math.cos(facing - e.yaw)));
       const ctx = { adaptive: !!G.dungeon?.arena, chanting: targets.some(m => m.chanting && m.pos.distanceTo(e.pos) < 12), behind: off > 2.1, still: e.guardianExposure.get(target.id ?? target)?.still || 0, rand: [Math.random(), Math.random(), Math.random(), Math.random(), Math.random(), Math.random()] };

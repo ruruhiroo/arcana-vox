@@ -14,14 +14,16 @@ export const DRAGON_ATTACKS = {
 //   shape = 当たる形: circle(自分の周り。inner があれば内側は安全) / line(前へ伸びる帯。lines で本数、bursts で時間差) /
 //           cone(扇。offset で向き) / prongs(細い扇を何本か) / spots(狙った所の円をいくつか) / spin(回りながら薙ぐ腕)
 //   min, max = 使う間合い / need = この状況でだけ使う(behind など) / effect = 当たった時の追加(slow, burn, knock, pull, drain)
+//   体の動きと当たりを合わせる約束: follow = 体ごと回る(吐きながら回る・光の腕を回す) / sweep = 薙ぎ払いの動作(尾・翼・鎌)と同じ回り方で当たる /
+//   flame = 口から帯を吐く見た目(line なら真っ直ぐ、spin なら回る向きへ)
 //   dash = 踏み込む速さ / leap = 狙った所へ跳ぶ / blink = 相手の向こう側へ渡る / ult = 大技(体力が半分を切ると使う)
 export const SPECIALS = {
   // 炎鱗竜ヴォルグ
-  firewall:  { label: '焔の壁', anim: 'breath', shape: 'line', width: 5, range: 26, warn: 1.5, active: 1.0, recover: 1.9, damage: 34, hitStart: .3, hitEnd: .3, effect: 'burn', min: 6 },
+  firewall:  { label: '焔の壁', anim: 'breath', shape: 'line', flame: true, width: 5, range: 26, warn: 1.5, active: 1.0, recover: 1.9, damage: 34, hitStart: .3, hitEnd: .3, effect: 'burn', min: 6 },
   eruption:  { label: '噴火の列', anim: 'slam', shape: 'spots', pattern: 'trail', count: 6, step: 4.2, radius: 3.1, stagger: .09, warn: 1.5, active: 1.5, recover: 2.4, damage: 38, hitStart: .3, hitEnd: .8, effect: 'burn', min: 7 },
   wingbuffet:{ label: '翼の烈風', anim: 'roar', shape: 'circle', range: 13, warn: 1.0, active: .5, recover: 1.2, damage: 18, hitStart: .3, hitEnd: .3, effect: 'knock', max: 12, track: true },
-  tailcrush: { label: '尾の叩き潰し', anim: 'sweep', shape: 'cone', offset: Math.PI, angle: .62, range: 13, warn: 1.0, active: .7, recover: 1.6, damage: 44, hitStart: .45, hitEnd: .45, need: 'behind', max: 15 },
-  inferno:   { label: '灰燼の大劫火', anim: 'breath', shape: 'spin', arms: 1, turn: Math.PI * 2, angle: .3, range: 27, flame: true, warn: 3.0, active: 3.4, recover: 4.6, damage: 55, hitStart: .06, hitEnd: .96, effect: 'burn', ult: true },
+  firerain:  { label: '火の雨', anim: 'meteor', shape: 'spots', pattern: 'scatter', count: 6, dist: 5.5, radius: 2.8, stagger: .1, warn: 1.5, active: 1.6, recover: 2.2, damage: 32, hitStart: .3, hitEnd: .85, effect: 'burn', min: 5 },
+  inferno:   { label: '灰燼の大劫火', anim: 'breath', shape: 'spin', follow: true, arms: 1, turn: Math.PI * 2, angle: .3, range: 27, flame: true, warn: 3.0, active: 3.4, recover: 4.6, damage: 55, hitStart: .06, hitEnd: .96, effect: 'burn', ult: true },
   // 氷冠巨人ニヴァリス
   icicles:   { label: '氷柱の雨', anim: 'meteor', shape: 'spots', pattern: 'cross', count: 5, dist: 5.5, radius: 3, stagger: .05, warn: 1.7, active: 1.2, recover: 2.2, damage: 36, hitStart: .5, hitEnd: .8, effect: 'slow', min: 6 },
   frostnova: { label: '凍てつく波紋', anim: 'slam', shape: 'circle', range: 10.5, warn: 1.4, active: .8, recover: 2.2, damage: 40, hitStart: .5, hitEnd: .5, effect: 'slow', max: 10 },
@@ -39,22 +41,22 @@ export const SPECIALS = {
   feathers:  { label: '羽根の矢雨', anim: 'breath', shape: 'prongs', count: 5, spacing: .27, angle: .075, range: 28, warn: 1.1, active: .7, recover: 1.4, damage: 28, hitStart: .3, hitEnd: .3, min: 6 },
   cyclone:   { label: '竜巻', anim: 'meteor', shape: 'spots', pattern: 'scatter', count: 4, dist: 4.5, radius: 3.4, stagger: .16, warn: 1.4, active: 1.8, recover: 2.0, damage: 30, hitStart: .25, hitEnd: .8, effect: 'pull', min: 5 },
   gale:      { label: '突風', anim: 'roar', shape: 'line', width: 9, range: 22, warn: .9, active: .5, recover: 1.3, damage: 16, hitStart: .3, hitEnd: .3, effect: 'knock', max: 20, track: true },
-  tempest:   { label: '天裂く大嵐', anim: 'sweep', shape: 'spin', arms: 2, turn: Math.PI * 3, angle: .34, inner: 5, range: 30, flame: true, warn: 3.0, active: 3.6, recover: 4.4, damage: 50, hitStart: .05, hitEnd: .96, effect: 'knock', ult: true },
+  tempest:   { label: '天裂く大嵐', anim: 'sweep', shape: 'spin', sweep: true, offset: Math.PI / 2, arms: 2, angle: .34, inner: 5, range: 30, warn: 3.0, active: 2.6, recover: 4.4, damage: 50, hitStart: .08, hitEnd: .92, effect: 'knock', ult: true },
   // 聖堂騎像アウレリア
-  lance:     { label: '光槍', anim: 'breath', shape: 'line', width: 3, range: 32, warn: 1.1, active: .6, recover: 1.5, damage: 44, hitStart: .3, hitEnd: .3, min: 7, track: true },
+  lance:     { label: '光槍', anim: 'breath', shape: 'line', flame: true, width: 3, range: 32, warn: 1.1, active: .6, recover: 1.5, damage: 44, hitStart: .3, hitEnd: .3, min: 7, track: true },
   shieldbash:{ label: '聖盾の突き', anim: 'lunge', shape: 'cone', angle: .7, range: 6, dash: 16, roam: 11, warn: 1.0, active: .7, recover: 1.7, damage: 34, hitStart: .1, hitEnd: .9, effect: 'knock', max: 16, track: true },
   pillars:   { label: '光の柱', anim: 'meteor', shape: 'spots', pattern: 'trail', count: 8, step: 3.4, radius: 2.5, stagger: .07, warn: 1.5, active: 1.6, recover: 2.2, damage: 36, hitStart: .22, hitEnd: .8, min: 8 },
   consecrate:{ label: '聖域の輪', anim: 'slam', shape: 'circle', inner: 5.5, range: 15, warn: 1.5, active: .8, recover: 2.2, damage: 38, hitStart: .5, hitEnd: .5, max: 16 },
-  verdict:   { label: '最後の審判', anim: 'meteor', shape: 'spin', arms: 4, turn: Math.PI / 4, angle: .15, range: 32, warn: 3.0, active: 3.0, recover: 4.4, damage: 60, hitStart: .08, hitEnd: .95, ult: true },
+  verdict:   { label: '最後の審判', anim: 'meteor', shape: 'spin', follow: true, arms: 4, turn: Math.PI / 4, angle: .15, range: 32, warn: 3.0, active: 3.0, recover: 4.4, damage: 60, hitStart: .08, hitEnd: .95, ult: true },
   // 深淵の死神ノクス
-  scythewave:{ label: '飛ぶ斬撃', anim: 'sweep', shape: 'cone', angle: .95, range: 24, warn: 1.2, active: .7, recover: 1.7, damage: 38, hitStart: .4, hitEnd: .4, min: 5 },
+  scythewave:{ label: '飛ぶ斬撃', anim: 'sweep', shape: 'spin', sweep: true, arms: 1, angle: .42, inner: 3, range: 24, warn: 1.2, active: 1.35, recover: 1.8, damage: 38, hitStart: .08, hitEnd: .92, min: 5 },
   abysshands:{ label: '奈落の手', anim: 'meteor', shape: 'spots', pattern: 'scatter', count: 4, dist: 3.2, radius: 3.1, stagger: .14, warn: 1.3, active: 1.6, recover: 2.0, damage: 30, hitStart: .25, hitEnd: .75, effect: 'slow', min: 4 },
   shadowstep:{ label: '影渡り', anim: 'lunge', shape: 'cone', angle: .85, range: 7.5, blink: true, roam: 18, warn: .9, active: .8, recover: 1.7, damage: 42, hitStart: .5, hitEnd: .5, min: 6 },
   soulring:  { label: '魂喰らいの輪', anim: 'roar', shape: 'circle', inner: 4, range: 13, warn: 1.1, active: .5, recover: 1.4, damage: 30, hitStart: .3, hitEnd: .3, effect: 'drain', max: 13 },
   eclipse:   { label: '蝕', anim: 'meteor', shape: 'spots', pattern: 'around', count: 9, dist: 11, radius: 5, stagger: .06, warn: 3.0, active: 2.0, recover: 4.4, damage: 62, hitStart: .3, hitEnd: .8, ult: true },
 };
 export const GUARDIAN_KITS = {
-  fire: ['firewall', 'eruption', 'wingbuffet', 'tailcrush', 'inferno'], ice: ['icicles', 'frostnova', 'glacier', 'frostbell', 'absolute'],
+  fire: ['firewall', 'eruption', 'wingbuffet', 'firerain', 'inferno'], ice: ['icicles', 'frostnova', 'glacier', 'frostbell', 'absolute'],
   thunder: ['chainbolt', 'stampede', 'thunderfield', 'hornspark', 'judgment'], wind: ['dive', 'feathers', 'cyclone', 'gale', 'tempest'],
   holy: ['lance', 'shieldbash', 'pillars', 'consecrate', 'verdict'], void: ['scythewave', 'abysshands', 'shadowstep', 'soulring', 'eclipse'],
 };
@@ -69,7 +71,7 @@ export function attackPrims(s) {
   else if (a.shape === 'line') for (const [time, off] of a.bursts || [[T0, 0]]) for (let i = 0; i < (a.lines || 1); i++) out.push({ k: 'line', x: o[0], z: o[2], yaw: s.yaw + off + i * Math.PI * 2 / (a.lines || 1), len: a.range, w: a.width, t0: time, t1: a.bursts ? time : T1 });
   else if (a.shape === 'cone') out.push({ k: 'cone', x: o[0], z: o[2], yaw: s.yaw + (a.offset || 0), half: a.angle, r: a.range, t0: T0, t1: T1 });
   else if (a.shape === 'prongs') for (let i = 0; i < a.count; i++) out.push({ k: 'cone', x: o[0], z: o[2], yaw: s.yaw + (i - (a.count - 1) / 2) * a.spacing, half: a.angle, r: a.range, t0: T0, t1: T1 });
-  else if (a.shape === 'spin') for (let i = 0; i < a.arms; i++) out.push({ k: 'arm', x: o[0], z: o[2], yaw: s.yaw + i * Math.PI * 2 / a.arms, half: a.angle, r: a.range, inner: a.inner || 0, turn: a.turn, t0: T0, t1: T1 });
+  else if (a.shape === 'spin') for (let i = 0; i < a.arms; i++) out.push({ k: 'arm', x: o[0], z: o[2], yaw: s.yaw + (a.offset || 0) + i * Math.PI * 2 / a.arms, half: a.angle, r: a.range, inner: a.inner || 0, turn: a.turn, t0: T0, t1: T1 });
   else if (a.shape === 'spots') {
     const fx = -Math.sin(s.yaw), fz = -Math.cos(s.yaw), n = a.count, step = (T1 - T0) / Math.max(1, n - 1);
     for (let i = 0; i < n; i++) {
@@ -85,7 +87,8 @@ export function attackPrims(s) {
   }
   return out;
 }
-export const spinTurn = (a, p) => a.turn * smooth((p - a.hitStart) / Math.max(.001, a.hitEnd - a.hitStart));
+// 回る技がいま何 rad 回ったか。sweep の技は、薙ぎ払いの動作(尾・翼・鎌)と同じ回り方をする
+export const spinTurn = (a, p) => a.sweep ? sweepTurn(p) : a.turn * smooth((p - a.hitStart) / Math.max(.001, a.hitEnd - a.hitStart));
 function specialHits(s, a, point, from, to) {
   if (Math.abs(point[1] - s.origin[1]) > 3.5) return false;
   for (const q of attackPrims(s)) {
@@ -110,7 +113,8 @@ export function dragonAttack(s) {
     ...(s.move==='breath' ? {range:profile.range,angle:profile.angle,label:profile.breath} : {}),
     ...(s.move==='sweep' ? {label:profile.sweep,offset:profile.kind==='dragon'?Math.PI:profile.kind==='griffin'?Math.PI/2:0} : {}),
     ...(s.move==='meteor' ? {range:s.element==='void'?8:base.range,label:profile.meteor} : {}),
-    ...(KIND_LABELS[profile.kind]?.[s.move] ? {label:KIND_LABELS[profile.kind][s.move]} : {}) };
+    ...(KIND_LABELS[profile.kind]?.[s.move] ? {label:KIND_LABELS[profile.kind][s.move]} : {}),
+    ...(base.shape==='line'&&base.flame ? {angle:Math.atan(base.width/2/base.range)} : {}) };
 }
 export function dragonDuration(s, stage = s.stage) {
   const a = dragonAttack(s);

@@ -4,6 +4,7 @@ import { guardianDefense } from './guardian-mechanics.js';
 import { insideArena } from './arena-room.js';
 // 呪文の発現: 弾・環・雨・壁・罠、ダメージ/回復/守護、粒子演出
 import * as THREE from 'three';
+import { spellMult, takenMult } from './roomgimmick.js';
 import { G, rand, clamp } from './state.js';
 import { ELEMENTS, compile, WORD_BY_ID, ATTACK_FX } from './lexicon.js';
 import { isWallAt, raycastGrid, CELL, heightAt, ceilingAt } from './dungeon.js';
@@ -408,6 +409,7 @@ export const FX = {
     if (!mouthStagger && t.vulnUntil > (G.time || 0)) a *= 1.6; // Interrupt hit already received the same exposure bonus.
     if (t.status?.stigma) a *= 1.25; // 聖痕
     if (t.status?.cursed) a *= 1.25; // 付与の呪い
+    if (!opts.silent) a *= spellMult(src, elements) * takenMult(t); // 部屋の場の力(鍛冶場の炉の熱、祭祀場の陣…)
     // 連携: 別の魔導師が、違う属性で4秒以内に続けて当てると傷が増える(仲間と属性を散らすほど強い)
     if (!t.isMage && src?.isMage && elements.length && !opts.silent && !opts.enchantHit) {
       const now = G.time || 0, L = t.lastHit;

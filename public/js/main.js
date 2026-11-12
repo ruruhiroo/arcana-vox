@@ -53,8 +53,10 @@ import { QUICK_DEFAULT, quickSlotsHtml, ensureUtilityBook } from './ui.js';
 import { UI, BOOK, loadBook, saveBook, wipeBook, forgetBook, openBook, closeBook, bookOpen, currentBook, setGrimoireElement } from './ui.js';
 import { gainProf, shortChantPenalty, profPower, profSummary, EL_JP as PROF_EL, profTitle, rankName } from './proficiency.js';
 import { SLOTS as SAVE_SLOTS, currentSlot, useSlot, slotInfo, loadRun, saveRun, clearRun, deleteSlot } from './save.js';
-import { initAudio, sfx, setListener, getAudioCtx, cycleAmbience, setAmbience, setMasterVolume } from './audio.js';
-import { startMusic, setMusic, setMusicLevel, setMusicDuck } from './music.js';
+import { initAudio, sfx, setListener, getAudioCtx, cycleAmbience, setAmbience, setMasterVolume, setSfxVolume, setAmbienceVolume } from './audio.js';
+import { startMusic, setMusic, setMusicLevel, setMusicVolume, setMusicDuck } from './music.js';
+import { startTitle } from './title.js';
+import { initGimmicks, buildGimmicks, clearGimmicks, updateGimmicks, gimmickHint, gimmickInteract, gimmickNet, costMult } from './roomgimmick.js';
 import { initVoice, voiceSupported, startListening, stopListening, setContinuous, isContinuous, setTTS, ttsOn, engine as voiceEngine } from './voice.js';
 // オフライン認識では詠唱文の飾りの言葉を聞き取りにくいので、判定を緩める
 const lenientChant = () => voiceEngine === 'vosk';
@@ -83,7 +85,7 @@ import { ENEMY_TYPES, ENEMY_RIM } from './entities.js';
 import { SLOTS, RARITY, rollItem, statLines, totals, tuneEquipment } from './equipment.js';
 import { itemIcon, gearIcon, slotGhost, STAT_ICON } from './icons.js';
 import { warmIcons, preloadItems } from './icons3d.js';
-import { ACTIONS, binds, opts, actionOf, rebind, resetControls, saveControls, keyName, keyOf } from './controls.js';
+import { ACTIONS, OPTION_DEFS, binds, opts, actionOf, rebind, resetControls, saveControls, keyName, keyOf } from './controls.js';
 import { glowSprite, runeCircleTex } from './textures.js';
 
 const $ = id => document.getElementById(id);
@@ -440,6 +442,7 @@ function setupFloor(seed, floor, reset = false) {
   for (const p of d.richChests || []) addPickup(`k${kid++}`, 'chest', p, { rich: true });
   buildSecrets(d, scene);
   buildRoomEvents(d, scene);
+  buildGimmicks(d, scene); // 部屋の種類ごとの仕掛け(泉・大釜・金床・天球儀・石棺)
   buildCoop(d, scene);
   buildTraps(d, scene);
   buildShrines(d, scene);
@@ -1028,7 +1031,7 @@ function playerAim(spell) {
 G.castSpell = function castSpell(m, spell, aim) {
   const error=utilityError(m,spell);if(error){if(m===G.player)UI.log(error,'#d3b5e3');return false;}
   if (m.mp < spell.cost) return false;
-  m.mp -= spell.cost;
+  m.mp -= spell.cost * costMult(m); // 書庫・写本室では、魔力の消費が減る
   G.fx.cast(m, spell, aim);
   noteCast(m.id, spell.words);
   G.net?.send({ t: 'cast', id: m.id, words: spell.words, aim, chorus: m === G.player && !!m.lastChorus });
@@ -1195,7 +1198,7 @@ function pressAction(act, e) {
     case 'pagePrev': flipPage(-1); return;
     case 'interact': interact(); return;
     case 'jump': { const p = G.player; if (p.onGround && p.alive && !p.downed && (p.stamina ?? 100) >= JUMP_COST) { p.stamina = (p.stamina ?? 100) - JUMP_COST; p.staminaWait = 0.8; p.vy = 7.4; p.onGround = false; sfx.step(null); } return; }
-    case 'ambience': settings.ambience = cycleAmbience(); saveSettings(); UI.log('環境音: ' + ['OFF', '小', '中'][settings.ambience]); return;
+    case 'ambience': settings.ambVol = settings.ambVol >= 100 ? 0 : settings.ambVol >= 40 ? 100 : 40; applySettings(); saveSettings(); UI.log('環境音: ' + settings.ambVol + '%'); return;
     case 'tts': settings.npcVoice = !ttsOn(); setTTS(settings.npcVoice); saveSettings(); UI.log('NPC詠唱の読み上げ: ' + (ttsOn() ? 'ON' : 'OFF')); return;
   }
   if (act?.startsWith('item')) { holdQuick(+act.slice(4) - 1); return; }
@@ -1208,7 +1211,7 @@ function releaseAction(act) {
 addEventListener('keydown', e => {
   if (!G.player || capturing) return;
   if (menuOpen()) {
-    if (e.code === 'Escape') { e.preventDefault(); if (!$('keysPanel').classList.contains('hidden')) showKeysPanel(false); else closeMenu(); }
+    if (e.code === 'Escape') { e.preventDefault(); if (!$('setPanel').classList.contains('hidden')) showSettings(false); else closeMenu(); }
     return;
   }
   if (invOpen()) {
@@ -1263,6 +1266,12 @@ initCoop({
   ui: UI, sfx,
   addPickup: (id, kind, pos, data) => { if (!G.pickups.some(k => k.id === id) && !G.openChests?.some(m => m.userData?.pid === id)) addPickup(id, kind, pos, data); },
   damage: (m, n) => G.fx.damage(m, n, ['void'], null, {}),
+});
+initGimmicks({
+  ui: UI, sfx, renderHotbar: () => UI.renderHotbar?.(),
+  give: (m, n) => { grantItem(m, n); UI.renderHotbar?.(); },
+  spill: (m, pos) => spillItem(m, pos),
+  spawn: (id, type, pos) => { const e = spawnEnemy(id, type, pos, G.floor); if (e) { e.aggro = true; G.net?.send({ t: 'espawn', id, type, pos: pos.toArray(), floor: G.floor }); } return e; },
 });
 initRoomEvents({
   ui: UI, sfx,
@@ -1548,12 +1557,18 @@ invEl.addEventListener('click', e => { if (e.target === invEl) closeInventory();
 
 // ---------- Esc メニューと設定 ----------
 const SETTINGS_KEY = 'arcana_vox_settings_v1';
-const settings = { volume: 0.8, ambience: 1, music: 1, npcVoice: true, sens: 1 };
+// 音量はどれも ％(0〜100)。musicVol = 音楽, sfxVol = 効果音, ambVol = 環境音, shake = 画面の揺れ
+const SETTING_DEFS = { volume: 0.8, musicVol: 45, sfxVol: 100, ambVol: 40, shake: 100, npcVoice: true };
+const settings = { ...SETTING_DEFS, ambience: 1, music: 1, sens: 1 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch {}
+// 前の版の「OFF・小・中」を ％へ引き継ぐ
+{ let raw = null; try { raw = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
+  if (raw && raw.musicVol === undefined && raw.music !== undefined) settings.musicVol = [0, 45, 80][raw.music] ?? 45;
+  if (raw && raw.ambVol === undefined && raw.ambience !== undefined) settings.ambVol = [0, 40, 100][raw.ambience] ?? 40; }
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
 function applySettings() {
   setMasterVolume(settings.volume);
-  setAmbience(settings.ambience); setMusicLevel(settings.music ?? 1);
+  setAmbienceVolume(settings.ambVol / 100); setMusicVolume(settings.musicVol / 100); setSfxVolume(settings.sfxVol / 100);
   setTTS(settings.npcVoice);
   applyControls();
 }
@@ -1571,11 +1586,10 @@ function openMenu() {
   releaseKeys();
   menu.classList.remove('hidden'); G.uiOpen = true;
   document.exitPointerLock?.();
-  $('mVol').value = settings.volume * 100; $('mBgm').value = settings.music ?? 1; $('mAmb').value = settings.ambience; $('mNpc').checked = settings.npcVoice; $('mSens').value = opts.sens * 100; showKeysPanel(false);
+  showSettings(false);
   $('mQuit').classList.toggle('hidden', !window.desktop);
   $('mRoom').classList.toggle('hidden', !G.roomCode);
   if (G.roomCode) $('mRoom').innerHTML = `部屋コード <b>${G.roomCode}</b> ・ ${G.net.players?.size || 1}人`;
-  $('mFull').classList.toggle('hidden', !window.desktop);
   updateSaveNote();
 }
 // 記録: 迷宮の入口と聖域の中でだけ手動で残せる(層に着いた時は自動)
@@ -1592,27 +1606,78 @@ function resumeLock() { requestLock(); }
 $('mResume').onclick = closeMenu;
 $('mGrimoire').onclick = () => { menu.classList.add('hidden'); openBook('grimoire'); };
 $('mInv').onclick = () => { menu.classList.add('hidden'); openInventory(); };
-$('mVol').oninput = e => { settings.volume = e.target.value / 100; applySettings(); saveSettings(); };
-$('mBgm').onchange = e => { settings.music = +e.target.value; applySettings(); saveSettings(); };
-$('mAmb').onchange = e => { settings.ambience = +e.target.value; applySettings(); saveSettings(); };
-$('mNpc').onchange = e => { settings.npcVoice = e.target.checked; applySettings(); saveSettings(); };
-$('mSens').oninput = e => { opts.sens = e.target.value / 100; saveControls(); };
+
+// ---- 設定の画面 ----
+// 分類ごとの項目。type: pct(％のつまみ) / num(数値のつまみ) / bool(入・切) / act(押して実行)。desc = 下に出す説明
+const setS = k => ({ get: () => settings[k], set: v => { settings[k] = v; applySettings(); saveSettings(); }, def: SETTING_DEFS[k] });
+const setO = k => ({ get: () => opts[k], set: v => { opts[k] = v; applyControls(); saveControls(); }, def: OPTION_DEFS[k] });
+const SET_TABS = [['audio', '音'], ['controls', '操作'], ['keys', 'キー割り当て'], ['display', '画面']];
+const SET_ROWS = {
+  audio: [
+    { label: '全体の音量', type: 'pct', get: () => Math.round(settings.volume * 100), set: v => { settings.volume = v / 100; applySettings(); saveSettings(); }, def: 80, desc: 'すべての音の大きさ。下の三つは、この音量に対する割合になる。' },
+    { label: '音楽', type: 'pct', ...setS('musicVol'), desc: '探索・交戦・守護者戦・聖域で流れる音楽の大きさ。0% で鳴らさない。詠唱している間は、声の聞き取りを邪魔しないよう自動で小さくなる。' },
+    { label: '効果音', type: 'pct', ...setS('sfxVol'), desc: '魔法・魔物・足音・宝箱などの音の大きさ。魔物の位置や守護者の構えは音でも分かるので、下げすぎに注意。' },
+    { label: '環境音', type: 'pct', ...setS('ambVol'), desc: '迷宮の低いうなりや、遠くの水滴の音の大きさ。' },
+    { label: '魔物の詠唱を読み上げる', type: 'bool', ...setS('npcVoice'), desc: '敵の術者が唱える言葉を、合成の声で聞かせる。何の術が来るかを耳で読める。' },
+  ],
+  controls: [
+    { label: '視点の感度', type: 'pct', min: 30, max: 300, get: () => Math.round(opts.sens * 100), set: v => { opts.sens = v / 100; saveControls(); }, def: 100, desc: 'マウスを動かした時に、視点がどれだけ回るか。' },
+    { label: '上下の視点を逆にする', type: 'bool', ...setO('invertY'), desc: 'マウスを手前に引くと上を向くようにする。' },
+    { label: '視野の広さ', type: 'num', min: 60, max: 100, unit: '°', ...setO('fov'), desc: '一度に見える範囲。広いと周りを見渡しやすいが、遠くの物は小さくなる。酔いやすい時は広めに。' },
+    { label: '歩く時に視点を揺らす', type: 'bool', ...setO('headBob'), desc: '歩みに合わせて視点が上下する。酔いやすい時は切る。' },
+    { label: 'ホイールで頁をめくる', type: 'bool', ...setO('wheelPages'), desc: 'マウスのホイールで、魔導書の頁を前後にめくる。' },
+  ],
+  display: [
+    { label: '画面の揺れ', type: 'pct', max: 150, ...setS('shake'), desc: '守護者の大技や落下の衝撃で、画面が揺れる強さ。0% で揺れなくなる。酔いやすい時は下げる。' },
+    { label: '全画面の切り替え', type: 'act', text: '切り替える (F11)', run: () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); }, desc: '全画面と窓の表示を切り替える。' },
+  ],
+};
+let setTab = 'audio';
+function showSettings(on) {
+  capturing = null;
+  $('setPanel').classList.toggle('hidden', !on);
+  $('menuMain').classList.toggle('hidden', on);
+  menu.querySelector('.mcard').classList.toggle('wide', on);
+  if (on) renderSettings();
+}
+function renderSettings() {
+  $('setTabs').innerHTML = SET_TABS.map(([id, name]) => `<button data-tab="${id}" class="${id === setTab ? 'sel' : ''}">${name}</button>`).join('');
+  $('setTabs').querySelectorAll('button').forEach(b => b.onclick = () => { setTab = b.dataset.tab; capturing = null; renderSettings(); });
+  const say = t => { $('setDesc').textContent = t || ''; };
+  say(setTab === 'keys' ? '変えたい操作の右のボタンを押してから、割り当てたいキーかマウスのボタンを押す。Esc で取り消す。' : '項目にカーソルを合わせると、ここに説明が出る。');
+  $('setReset').textContent = setTab === 'keys' ? 'キー割り当てを初期設定に戻す' : 'この頁を初期設定に戻す';
+  if (setTab === 'keys') { renderKeysPanel(); return; }
+  const rows = SET_ROWS[setTab];
+  $('setBody').innerHTML = rows.map((r, i) => {
+    if (r.type === 'bool') return `<div class="srow" data-i="${i}"><span>${r.label}</span><div class="tog"><button data-v="1" class="${r.get() ? 'on' : ''}">入</button><button data-v="0" class="${r.get() ? '' : 'on'}">切</button></div></div>`;
+    if (r.type === 'act') return `<div class="srow" data-i="${i}"><span>${r.label}</span><button class="btn ghost small act">${r.text}</button></div>`;
+    return `<div class="srow" data-i="${i}"><span>${r.label}</span><input type="range" min="${r.min ?? 0}" max="${r.max ?? 100}" step="${r.type === 'pct' ? 5 : 1}" value="${r.get()}"><span class="sval">${r.get()}${r.unit || '%'}</span></div>`;
+  }).join('');
+  $('setBody').querySelectorAll('.srow').forEach(el => {
+    const r = rows[+el.dataset.i];
+    el.onmouseenter = el.onfocusin = () => say(r.desc);
+    const range = el.querySelector('input[type=range]');
+    if (range) range.oninput = () => { r.set(+range.value); el.querySelector('.sval').textContent = range.value + (r.unit || '%'); if (r.label === '効果音') sfx.learn?.(); };
+    el.querySelectorAll('.tog button').forEach(b => b.onclick = () => { r.set(b.dataset.v === '1'); renderSettings(); say(r.desc); });
+    const act = el.querySelector('.act'); if (act) act.onclick = () => r.run();
+  });
+}
+$('mSettings').onclick = () => showSettings(true);
+$('setBack').onclick = () => showSettings(false);
+$('setReset').onclick = () => {
+  if (setTab === 'keys') { resetControls(); applyControls(); UI.renderHotbar(); }
+  else for (const r of SET_ROWS[setTab]) if (r.def !== undefined) r.set(r.def);
+  renderSettings();
+};
 
 // ---- 操作設定 ----
 let capturing = null; // 割り当て待ちの操作 id
-function showKeysPanel(on) {
-  $('keysPanel').classList.toggle('hidden', !on);
-  $('menuMain').classList.toggle('hidden', on);
-  if (on) renderKeysPanel();
-}
 function renderKeysPanel() {
   const groups = {};
   for (const a of ACTIONS) (groups[a.group] ||= []).push(a);
   const opt = (id, label, html) => `<label class="mset"><span>${label}</span>${html}</label>`;
-  $('keysBody').innerHTML = `${opt('kSens', '感度', `<input type="range" id="kSens" min="30" max="300" value="${opts.sens * 100}">`)}
-    ${Object.entries(groups).map(([g, list]) => `<h3>${g}</h3>` + list.map(a => `<div class="krow"><span>${a.label}</span><button class="kbtn ${capturing === a.id ? 'wait' : ''}" data-act="${a.id}">${capturing === a.id ? 'キーを押す…' : keyName(binds[a.id])}</button></div>`).join('')).join('')}`;
-  $('kSens').oninput = e => { opts.sens = e.target.value / 100; saveControls(); };
-  $('keysBody').querySelectorAll('.kbtn').forEach(b => b.onclick = ev => { ev.stopPropagation(); capturing = b.dataset.act; renderKeysPanel(); });
+  $('setBody').innerHTML = `${Object.entries(groups).map(([g, list]) => `<h3>${g}</h3>` + list.map(a => `<div class="krow"><span>${a.label}</span><button class="kbtn ${capturing === a.id ? 'wait' : ''}" data-act="${a.id}">${capturing === a.id ? 'キーを押す…' : keyName(binds[a.id])}</button></div>`).join('')).join('')}`;
+  $('setBody').querySelectorAll('.kbtn').forEach(b => b.onclick = ev => { ev.stopPropagation(); capturing = b.dataset.act; renderKeysPanel(); });
 }
 // 割り当て待ちの間は、次に押したキー/マウスボタンをその操作に割り当てる
 function finishCapture(code) {
@@ -1622,11 +1687,7 @@ function finishCapture(code) {
 }
 addEventListener('keydown', e => { if (!capturing) return; e.preventDefault(); e.stopImmediatePropagation(); finishCapture(e.code); }, true);
 addEventListener('mousedown', e => { if (!capturing || e.target.closest?.('.kbtn')) return; e.preventDefault(); e.stopImmediatePropagation(); finishCapture('Mouse' + e.button); }, true);
-$('keysPanel').addEventListener('contextmenu', e => e.preventDefault());
-$('mKeys').onclick = () => showKeysPanel(true);
-$('kBack').onclick = () => { capturing = null; showKeysPanel(false); };
-$('kReset').onclick = () => { resetControls(); applyControls(); UI.renderHotbar(); renderKeysPanel(); };
-$('mFull').onclick = () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); };
+$('setPanel').addEventListener('contextmenu', e => e.preventDefault());
 $('mTitle').onclick = () => location.reload();
 $('mQuit').onclick = () => window.desktop?.quit();
 // ロック中に Esc を押すとブラウザがロックを解除するだけなので、それを検知してメニューを開く
@@ -1654,6 +1715,7 @@ function interact() {
   }
   if (coopInteract(p)) return;
   if (roomInteract(p)) return;
+  if (gimmickInteract(p)) return;
   if (portal && p.pos.distanceTo(portal.position) < 2.4) {
     if (guardianAlive()) { UI.log('門番が転移陣を守っている — 倒さねば先へは進めない', '#ff9a8a'); sfx.fizzle?.(p.pos); return; }
     if (G.isHost) nextFloor(); else { G.net.send({ t: 'portalReq', to: G.hostId }); UI.log('部屋の主に転移を要請した'); }
@@ -1953,6 +2015,7 @@ function onNet(m) {
     case 'gbar': { const e = G.enemies.find(x => x.id === m.id); if (e) setBarrier(e, m.on, false); break; }
     case 'espawn': spawnEnemy(m.id, m.type, new THREE.Vector3().fromArray(m.pos), m.floor, m.summoner); break;
     case 'ekill': { const e = G.enemies.find(o => o.id === m.id); if (e && e.alive) { e.hp = 0; G.fx.kill(e, null); G.onEnemyKilled(e, true); } break; }
+    case 'gim': case 'gimUsed': gimmickNet(m); break;
     case 'combo': { const e = G.enemies.find(o => o.id === m.eid); if (e) UI.floatText(e.pos.clone().add(new THREE.Vector3(0, 2.0, 0)), '連携!', '#ffe08a'); break; }
     case 'loot': for (const l of m.items) addPickup(l.id, 'loot', new THREE.Vector3(l.x, l.y||0, l.z), { mat: l.mat, gear:l.gear }); break;
     case 'pick': { const k = G.pickups.find(o => o.id === m.id); if (k) pickUp(k, true); break; }
@@ -2053,6 +2116,7 @@ function frame(now) {
   else if (portal && p.pos.distanceTo(portal.position) < 2.4) hint = G.floor === 0 ? `${keyOf('interact')}: 迷宮の門をくぐる${G.resumeFloor > 0 ? `(記録の続き 第${G.resumeFloor}層へ)` : ''}(全員がそろってから)` : guardianAlive() ? '転移陣は門番に守られている — 門番を倒せ' : `${keyOf('interact')}: 転移陣に触れて次の層へ`;
   else if ((hint = coopHint(p, keyOf('interact')))) {}
   else if ((hint = roomHint(p, keyOf('interact')))) {}
+  else if ((hint = gimmickHint(p, keyOf('interact')))) {}
   else if (G.work) hint = '';
   else for (const k of G.pickups) if (!k.opened && k.pos.distanceTo(p.pos) < 2.6) { hint = keyOf('interact') + ': ' + ({ scroll: '古文書を読む', herb: '霊草を摘む', crystal: '魔晶を砕き取る(押し続ける)', mushroom: '灯り茸を摘む', oddshroom: '怪し茸を食べる(何が起きるか…)', chest: k.data?.frozen ? '宝箱を開ける' : '宝箱をこじ開ける(押し続ける)', loot: '拾う' })[k.kind]; break; }
   if (!hint && G.held === 'item' && G.quick?.[G.heldSlot]) { const k = G.quick[G.heldSlot]; hint = `${keyOf('use')}: ${itemName(k)}を${k.startsWith('gear_') ? '装備する' : USABLE.includes(k) ? '使う' : (k === 'scroll' || k.startsWith('scroll_') || k.startsWith('tome_')) ? '読む' : '手に持っている(素材は使えない)'} ・ ${keyOf('item' + (G.heldSlot + 1))}をもう一度で魔導書へ`; }
@@ -2200,10 +2264,11 @@ function updatePlayer(dt) {
   if (camY == null || eyeY < camY || eyeY - camY > 2.5) camY = eyeY; else camY += (eyeY - camY) * Math.min(1, dt * 12);
   camera.position.set(p.pos.x, camY, p.pos.z);
   camera.rotation.set(p.pitch, p.yaw, p.downed ? 0.4 : p.status.drunk ? Math.sin(G.time * 1.3) * 0.14 : 0);
-  if (G.shake > 0) { G.shake = Math.max(0, G.shake - dt * 1.6); const k = G.shake * 0.035; camera.rotation.x += (Math.random() - 0.5) * k; camera.rotation.y += (Math.random() - 0.5) * k; }
+  if (G.shake > 0) { G.shake = Math.max(0, G.shake - dt * 1.6); const k = G.shake * 0.035 * (settings.shake ?? 100) / 100; camera.rotation.x += (Math.random() - 0.5) * k; camera.rotation.y += (Math.random() - 0.5) * k; }
 
   // 手元の書物
   // 音楽の曲調: 守護者と戦っている / 魔物に追われている / 聖域にいる / 探索している。詠唱中は音を下げる
+  updateGimmicks(dt, p, G.time || 0);
   G.musicT = (G.musicT || 0) - dt;
   if (G.musicT <= 0) {
     G.musicT = 0.4;
@@ -2220,3 +2285,6 @@ function updatePlayer(dt) {
   staffLight.intensity = ((G.held === 'grimoire' ? 5 : 3) + (p.chanting ? 3 : 0)) * (1 - nearBook * 0.65);
   G.readAmount = nearBook;
 }
+
+// タイトル画面の背景(大書庫の景色)。ロビーが見えている間だけ動く
+startTitle();

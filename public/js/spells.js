@@ -11,6 +11,7 @@ import { intersectsDragon } from './dragon-model.js';
 import { glowSprite, runeCircleTex } from './textures.js';
 import { sfx } from './audio.js';
 import { bigImpact, updateVfx } from './vfx.js';
+import { makeBolt, castCircle, impactRing } from './spellfx.js';
 import { updateDying } from './entities.js';
 
 // 中級(威力1.0)で与える基本ダメージ。初級は約0.58倍、上級は約1.6倍
@@ -179,8 +180,9 @@ export const FX = {
     if (spell.effects.includes('ward')) sfx.ward(caster.pos);
     const pureLight = spell.effects.includes('light') && !spell.elements.length && spell.effects.length === 1;
     if (!pureLight) {
-      flash(caster.pos.clone().setY(1.5), color, 18, 0.3);
-      burst(caster.pos.clone().setY(1.4), color, 25, { speed: 3, up: 1 });
+      // 自分が放つ時は、目の前で光と粒が弾けて画面が白く飛ばないよう、足元で控えめに
+      if (caster === G.player) { flash(caster.pos.clone().setY(0.4), color, 5, 0.25, 8); burst(caster.pos.clone().setY(0.25), color, 14, { speed: 2.2, up: 0.4, size: 0.22, life: 0.5 }); }
+      else { flash(caster.pos.clone().setY(1.5), color, 18, 0.3); burst(caster.pos.clone().setY(1.4), color, 25, { speed: 3, up: 1 }); }
     }
     if(castUtility(caster,spell,aim,local,this))return;
     const pl = payload(spell);
@@ -253,8 +255,9 @@ export const FX = {
       return;
     }
     if (form === 'lance') {
-      for (let i = 0; i < count; i++) {
-        const d = dir.clone(); if (count > 1) d.applyAxisAngle(new THREE.Vector3(0, 1, 0), (i - 0.5) * 0.12);
+      const shots = count * (spell.split ? 3 : 1);      // 分裂: 三つに分かれて扇状に飛ぶ
+      for (let i = 0; i < shots; i++) {
+        const d = dir.clone(); if (shots > 1) d.applyAxisAngle(new THREE.Vector3(0, 1, 0), (i - (shots - 1) / 2) * (spell.split ? 0.16 : 0.12));
         this.spawnProjectile({ caster, spell, pl, color, pos: origin.clone(), vel: d.multiplyScalar(26 * (spell.swift ? 1.8 : 1)), local });
       }
     } else if (form === 'nova') {
@@ -304,10 +307,10 @@ export const FX = {
   },
 
   spawnProjectile({ caster, spell, pl, color, pos, vel, local, team }) {
-    const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color, blending: THREE.AdditiveBlending, depthWrite: false }));
-    core.scale.setScalar(0.9 * Math.min(1.8, spell.power));
-    const inner = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-    const g = new THREE.Group(); g.add(core, inner); g.position.copy(pos); G.scene.add(g);
+    // 属性ごとの姿の魔弾と、放つ瞬間の魔法陣
+    const hostileBolt = (team || caster.team) === 'monster';
+    const g = G.dbgOldBolt ? new THREE.Group() : makeBolt(spell.elements, color, spell.power, hostileBolt); g.position.copy(pos); G.scene.add(g);
+    if (!hostileBolt && !G.dbgOldBolt) castCircle(pos, vel, color, spell.power, caster === G.player);
     G.projectiles.push({ caster, spell, pl, color, pos, vel, mesh: g, life: 2.2, age: 0, local, team: team || caster.team, radius: 0.35 });
   },
 
@@ -405,6 +408,12 @@ export const FX = {
     if (!mouthStagger && t.vulnUntil > (G.time || 0)) a *= 1.6; // Interrupt hit already received the same exposure bonus.
     if (t.status?.stigma) a *= 1.25; // 聖痕
     if (t.status?.cursed) a *= 1.25; // 付与の呪い
+    // 連携: 別の魔導師が、違う属性で4秒以内に続けて当てると傷が増える(仲間と属性を散らすほど強い)
+    if (!t.isMage && src?.isMage && elements.length && !opts.silent && !opts.enchantHit) {
+      const now = G.time || 0, L = t.lastHit;
+      if (L && L.id !== src.id && L.el !== elements[0] && now - L.t < 4) { a *= 1.25; G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 2.0, 0)), '連携!', '#ffe08a'); }
+      t.lastHit = { id: src.id, el: elements[0], t: now };
+    }
     if (t.guardian && t.barrier && !opts.silent) { const k = G.guardHit?.(t, src) ?? 1; a *= k; if (k < 1) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 1.6, 0)), '結界', '#d0a0ff'); }
     if (t.T?.guard && !opts.silent) {
       const f = new THREE.Vector3(-Math.sin(t.yaw), 0, -Math.cos(t.yaw));
@@ -531,6 +540,12 @@ export const FX = {
     for (let i = G.projectiles.length - 1; i >= 0; i--) {
       const p = G.projectiles[i];
       p.age += dt; p.life -= dt;
+      if (p.spell.homing && p.team !== 'monster') {     // 追尾: 前方の近い敵へ、速さを保ったまま曲がる
+        let best = null, bd = 16 * 16;
+        const fwd = p.vel.clone().normalize();
+        for (const t of G.enemies) { if (!t.alive) continue; const to = t.pos.clone().setY(t.pos.y + 1).sub(p.pos), d2 = to.lengthSq(); if (d2 < bd && to.normalize().dot(fwd) > 0.2) { bd = d2; best = t; } }
+        if (best) { const sp = p.vel.length(), want = best.pos.clone().setY(best.pos.y + 1).sub(p.pos).normalize(); p.vel.copy(fwd.lerp(want, Math.min(1, dt * 4.5)).normalize().multiplyScalar(sp)); }
+      }
       const step = p.vel.clone().multiplyScalar(dt);
       let hit = null, end = p.life <= 0, ff = false;
       const sub = 4;
@@ -560,10 +575,12 @@ export const FX = {
       }
       // 尾を引く光
       p.mesh.position.copy(p.pos);
-      for (let k = 0; k < 3; k++) G.particles.emit(p.pos.clone().add(rv(0.08)), rv(0.4), p.color, 0.5, 0.35);
+      p.mesh.userData.tick?.(dt, p.vel);
+      G.particles.emit(p.pos.clone().add(rv(0.08)), rv(0.4), p.color, 0.4, 0.3);
       if (hit || end) {
         const pw = p.team === 'monster' ? 0.45 : p.spell.power;
         bigImpact(p.pos.clone(), p.color, pw, p.spell.elements);
+        impactRing(p.pos.clone(), p.color, pw);
         flash(p.pos, p.color, 30 + pw * 20, 0.32, 14 + pw * 4);
         // 壁に当たった: 強い術なら壁を砕く(判定は術者の端末で)
         if (end && !hit && p.team !== 'monster' && isWallAt(p.pos.x, p.pos.z)) G.onWallHit?.(p.pos.clone(), p.spell, p.local);
@@ -574,10 +591,11 @@ export const FX = {
           if (p.team === 'monster') FX.damage(hit, p.pl.dmg, ['void'], p.caster, {});
           else {
             applyPayload(p.spell, p.caster, hit, p.pl, 1, p.vel.clone().setY(0).normalize(), p.pos);
-            if (p.spell.elements.includes('thunder')) this.chain(p, hit);
+            if (p.spell.elements.includes('thunder') || p.spell.chain) this.chain(p, hit);
           }
         }
-        G.scene.remove(p.mesh); G.projectiles.splice(i, 1);
+        if (p.mesh.userData.dispose) p.mesh.userData.dispose(); else G.scene.remove(p.mesh);
+        G.projectiles.splice(i, 1);
       }
     }
     // 罠

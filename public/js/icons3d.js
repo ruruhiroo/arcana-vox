@@ -1,5 +1,6 @@
 // 所持品の絵を、立体の模型から一度だけ撮って作る(陰影のある静物写真のように)
 // 撮った画像は使い回す。WebGL が使えない時は平面の絵(icons.js)のまま
+import { makeModel, preloadModels } from './glbmodels.js';
 import * as THREE from 'three';
 import { makePickupMesh } from './props.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -11,14 +12,28 @@ const BL = {};
 let blLoading = null;
 export function preloadItems() {
   if (blLoading) return blLoading;
-  blLoading = new Promise(res => new GLTFLoader().load('models/items.glb', g => {
+  blLoading = Promise.all([new Promise(res => new GLTFLoader().load('models/items.glb', g => {
     for (const o of g.scene.children) if (o.name.startsWith('item_')) BL[o.name.slice(5)] = o;
-    cache.clear(); // 先に撮った仮の絵は撮り直す
     res(true);
-  }, undefined, e => { console.warn('items.glb', e); res(false); }));
+  }, undefined, e => { console.warn('items.glb', e); res(false); })), preloadModels()]).then(([ok]) => { cache.clear(); return ok; }); // 先に撮った仮の絵は撮り直す
   return blLoading;
 }
+// 彫り直した道具(models/item-*.glb)。材質の名前で、硝子・薬液・結晶・灯りの見え方を決める
+function forged(key) {
+  const f = makeModel('item-' + key); if (!f) return null;
+  f.traverse(o => {
+    if (!o.isMesh) return;
+    const m = o.material = o.material.clone(); o.frustumCulled = false;
+    m.envMapIntensity = m.metalnessMap ? 0.8 : 0.3;
+    if (m.name === 'glass') { m.transparent = true; m.opacity = 0.26; m.depthWrite = false; m.side = THREE.DoubleSide; m.emissiveIntensity = 0; m.roughness = 0.05; o.castShadow = false; }
+    else if (m.name === 'liquid') m.emissiveIntensity = 0.75;
+    else if (m.name === 'crystal') { m.transparent = true; m.opacity = 0.9; m.emissiveIntensity = 0.5; m.flatShading = true; m.roughness = 0.1; }
+    else if (m.name === 'glow') m.emissiveIntensity = key === 'shard' ? 1.0 : 0.45;
+  });
+  return f;
+}
 function blender(key) {
+  const fz = forged(key); if (fz) return fz;
   const src = BL[key]; if (!src) return null;
   const o = src.clone(true);
   o.position.set(0, 0, 0);
@@ -206,7 +221,10 @@ function gearModel(it) {
 }
 
 // 手に持つ時などに使う、道具の模型そのもの
-export function itemModel(k) { const b = blender(k); if (b) { b.rotation.set(0, 0, 0); return b; } const g = MODELS[k]?.(); if (g) g.rotation.set(0, 0, 0); return g || null; }
+export function itemModel(k) {
+  // 一人称の手は、彫り直した模型(models/fp-hand_*.glb)があればそれを使う
+  if (k.startsWith('hand_')) { const f = makeModel('fp-' + k); if (f) { f.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.envMapIntensity = 0.3; o.frustumCulled = false; } }); return f; } }
+  const b = blender(k); if (b) { b.rotation.set(0, 0, 0); return b; } const g = MODELS[k]?.(); if (g) g.rotation.set(0, 0, 0); return g || null; }
 export function equipmentModel(it){return it?(blenderGear(it)||gearModel(it)):null;}
 function blenderIcon(k) {
   return blender(k);

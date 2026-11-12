@@ -62,7 +62,7 @@ import { P2PNet, makeRoomCode } from './p2p.js';
 import { buildViewModel } from './viewmodel.js';
 import { startTutorial } from './tutorial.js';
 import { makePickupMesh } from './props.js';
-import { setupGoals, updateGoals } from './goals.js';
+import { setupGoals, updateGoals, sealNeed } from './goals.js';
 import { SPIRITS, BOND_NAMES, bondMul, bondLevel, gainBond, scold, forgive, spiritsOf } from './spirits.js';
 import { offerQuest, questEvent } from './quests.js';
 import { hazardImpact, trigger as triggerHazard, updateHazards } from './hazards.js';
@@ -103,6 +103,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x030202);
 scene.fog = new THREE.FogExp2(0x060403, 0.042);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 120);
+G.camera = camera;
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 const hemi = new THREE.HemisphereLight(0x3a3550, 0x120c08, 0.8); scene.add(hemi); // 真っ暗にはしない(魔物の姿が分かる程度)
@@ -245,7 +246,8 @@ async function startGame({ tutorial = false } = {}) {
   G.resumeFloor = run?.floor || 0;
   if (run?.affinity) chosenEl = run.affinity;
   if (run?.keys) G.run.keys = run.keys;
-  await Promise.all([preloadModels(), preloadItems().then(ok => { if (ok) VM.refreshItems(); })]); // 魔物と道具のモデル(Blender 製)
+  if (run?.play) G.run.time = run.play;
+  await Promise.all([preloadModels(), preloadItems()]).then(([, ok]) => { if (ok) VM.refreshItems(); }); // 手の模型は両方が届いてから付け直す // 魔物と道具のモデル(Blender 製)
   if (!window.desktop && navigator.mediaDevices?.getUserMedia && !G.micStream) {
     $('netNote').textContent = 'マイクの使用を許可してください(声の詠唱とボイスチャットに使います)';
     try { G.micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); G.micOk = true; }
@@ -320,7 +322,7 @@ async function startGame({ tutorial = false } = {}) {
     if(checkpoint.explored?.length===W*H)G.explored.set(checkpoint.explored);
     if(G.sanctuary)G.sanctuary.reserve=checkpoint.reserve??1;
     if(G.dungeon.arena)G.dungeon.arena.phase=checkpoint.arena==='cleared'?'cleared':'dormant';
-    Object.assign(G.run,checkpoint.run);Object.assign(G.floorStats||{},checkpoint.floorStats);
+    Object.assign(G.run,checkpoint.run);if(!(G.run.time<1e7))G.run.time=0;if(!(G.run.lapAt<=G.run.time))G.run.lapAt=G.run.time;Object.assign(G.floorStats||{},checkpoint.floorStats);
     if(G.goals){G.goals.rewarded=!!checkpoint.progress?.goals?.rewarded;for(const goal of G.goals.list)goal.done=!!checkpoint.progress?.goals?.done?.includes(goal.id);}
     restoreRoomProgress(checkpoint.progress?.room);restoreCoopProgress(checkpoint.progress?.coop);
     G.restoring=false;G.pendingCheckpoint=null;saveBook();UI.log('聖域の記録から再開した。','#d6e5bb');
@@ -401,7 +403,7 @@ function setupFloor(seed, floor, reset = false) {
     if (s.final) { e.final = true; e.name = '【終章の詠灰竜】'; e.maxHp = e.hp = Math.round(e.maxHp * 1.8); e.dmg *= 1.2; }
     return e;
   });
-  if (reset) G.run = { keys: 0, done: false };
+  if (reset) G.run = { keys: 0, done: false, time: G.run?.time || 0 }; // 旅の時計は、倒れても進み続ける
   if (G.mode === 'coop') {
     const people = G.net ? Math.max(1, G.net.players?.size || 1) : 1;
     // ひとりなら控えめに、人数が増えるほど手強く
@@ -430,6 +432,7 @@ function setupFloor(seed, floor, reset = false) {
   let kid = 0;
   for (const p of d.scrolls) addPickup(`k${kid++}`, 'scroll', p);
   for (const p of d.herbs) addPickup(`k${kid++}`, 'herb', p);
+  for (const l of d.loots || []) addPickup(`kl${kid++}`, 'loot', l.pos, { mat: l.mat }); // 部屋の性格に合わせて転がっている素材(鍛冶場の鉄屑など)
   for (const c of d.crystals) addPickup(`k${kid++}`, 'crystal', c.pos, { dir: c.dir });
   for (const p of d.chests) addPickup(`k${kid++}`, 'chest', p);
   for (const p of d.mushrooms || []) addPickup(`k${kid++}`, 'mushroom', p);
@@ -504,8 +507,13 @@ function setupFloor(seed, floor, reset = false) {
 }
 const isWall = (x, z) => { const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL); return cx < 0 || cz < 0 || cx >= W || cz >= H || !G.dungeon.grid[cz * W + cx]; };
 
+const clock = t => { t = Math.round(t || 0); const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), s = t % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(s).padStart(2, '0'); };
 function nextFloor(reset = false) {
   if(!reset&&G.floor>0&&guardianAlive())return;
+  if (!reset && G.floor > 0 && G.run) { // 踏破にかかった時間を告げる(調整の手がかり)
+    const lap = (G.run.time || 0) - (G.run.lapAt || 0); G.run.lapAt = G.run.time || 0;
+    UI.log(`第${G.floor}層 踏破 — ${clock(lap)}(通算 ${clock(G.run.time)})`, '#ffe08a');
+  }
   const seed = (Math.random() * 1e9) | 0;
   // 全滅したら迷宮の入口へ戻る(手ほどきでは第1層から)。入口の門は記録した層へ続く
   const floor = reset ? (G.noSave ? 1 : 0) : G.floor === 0 && G.resumeFloor > 0 ? G.resumeFloor : G.floor + 1;
@@ -529,7 +537,7 @@ function wipeProgress() {
 function saveSnapshot() {
   if (G.noSave || !G.player || G.restoring) return false;
   saveBook();
-  saveRun({ floor: G.floor === 0 ? G.resumeFloor : G.floor, inv: { ...G.inv }, quick: G.quick, affinity: G.affinity, keys: G.run?.keys || 0, name: G.player.name, checkpoint:captureCheckpoint(G,BOOK,{room:roomProgress(),coop:coopProgress(),goals:{rewarded:G.goals?.rewarded,done:G.goals?.list.filter(g=>g.done).map(g=>g.id)||[]}}) });
+  saveRun({ floor: G.floor === 0 ? G.resumeFloor : G.floor, inv: { ...G.inv }, quick: G.quick, affinity: G.affinity, keys: G.run?.keys || 0, play: Math.round(G.run?.time || 0), name: G.player.name, checkpoint:captureCheckpoint(G,BOOK,{room:roomProgress(),coop:coopProgress(),goals:{rewarded:G.goals?.rewarded,done:G.goals?.list.filter(g=>g.done).map(g=>g.id)||[]}}) });
   return true;
 }
 
@@ -547,7 +555,7 @@ function makePortal(pos) {
 }
 
 // ---------- 拾える物 ----------
-const MAT_COLORS = { herb: 0x6aff7a, crystal: 0x6ab0ff, bone: 0xe8dcc0, iron: 0xa0a0b0, scroll: 0xffe08a, potion: 0xff6a6a, ether: 0x6a8aff, amulet: 0x9fd8ff, flash: 0xffffff, lantern: 0xffd27a, frag: 0xe8d0a0, tome_fire: 0xff7a30, tome_ice: 0x8fd8ff, tome_thunder: 0xc8b8ff, tome_wind: 0x9effc8, tome_holy: 0xfff0b0, tome_void: 0xb070ff };
+const MAT_COLORS = { shard: 0xd8a0ff, herb: 0x6aff7a, crystal: 0x6ab0ff, bone: 0xe8dcc0, iron: 0xa0a0b0, scroll: 0xffe08a, potion: 0xff6a6a, ether: 0x6a8aff, amulet: 0x9fd8ff, flash: 0xffffff, lantern: 0xffd27a, frag: 0xe8d0a0, tome_fire: 0xff7a30, tome_ice: 0x8fd8ff, tome_thunder: 0xc8b8ff, tome_wind: 0x9effc8, tome_holy: 0xfff0b0, tome_void: 0xb070ff };
 function addPickup(id, kind, pos, data = {}) {
   // 見た目は props.js (古文書・霊草・魔晶・宝箱・戦利品)
   const g = makePickupMesh(kind, data, MAT_COLORS);
@@ -729,7 +737,7 @@ G.wordCore = id => WORD_BY_ID[id]?.core || '';
 function pickUnknownWord(exclude = []) {
   const unknown = WORDS.filter(w => !G.known.has(w.id) && !w.cursed && !exclude.includes(w.id));
   if (!unknown.length) return null;
-  const weight = w => (w.attack ? 3 : ({ element: 3, form: 3, effect: 2, mod: 1.5, target: 1, trigger: 1 })[w.cat]) * (G.affinity && AFFINITY_SECOND[G.affinity]?.includes(w.id) ? 3 : 1);
+  const weight = w => (w.attack ? 3 : ({ element: 0.12, form: 3, effect: 2, mod: 1.5, target: 1, trigger: 1 })[w.cat]) * (G.affinity && AFFINITY_SECOND[G.affinity]?.includes(w.id) ? 3 : 1);
   let r = Math.random() * unknown.reduce((s, w) => s + weight(w), 0), pick = unknown[0];
   for (const w of unknown) { r -= weight(w); if (r <= 0) { pick = w; break; } }
   return pick;
@@ -749,6 +757,11 @@ function learnWord(pick) {
 }
 
 G.onEnemyKilled = e => {
+  { // 魔物の記録: 初めて討った魔物の由来を魔導書に記す
+    const key = e.type === 'dragon' ? 'g_' + (e.dragon?.element || 'fire') : e.type;
+    BOOK.seen ||= {};
+    if (!BOOK.seen[key] && !G.noSave) { BOOK.seen[key] = true; saveBook(); UI.log(`魔導書に『${(e.name || '').replace(/[【】]/g, '')}』の由来が記された (Tab → 魔物の記録)`, '#d8c48a'); }
+  }
   if (G.stats) G.stats.kills++;
   if (G.floorStats) { G.floorStats.kills++; if (e.boss) G.floorStats.boss = true; }
   if (e.boss) G.achieve('BOSS');
@@ -768,6 +781,8 @@ G.onEnemyKilled = e => {
   const n = 1 + (Math.random() < 0.5) + (e.boss ? 3 : 0);
   for (let i = 0; i < n; i++) items.push(drops[Math.floor(Math.random() * drops.length)]);
   if (Math.random() < (e.boss ? 1 : 0.08)) items.push('scroll');
+  // 言霊の欠片: 守護者は三つ、精鋭は一つ、ほかはごく稀に落とす
+  if (e.type === 'dragon') items.push('shard', 'shard', 'shard'); else if (e.elite || e.boss) items.push('shard'); else if (Math.random() < 0.03) items.push('shard');
   const list = items.map(mat => ({ id: `L${G.netId || 0}_${lootCounter++}`, mat, x: e.pos.x + rand(-0.8, 0.8), y:e.pos.y, z: e.pos.z + rand(-0.8, 0.8) }));
   if(e.boss||e.elite||G.floorStats?.kills===3||G.floorStats?.kills%6===0||Math.random()<.16){const gear=rollItem(G.floor);list.push({id:`L${G.netId||0}_${lootCounter++}`,mat:gearKey(gear),gear,x:e.pos.x,y:e.pos.y,z:e.pos.z});}
   for (const l of list) addPickup(l.id, 'loot', new THREE.Vector3(l.x, l.y??e.pos.y, l.z), { mat: l.mat,gear:l.gear });
@@ -904,6 +919,8 @@ function fizzle(msg) {
   UI.log('✖ ' + msg, '#ff9a8a');
 }
 
+G.debugNextFloor = () => nextFloor(); // 確かめる用: 次の層へ
+G.debugChant = t => finishChant(t, t); // 確かめる用: 文字で術を放つ
 function finishChant(text, raw = text) {
   if (!canCast()) { clearChant(); return; }
   if (G.player.status.drinking) { clearChant(); fizzle('薬を飲んでいる最中だ'); return; }
@@ -1303,7 +1320,7 @@ function victory() {
   grantGear(it); BOOK.cleared = (BOOK.cleared || 0) + 1; saveBook();
   G.slowmo = 0.6; G.shake = 0.6; sfx.meiei?.();
   const ov = $('victory');
-  ov.querySelector('.vstats').innerHTML = `到達: 第${G.floor}層 ・ 討伐: ${G.stats?.kills || 0}体 ・ 名詠: ${G.stats?.eloquent || 0}回<br>褒美: <b style="color:${RARITY[it.rarity].color}">${it.name}</b>〔${RARITY[it.rarity].name}〕`;
+  ov.querySelector('.vstats').innerHTML = `所要: ${clock(G.run?.time)} ・ 到達: 第${G.floor}層 ・ 討伐: ${G.stats?.kills || 0}体 ・ 名詠: ${G.stats?.eloquent || 0}回<br>褒美: <b style="color:${RARITY[it.rarity].color}">${it.name}</b>〔${RARITY[it.rarity].name}〕`;
   ov.classList.remove('hidden'); G.uiOpen = true; document.exitPointerLock?.();
 }
 $('vContinue').onclick = () => { $('victory').classList.add('hidden'); G.uiOpen = false; resumeLock(); UI.log('さらに深く — 迷宮はまだ続いている', '#ffe08a'); };
@@ -1416,7 +1433,7 @@ const itemCard = (it, btns) => `<div class="eitem r${it.rarity}"><b style="color
 // ---------- 所持品 ----------
 const invEl = $('inv');
 const invOpen = () => !invEl.classList.contains('hidden');
-const MAT_INFO = { herb: ['霊草', '導灯の素材'], crystal: ['魔晶', '魔力薬・護符・閃光玉の素材'], bone: ['骨片', '護符の素材'], iron: ['鉄屑', '閃光玉・導灯の素材'] };
+const MAT_INFO = { shard: ['言霊の欠片', '写本・秘伝書を綴る素材。守護者や精鋭を討つか、覚えている古文書を砕いて得る'], herb: ['霊草', '導灯の素材'], crystal: ['魔晶', '魔力薬・護符・閃光玉の素材'], bone: ['骨片', '護符の素材'], iron: ['鉄屑', '閃光玉・導灯の素材'] };
 const EL_NAME = { fire: '紅蓮', ice: '氷獄', thunder: '雷霆', wind: '颶風', holy: '聖光', void: '深淵' };
 const ITEM_INFO = {
   ether: ['魔力薬', '飲むと数秒かけて魔力が55戻る'], amulet: ['護符', '守護の障壁を張る'], flash: ['閃光玉', '周りの魔物を怯ませる'], lantern: ['導灯', 'この層の地図を照らす'],
@@ -1433,7 +1450,7 @@ function readItem(k) {
   if (k === 'scroll') { G.inv.scroll--; learnRandomWord(); if (G.floorStats) G.floorStats.scrolls++; }
   else if (k.startsWith('scroll_')) {
     G.inv[k]--; const w = WORD_BY_ID[k.slice(7)];
-    if (!w || G.known.has(w.id)) { invAdd('crystal', 1, true); UI.log(`『${w?.core || '？'}』はもう覚えている — 古文書は塵になり、魔晶が残った`, '#a8a090'); }
+    if (!w || G.known.has(w.id)) { invAdd('shard', 1, true); UI.log(`『${w?.core || '？'}』はもう覚えている — 古文書は砕け、言霊の欠片が残った(写本を綴る素材になる)`, '#d8b8ff'); }
     else learnWord(w);
     if (G.floorStats) G.floorStats.scrolls++;
   }
@@ -1616,7 +1633,10 @@ document.addEventListener('pointerlockchange', () => {
 function interact() {
   const p = G.player;
   if (!p.alive || p.downed) return;
-  if(arenaDoorNear(p.pos)){if(G.isHost)openArenaDoor();else G.net?.send({t:'arenaOpen',to:G.hostId});return;}
+  if(arenaDoorNear(p.pos)){
+    const left=sealNeed()-(G.floorStats?.kills||0);
+    if(left>0){UI.log(`封印はまだ固い — 声を失ったものを、あと ${left} 体鎮めよ`,'#d8b8ff');return;}
+    if(G.isHost)openArenaDoor();else G.net?.send({t:'arenaOpen',to:G.hostId});return;}
   // 聖域の書見台: 魔導書を広げて呪文を書き直せる
   if (G.sanctuary && p.pos.distanceTo(G.sanctuary.lecternPos) < 2.2) { if(saveSnapshot()){sfx.learn();UI.log('聖域に記録した。次回はここから再開する。','#d6e5bb');} return; }
   if (G.floor === 0) {
@@ -1936,7 +1956,7 @@ function onNet(m) {
     case 'ecast': { const e = G.enemies.find(x => x.id === m.eid || x.id === m.id); if (e) G.fx.cast(e, G.fx.spellFromIds(m.words), m.aim); break; }
     case 'floor': if (m.sync && m.floor === G.floor && m.seed === G.dungeon.seed) break; if (m.reset) wipeProgress(); setupFloor(m.seed, m.floor, !!m.reset); sfx.portal();
       if (m.reset && !G.noSave) UI.banner('全滅', '魔導書は白紙に戻った — 覚えた言霊も、書いた呪文も、装備も、すべて失った', 5); else UI.banner(`第${m.floor}層`, '迷宮は形を変えた', 3); break;
-    case 'arenaOpen': {const who=findMage('p'+m.from);if(G.isHost&&who?.alive&&arenaDoorNear(who.pos))openArenaDoor();break;}
+    case 'arenaOpen': {const who=findMage('p'+m.from);if(G.isHost&&who?.alive&&arenaDoorNear(who.pos)&&(G.floorStats?.kills||0)>=sealNeed())openArenaDoor();break;}
     case 'portalReq': if (G.isHost) nextFloor(); break;
     case 'flash': if (G.isHost) for (const e of G.enemies) if (e.alive && Math.hypot(e.pos.x - m.x, e.pos.z - m.z) < 10) e.stun = 2.5; break;
     case 'down': { const r = findMage('p' + m.from); if (r) UI.log(`${r.name}が${m.pvp ? '討たれた' : '倒れた'}`, '#ff9a8a'); if (m.pvp && m.by === G.player.id) G.player.kills++; break; }
@@ -1963,10 +1983,11 @@ function netTick(dt) {
 let last = 0, exploreT = 0, stepT = 0, bob = 0;
 function loop(now) {
   requestAnimationFrame(loop);
+  if (G.debugHold) return; // 撮影中は、時間を外から 1コマずつ進める
   frame(now);
 }
 // 確かめる用: 画面の更新に頼らず、ゲームの時間を進める(秒)
-G.debugAdvance = sec => { let t = last; for (let s = 0; s < sec; s += 1 / 30) { t += 1000 / 30; frame(t); } last = performance.now(); };
+G.debugAdvance = sec => { let t = last; for (let s = 0; s < sec - 1e-6; s += 1 / 30) { t += 1000 / 30; frame(t); } if (!G.debugHold) last = performance.now(); };
 function frame(now) {
   const realDt = Math.min(0.05, (now - last) / 1000); last = now;
   // 名詠の瞬間は時の流れが緩む
@@ -2018,7 +2039,7 @@ function frame(now) {
   // 操作ヒント
   let hint = '';
   showElCard(G.floor === 0 ? shrineNear(p.pos)?.el : null); // 祭壇の前では属性の札を出す
-  if(arenaDoorNear(p.pos))hint=`${keyOf('interact')}: 封印の大扉を開ける — 入場後は討伐まで退路が閉ざされる`;
+  if(arenaDoorNear(p.pos)){const left=sealNeed()-(G.floorStats?.kills||0);hint=left>0?`封印の大扉 — 封印が固い(魔物をあと ${left} 体鎮めよ)`:`${keyOf('interact')}: 封印の大扉を開ける — 入場後は討伐まで退路が閉ざされる`;}
   else if (G.sanctuary && p.pos.distanceTo(G.sanctuary.lecternPos) < 2.2) hint = `${keyOf('interact')}: 聖域に記録する（次回ここから再開）`;
   else if (G.floor === 0 && shrineNear(p.pos)) { const s = shrineNear(p.pos); hint = BOOK.affinityChosen ? (BOOK.affinityChosen === s.el ? `${EL_INFO[s.el].name}(${EL_INFO[s.el].sub}) — 誓いを立てた得意属性` : `${EL_INFO[s.el].name} — すでに${EL_INFO[BOOK.affinityChosen].name}に誓いを立てている`) : `${keyOf('interact')}: ${EL_INFO[s.el].name}(${EL_INFO[s.el].sub})に誓いを立てる(一度選ぶと変えられない)`; }
   else if (portal && p.pos.distanceTo(portal.position) < 2.4) hint = G.floor === 0 ? `${keyOf('interact')}: 迷宮の門をくぐる${G.resumeFloor > 0 ? `(記録の続き 第${G.resumeFloor}層へ)` : ''}(全員がそろってから)` : guardianAlive() ? '転移陣は門番に守られている — 門番を倒せ' : `${keyOf('interact')}: 転移陣に触れて次の層へ`;
@@ -2030,6 +2051,12 @@ function frame(now) {
   UI.prompt(hint);
 
   updateWork(dt);
+  // 戦っていない間は、画面の表示を静かに薄くする
+  if ((G.calmT = (G.calmT || 0) - dt) <= 0) {
+    G.calmT = 0.5;
+    const pl = G.player, near = pl && G.enemies.some(e => e.alive && (e.aggro || e.type === 'dragon' && G.dungeon?.arena?.phase === 'active') && e.pos.distanceToSquared(pl.pos) < 26 * 26);
+    document.getElementById('hud')?.classList.toggle('calm', !!pl && !near && !pl.chanting && pl.hp >= pl.maxHp * 0.98 && !pl.downed);
+  }
   updateGuardians(dt);
   updateChips(dt);
   updateCoop(dt, p);
@@ -2168,6 +2195,7 @@ function updatePlayer(dt) {
   if (G.shake > 0) { G.shake = Math.max(0, G.shake - dt * 1.6); const k = G.shake * 0.035; camera.rotation.x += (Math.random() - 0.5) * k; camera.rotation.y += (Math.random() - 0.5) * k; }
 
   // 手元の書物
+  if (G.run && G.floor > 0 && !G.run.done && !G.noSave) G.run.time = (G.run.time || 0) + dt; // 旅の時計(迷宮の中にいる間だけ進む)
   VM.update(dt, { bob, chanting: p.chanting, chantWords: p.chantWords, reading: G.reading && G.held === 'grimoire', alive: p.alive && !p.downed, time: G.time, drinkK: p.status.drinking ? 1 - p.status.drinking.t / (p.status.drinking.d || 1) : -1, work: G.work ? { kind: G.work.k.kind, prog: Math.min(1, G.work.t / G.work.dur) } : null });
   // 頁を読む・めくる間は、手元を照らす光を弱める(紙が白く飛ばないように)
   const nearBook = Math.max(VM.readAmount, VM.flipAmount > 0 ? 1 : 0);

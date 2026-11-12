@@ -1,5 +1,6 @@
 // 聖域(休息所): 各層に一つ。魔物は入れず、中にいると傷と魔力が癒える。書見台で魔導書を整えられる。
 // 部屋の選び方は層の生成結果だけで決まるので、オンラインでも全員が同じ場所になる。
+import { makeModel } from './glbmodels.js';
 import * as THREE from 'three';
 import { G } from './state.js';
 import { CELL } from './dungeon.js';
@@ -24,10 +25,12 @@ export function buildSanctuary(room) {
   const ring = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2.1, radius * 2.1), new THREE.MeshBasicMaterial({ map: runeCircleTex(), color: 0x9ad8ff, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
   ring.rotation.x = -Math.PI / 2; ring.position.y = 0.04; grp.add(ring);
   // 焚き火
+  const forgedFire = makeModel('decor-campfire');   // 彫り直した焚き火があれば、石と薪はそれに任せる
+  if (forgedFire) { forgedFire.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); grp.add(forgedFire); }
   const stone = new THREE.MeshStandardMaterial({ color: 0x5a554e, roughness: 0.95 });
-  for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16, 0), stone); s.position.set(Math.cos(a) * 0.45, 0.1, Math.sin(a) * 0.45); grp.add(s); }
+  if (!forgedFire) for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2; const s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16, 0), stone); s.position.set(Math.cos(a) * 0.45, 0.1, Math.sin(a) * 0.45); grp.add(s); }
   const wood = new THREE.MeshStandardMaterial({ color: 0x3a2412, roughness: 0.9 });
-  for (let i = 0; i < 3; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.7, 6), wood); l.rotation.set(Math.PI / 2 - 0.4, i * 2.1, 0); l.position.y = 0.15; grp.add(l); }
+  if (!forgedFire) for (let i = 0; i < 3; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.7, 6), wood); l.rotation.set(Math.PI / 2 - 0.4, i * 2.1, 0); l.position.y = 0.15; grp.add(l); }
   const fire = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color: 0xff9a40, blending: THREE.AdditiveBlending, depthWrite: false }));
   fire.position.y = 0.5; fire.scale.set(0.9, 1.3, 1); grp.add(fire);
   // 書見台(開いた本)

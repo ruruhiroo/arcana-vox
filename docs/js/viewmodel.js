@@ -1,4 +1,5 @@
 import { makeItemGrip, itemGripProfile } from './item-grip.js';
+import { makeBookHand, makeReachHand } from './fphand.js';
 // 一人称の手元: 片手で抱える魔導書(開いた頁に呪文が書かれている)
 // 頁は Canvas に描き、めくると書き換わる。右クリックで顔の前に掲げて読む。
 import * as THREE from 'three';
@@ -7,6 +8,7 @@ import { G, seeded } from './state.js';
 import { glowSprite, runeCircleTex } from './textures.js';
 import { rubyPieces } from './lexicon.js';
 import { itemModel } from './icons3d.js';
+import { makeModel } from './glbmodels.js';
 
 const W = 0.15, H = 0.21; // 片頁の大きさ
 
@@ -72,6 +74,45 @@ function parchment(g, w, h, seed) {
   const vg = g.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.8);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(110,70,20,0.45)');
   g.fillStyle = vg; g.fillRect(0, 0, w, h);
+}
+
+// 頁の傷み: 引っかき傷・擦れて薄れたインク・染み・インクの飛沫。strength を下げると控えめ(詠唱文は読めるままに)
+function wear(g, w, h, seed, strength = 1) {
+  const r = seeded(seed);
+  g.save();
+  // 擦れて薄れた所(羊皮紙の色が上からにじむ)
+  for (let i = 0; i < 7 * strength; i++) {
+    const x = r() * w, y = r() * h, rad = 30 + r() * 70;
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad);
+    gr.addColorStop(0, `rgba(232,216,178,${0.22 + r() * 0.2 * strength})`); gr.addColorStop(1, 'rgba(232,216,178,0)');
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  // 引っかき傷(細く長い線が文字を横切る。明るい線と、その脇の影)
+  g.lineCap = 'round';
+  for (let i = 0; i < 9 * strength; i++) {
+    let x = r() * w, y = r() * h; const a = r() * Math.PI, len = 40 + r() * 170, n = 6;
+    for (const [col, off, lw] of [['rgba(244,232,200,0.55)', 0, 1.6], ['rgba(70,40,10,0.22)', 1.6, 1]]) {
+      g.strokeStyle = col; g.lineWidth = lw * (0.6 + r() * 0.8); g.beginPath(); g.moveTo(x + off, y + off);
+      let px = x, py = y;
+      for (let k = 1; k <= n; k++) { px += Math.cos(a) * len / n + (r() - 0.5) * 5; py += Math.sin(a) * len / n + (r() - 0.5) * 5; g.lineTo(px + off, py + off); }
+      g.stroke();
+    }
+  }
+  // 染み(輪じみ)
+  for (let i = 0; i < 3 * strength; i++) {
+    const x = r() * w, y = r() * h, rad = 26 + r() * 60;
+    g.strokeStyle = `rgba(110,70,25,${0.1 + r() * 0.1})`; g.lineWidth = 2 + r() * 3; g.beginPath(); g.ellipse(x, y, rad, rad * (0.7 + r() * 0.4), r() * 3, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = 'rgba(120,80,30,0.05)'; g.fill();
+  }
+  // インクの飛沫
+  for (let i = 0; i < 14 * strength; i++) { g.fillStyle = `rgba(30,14,4,${0.25 + r() * 0.4})`; g.beginPath(); g.arc(r() * w, r() * h, 0.6 + r() * r() * 3.2, 0, Math.PI * 2); g.fill(); }
+  // 縁の欠けと焼け
+  for (let i = 0; i < 10; i++) {
+    const side = Math.floor(r() * 4), t = r(), x = side === 0 ? 0 : side === 1 ? w : t * w, y = side === 2 ? 0 : side === 3 ? h : t * h, rad = 14 + r() * 30;
+    const gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, 'rgba(60,34,10,0.5)'); gr.addColorStop(1, 'rgba(60,34,10,0)');
+    g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  g.restore();
 }
 
 // ふりがな付きの文章を折り返して描く
@@ -221,8 +262,27 @@ function makeGrimoire() {
   ribbon.position.set(0.012, -H * 0.3, 0.012); /* 属性で色が変わる */ ribbon.rotation.z = 0.08; root.add(ribbon);
   // めくれる頁
   const turnPivot = new THREE.Group(); root.add(turnPivot);
-  const turn = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ color: 0xa8946c, roughness: 0.95, side: THREE.DoubleSide }) /* 白すぎると灯火の光で眩しく光る */);
-  turn.position.x = W / 2; turnPivot.add(turn); turnPivot.position.z = 0.008; turnPivot.visible = false;
+  // 紙は綴じ目から順に起き上がり、外の縁が遅れてついてくる(しなる)。表には今まで開いていた頁、裏には次に開く頁が書かれている
+  const LN = 16;
+  const leafGeo = new THREE.PlaneGeometry(W, H, LN, 1);
+  const snap = () => { const c = document.createElement('canvas'); c.width = 640; c.height = 900; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return { canvas: c, tex: t }; };
+  const prev = { left: snap(), right: snap() };
+  const mirrored = canvas => { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = THREE.RepeatWrapping; t.repeat.x = -1; t.offset.x = 1; return t; };
+  const backTex = { left: mirrored(pages.left.canvas), prevLeft: mirrored(prev.left.canvas) };
+  const leafFront = new THREE.Mesh(leafGeo, new THREE.MeshBasicMaterial({ color: 0xc4b392, side: THREE.FrontSide }));
+  const leafBack = new THREE.Mesh(leafGeo, new THREE.MeshBasicMaterial({ color: 0xc4b392, side: THREE.BackSide }));
+  turnPivot.add(leafFront, leafBack); turnPivot.position.z = 0.0085; turnPivot.visible = false;
+  const leaf = { geo: leafGeo, front: leafFront, back: leafBack, prev, backTex, n: LN,
+    // angle: 0 = 右の頁の上に寝ている / π = 左の頁の上。lag = 外の縁の遅れ(rad)
+    bend(angle, lag) {
+      const pos = leafGeo.attributes.position, dx = W / LN;
+      let x = 0, z = 0;
+      for (let i = 0; i <= LN; i++) {
+        if (i) { const u = (i - 0.5) / LN, th = angle - lag * Math.pow(u, 1.6); x += Math.cos(th) * dx; z += Math.sin(th) * dx; }
+        for (const row of [0, 1]) { const k = row * (LN + 1) + i; pos.setX(k, x); pos.setZ(k, z + Math.sin(Math.min(1, i / LN * 1.6) * Math.PI) * 0.003); }
+      }
+      pos.needsUpdate = true;
+    } };
   // 詠唱中の光
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color: 0xffb060, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.6 }));
   glow.position.set(0, 0, 0.05); glow.scale.setScalar(0.2);
@@ -232,7 +292,7 @@ function makeGrimoire() {
   const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.011, 0), new THREE.MeshStandardMaterial({ color: 0x302018, emissive: 0x000000, emissiveIntensity: 2.2, metalness: 0.3, roughness: 0.25 }));
   gem.scale.set(1, 1.4, 0.7); gem.position.set(0, -H / 2 - 0.004, 0.006); root.add(gem);
   root.add(glow, ring, makeSpineHand());
-  return { root, pages, glow, ring, turnPivot, leather, gold, ribbon, gem };
+  return { root, pages, glow, ring, turnPivot, leather, gold, ribbon, gem, edgeMat, leaf };
 }
 
 function makeTextbook() {
@@ -363,12 +423,24 @@ export function buildViewModel(camera) {
     grim.glow.material.color.setHex(c ? c.glow : 0xffb060);
     grim.ring.material.color.setHex(c ? c.glow : 0xffd090);
     grim.gem.material.color.setHex(c ? c.glow : 0x302018); grim.gem.material.emissive.setHex(c ? c.glow : 0x000000);
+    tintBook();
     if (lastPage) renderPages(...lastPage);
+  }
+  // 彫った魔導書(models/fp-grimoire.glb)の革を、誓った属性の色に染める
+  function tintBook() {
+    if (!grim.forged) return;
+    const c = EL_COVER[bookEl];
+    grim.forged.traverse(o => {
+      if (!o.isMesh || o.material.name !== 'tint') return;
+      o.material.color.set(c ? c.base : '#4a1418').multiplyScalar(1.7);
+      o.material.emissive.setHex(c ? c.glow : 0x000000); o.material.emissiveIntensity = c ? 0.05 : 0;
+    });
   }
 
   function renderPages(spell, idx, total, info) {
-    lastPage = [spell, idx, total, info];
     const L = grim.pages.left, R = grim.pages.right;
+    if (lastPage && lastPage[1] !== idx) for (const s of ['left', 'right']) { const p = grim.leaf.prev[s]; p.canvas.getContext('2d').drawImage(grim.pages[s].canvas, 0, 0); p.tex.needsUpdate = true; grim.leaf.backTex.prevLeft.needsUpdate = true; }
+    lastPage = [spell, idx, total, info];
     let g = L.canvas.getContext('2d');
     parchment(g, 640, 900, 11 + idx);
     // 頁の魔法陣に、誓った属性の紋を薄く刷る
@@ -396,7 +468,8 @@ export function buildViewModel(camera) {
     } else {
       g.fillStyle = '#4a2a10'; g.font = '30px serif'; g.fillText('魔導書(Tab)で呪文を書き記せ', 320, 520);
     }
-    L.tex.needsUpdate = true;
+    wear(g, 640, 900, 301 + idx * 7, 1);
+    L.tex.needsUpdate = true; grim.leaf.backTex.left.needsUpdate = true;
     // 右頁: 唱える詠唱文 (ふりがな付き・大きく)
     g = R.canvas.getContext('2d');
     parchment(g, 640, 900, 23 + idx);
@@ -410,6 +483,7 @@ export function buildViewModel(camera) {
     }
     g.textAlign = 'center'; g.fillStyle = 'rgba(120,60,20,0.7)'; g.font = '22px serif';
     g.fillText('声に出して唱え切れ', 320, 860);
+    wear(g, 640, 900, 577 + idx * 13, 0.55); // 詠唱文は読めるよう、傷みは控えめ
     R.tex.needsUpdate = true;
   }
 
@@ -489,11 +563,21 @@ export function buildViewModel(camera) {
     holder.scale.setScalar(0.62 + 0.3 * e);
     // 頁めくり
     if (st.flip > 0) {
-      st.flip = Math.max(0, st.flip - dt * 3.2);
+      const lf = grim.leaf, fwd = st.flipDir > 0, PL = grim.pages.left, PR = grim.pages.right;
+      if (!st.flipping) {   // めくり始め: 紙の表に今までの頁、裏に次の頁。めくり終えるまで、紙の下になる側は前の頁のまま
+        st.flipping = true;
+        lf.front.material.map = fwd ? lf.prev.right.tex : PR.tex; lf.back.material.map = fwd ? lf.backTex.left : lf.backTex.prevLeft;
+        lf.front.material.needsUpdate = lf.back.material.needsUpdate = true;
+        (fwd ? PL : PR).mat.map = (fwd ? lf.prev.left : lf.prev.right).tex;
+      }
+      st.flip = Math.max(0, st.flip - dt * 2.1);
+      const k = 1 - st.flip, e2 = k * k * (3 - 2 * k);
+      const ang = fwd ? Math.PI * e2 : Math.PI * (1 - e2);
+      lf.bend(ang, Math.sin(k * Math.PI) * 1.05 * (fwd ? 1 : -1));
+      const shade = 0.72 + 0.28 * Math.abs(Math.cos(ang));          // 立っている間は陰る
+      lf.front.material.color.setHex(0xc4b392).multiplyScalar(shade); lf.back.material.color.setHex(0xc4b392).multiplyScalar(shade);
       grim.turnPivot.visible = st.flip > 0;
-      const k = 1 - st.flip;
-      grim.turnPivot.rotation.y = st.flipDir > 0 ? -Math.PI * k : -Math.PI * (1 - k);
-      grim.turnPivot.position.z = 0.008 + Math.sin(k * Math.PI) * 0.02;
+      if (st.flip <= 0) { st.flipping = false; PL.mat.map = PL.tex; PR.mat.map = PR.tex; }
     }
     const ck = chanting ? 1 : 0;
     grim.glow.scale.setScalar(0.08 + ck * 0.1 + st.kick * 0.3 + Math.sin(time * 10) * 0.01);
@@ -505,7 +589,19 @@ export function buildViewModel(camera) {
   return {
     holder, renderPages, setHeld, update, setElement, get readAmount() { return st.read; }, get flipAmount() { return st.flip; },
     refreshItems() {
-      drink.setBottle();
+      drink.setBottle(); heldRig.key = null; // 手に持った物は、次に持ち替えた時に彫った手で組み直す
+      if (!grim.forged) { const b = makeModel('fp-grimoire');
+        if (b) { const old = [grim.leather, grim.gold, grim.edgeMat];
+          grim.root.traverse(o => { if (o.isMesh && old.includes(o.material)) o.visible = false; });
+          b.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.frustumCulled = false; o.renderOrder = 10; o.castShadow = false; } });
+          grim.forged = b; grim.root.add(b); tintBook(); } }
+      // 彫った手(骨入り)に差し替える: 魔導書・教本を支える手、小槌を握る手、蓋に掛ける両手
+      if (!grim.hand) { const h = makeBookHand({}); if (h) { hidePrimHands(grim.root); grim.hand = h; grim.root.add(h.root); } }
+      if (!text.hand) { const h = makeBookHand({ x: 0.03, bottom: -0.105, back: -0.02, thumb: { abd: 1.15 } }); if (h) { hidePrimHands(text.root); text.hand = h; text.root.add(h.root); } }
+      if (!tool.forged) { const a = makeReachHand(false), b = makeReachHand(true);
+        if (a && b) { tool.forged = true; hidePrimHands(tool.root);
+          const g = makeItemGrip({ radiusX: .013, radiusZ: .013 }); g.position.set(0, 0.0, 0); tool.hammer.add(g);
+          tool.hands.children.forEach((h, i) => { const fh = i ? a : b; fh.root.position.set(0, 0.012, 0.085); h.add(fh.root); }); } }
       // The same rounded hand is used while carrying and while drinking.
       hidePrimHands(drink.tilt);hidePrimHands(drink.root);
       drink.hand?.removeFromParent();drink.hand=makeItemGrip({radiusX:.039,radiusZ:.039});drink.hand.position.y=.035;drink.tilt.add(drink.hand);

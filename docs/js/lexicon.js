@@ -119,6 +119,15 @@ export const WORDS = [
   { id: 'swift', text: '迅', ruby: 'はやて', cat: 'mod', val: 'swift', cost: 3,
     alias: ['迅', 'はやて', 'ハヤテ', '疾風', 'しっぷう'],
     hint: '「速さは、重さを削って得る」', meaning: '修飾:弾速×1.8・雨の遅延短縮。威力×0.8。' },
+  { id: 'chain', text: '連鎖', ruby: 'れんさ', cat: 'mod', val: 'chain', cost: 4,
+    alias: ['連鎖', 'れんさ', 'チェイン', 'ちぇいん', '連なる', 'つらなる'],
+    hint: '「一つを撃てば、隣も震える」', meaning: '修飾:連鎖。魔弾が当たると、近くの敵へ次々に飛び移る(雷でなくても)。' },
+  { id: 'homing', text: '追尾', ruby: 'ついび', cat: 'mod', val: 'homing', cost: 4,
+    alias: ['追尾', 'ついび', 'ホーミング', 'ほーみんぐ', '逃さぬ', 'のがさぬ'],
+    hint: '「放たれた言葉は、宛先を忘れない」', meaning: '修飾:追尾。魔弾が近くの敵へ曲がって飛ぶ。' },
+  { id: 'split', text: '分裂', ruby: 'ぶんれつ', cat: 'mod', val: 'split', cost: 5,
+    alias: ['分裂', 'ぶんれつ', 'スプリット', 'すぷりっと', '三叉', 'さんさ'],
+    hint: '「一つの声が、三つの口から出る」', meaning: '修飾:分裂。魔弾が三つに分かれて扇状に飛ぶ。一つあたりの威力は×0.6。' },
   { id: 'spite', text: '逆境', ruby: 'ぎゃっきょう', cat: 'mod', val: 'spite', cost: 3,
     alias: ['逆境', 'ぎゃっきょう', '窮地', 'きゅうち'],
     hint: '「傷を負った者の声ほど、深く響く」', meaning: '修飾:自分が状態異常(鈍足・毒・呪い・声の異変・千鳥足・宝珠など)を受けている時、威力×1.6(二つ以上で×1.9)。瀕死も一つに数える。何も受けていなければ威力×0.8。' },
@@ -174,6 +183,9 @@ const PHRASES_RUBY = {
   // 修飾: 属性に掛かる形容
   "dual": "{二重|にじゅう}に{響|ひび}く",
   "max": "{極大|きょくだい}なる",
+  "chain": "{連鎖|れんさ}を{呼|よ}ぶ",
+  "homing": "{追尾|ついび}して{逃|のが}さぬ",
+  "split": "{分裂|ぶんれつ}して{三|み}つに{分|わ}かつ",
   "eternal": "{永劫|えいごう}に{絶|た}えぬ",
   "rune": "{地|ち}に{刻印|こくいん}を{結|むす}び",
   "swift": "{迅|はやて}の{如|ごと}き",
@@ -600,6 +612,7 @@ export function compile(text, known) {
   if (spell.blood) p *= 2;
   if (spell.ruin) p *= 1.3;
   if (spell.swift) p *= 0.8;
+  if (spell.split) p *= 0.6;
   if (!spell.released) p *= 0.7;
   if (spell.elements.length > 1) p *= 1 + 0.15 * (spell.elements.length - 1); // 属性融合
   // 位階: 言霊の数と修飾で 初級・中級・上級 が決まる。上の位階ほど強く、魔力も多く要る

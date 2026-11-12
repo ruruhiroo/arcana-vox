@@ -135,7 +135,7 @@ test('exploration gear makes the first guardian manageable while missed dodges s
   assert.equal(dragonHp(1),1400); assert.equal(dragonHp(1,2),2240);
   assert.ok(dragonHp(10,1,true)>dragonHp(10));
   assert.ok(DRAGON_ATTACKS.breath.damage+DRAGON_ATTACKS.slam.damage>=85);
-  const cycle=Object.values(DRAGON_ATTACKS).reduce((n,a)=>n+a.warn+a.active+a.recover+1.1,0)/4;
+  const cycle=Object.values(DRAGON_ATTACKS).reduce((n,a)=>n+a.warn+a.active+a.recover+1.1,0)/Object.keys(DRAGON_ATTACKS).length;
   assert.ok(cycle<7.5, 'average attack cadence must stay below 7.5s');
 });
 test('high dragon head accepts projectiles above the old 5.2m ceiling', async () => {

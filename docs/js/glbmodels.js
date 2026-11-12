@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
-export const GLB_TYPES = ['skeleton', 'ghoul', 'knight', 'ogre', 'imp', 'scribe', 'lich', 'golem', 'spider', 'bat', 'wraith', 'slime', 'guardian-reaper'];
+export const GLB_TYPES = ['skeleton', 'ghoul', 'knight', 'ogre', 'imp', 'scribe', 'lich', 'golem', 'spider', 'bat', 'wraith', 'slime', 'guardian-reaper', 'guardian-dragon', 'guardian-giant', 'guardian-beast', 'guardian-griffin', 'guardian-sentinel', 'mage', 'fp-hand', 'fp-grimoire', ...['ether', 'scroll', 'crystal', 'bone', 'iron', 'flash', 'lantern', 'shard'].map(n => 'item-' + n), 'decor-campfire',
+  ...['wallshelf', 'shelf', 'readtable', 'longtable', 'desk', 'lectern', 'pew', 'barrel', 'crate', 'cratestack', 'coffin', 'sarcophagus', 'pillar', 'statue', 'bookpile', 'throne', 'anvil', 'obelisk'].map(n => 'decor-' + n)];
 const cache = {};
 let loading = null;
 
@@ -15,13 +16,15 @@ export function preloadModels() {
     g.scene.traverse(o => {
       if (!o.isMesh) return;
       o.castShadow = true;
-      o.frustumCulled = false; // 骨で動くので、元の境界では切り抜かない
+      o.frustumCulled = t.startsWith('decor-'); // 骨で動くものは、元の境界では切り抜かない(動かない置物は切り抜く)
       const m = o.material;
       if (!m) return;
       if (m.name === 'eye') { m.emissiveIntensity = 1.6; o.userData.eye = true; } // 目は光らせるが、滲みすぎないように
       if (m.name === 'membrane') m.side = THREE.DoubleSide;
       if (m.name === 'slime') { m.transparent = true; m.opacity = 0.82; m.depthWrite = false; } // 粘獣は半透明
       m.envMapIntensity = 0;
+      if (m.metalnessMap) m.metalness = 0.55; // 焼き込んだ金属は、環境の映り込みが無い迷宮でも暗く沈まないように抑える
+      if (m.normalMap) m.normalScale.set(1.2, 1.2);
     });
     cache[t] = g; res();
   }, undefined, e => { console.warn('model', t, e); res(); }))));
@@ -68,6 +71,13 @@ export function animateGlb(ud, dt, moving, speed, attackStart) {
     play(ud, moving ? 'walk' : 'idle');
     if (ud.actions.walk) ud.actions.walk.timeScale = moving ? speed : 1;
   }
+  ud.mixer.update(dt);
+}
+
+// 名前を指定して動きを切り替える(魔導師など、歩く/立つ/攻撃 以外の動きを持つもの)
+export function playGlb(ud, name, dt, fade = 0.2) {
+  const a = ud.actions[name];
+  if (a && ud.cur !== a) { a.reset().setEffectiveWeight(1).play(); if (ud.cur) a.crossFadeFrom(ud.cur, fade, false); ud.cur = a; }
   ud.mixer.update(dt);
 }
 

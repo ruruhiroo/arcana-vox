@@ -1,7 +1,7 @@
 // 入るたびに形を変える迷宮: 生成・メッシュ化・衝突判定・経路探索
 import * as THREE from 'three';
 import { G, seeded } from './state.js';
-import { stoneWall, stoneFloor, ceilingTex, glowSprite } from './textures.js';
+import { surface, stoneWall, stoneFloor, ceilingTex, glowSprite } from './textures.js';
 import { buildDecor } from './decor.js';
 import { buildLayout } from './layout.js';
 import { buildArena, arenaBlocksMove, arenaDoorCollision, insideArena } from './arena-room.js';
@@ -183,8 +183,41 @@ export function generate(seed, floor) {
   // 回廊にも少し瓦礫
   for (let k = 0; k < 10; k++) { const x = ri(2, W - 3), y = ri(2, H - 3); if (grid[y * W + x] && !used.has(x + ',' + y)) { used.add(x + ',' + y); decor.push({ type: r() < 0.6 ? 'rubble' : 'bones', pos: cellPos(x, y, 0.6), rot: r() * 6.28, s: 0.7 + r() * 0.3 }); } }
 
-  const spawns = [], scrolls = [], chests = [], herbs = [], crystals = [], torches = [], mushrooms = [];
+  const spawns = [], scrolls = [], chests = [], herbs = [], crystals = [], torches = [], mushrooms = [], loots = [];
   const richChests = [];
+  // ---- 物の置き場所: 部屋の性格と、そこにある物に合わせる(「なぜ、そこに在るか」が見て分かるように) ----
+  const cellRoom = new Map(); rooms.forEach(rm => (rm.cells || []).forEach(([xx, yy]) => cellRoom.set(xx + ',' + yy, rm)));
+  const roomAt = p => cellRoom.get(Math.floor(p.x / CELL) + ',' + Math.floor(p.z / CELL));
+  const decorIn = (rm, types) => decor.filter(d => types.includes(d.type) && roomAt(d.pos) === rm);
+  // 置物のすぐ脇の床(同じ部屋の中で、壁に埋まらない向きを探す)
+  const beside = (d, dist = 0.9) => {
+    const a0 = r() * Math.PI * 2;
+    for (let k = 0; k < 8; k++) {
+      const a = a0 + k * Math.PI / 4, x = d.pos.x + Math.sin(a) * dist, z = d.pos.z + Math.cos(a) * dist;
+      const cx = Math.floor(x / CELL), cy = Math.floor(z / CELL), fx = x / CELL - cx, fz = z / CELL - cy;
+      if (!grid[cy * W + cx] || cellRoom.get(cx + ',' + cy) !== roomAt(d.pos)) continue;
+      if (wallSide(cx, cy).some(([dx, dy]) => (dx < 0 && fx < 0.2) || (dx > 0 && fx > 0.8) || (dy < 0 && fz < 0.2) || (dy > 0 && fz > 0.8))) continue;
+      return new THREE.Vector3(x, hgt[cy * W + cx] || 0, z);
+    }
+    return null;
+  };
+  // 卓・書見台の上(古文書は机の上に置かれている)
+  const TOP = { readtable: [0.9, 0.35], desk: [0.92, 0.3], lectern: [1.3, 0] };
+  const onTop = d => { const [h, off] = TOP[d.type], s = d.s || 1, k = (r() < 0.5 ? -1 : 1) * off * s; return new THREE.Vector3(d.pos.x + Math.cos(d.rot) * k, d.pos.y + h * s, d.pos.z - Math.sin(d.rot) * k); };
+  // 壁際(宝箱は部屋の真ん中ではなく、壁に寄せて置かれる)
+  const byWall = rm => { const cs = floorCellsIn(rm).filter(([xx, yy]) => wallSide(xx, yy).length && !used.has(xx + ',' + yy)); if (!cs.length) return randomCellIn(rm); const c = pick(cs), d = pick(wallSide(c[0], c[1])); used.add(c[0] + ',' + c[1]); return new THREE.Vector3((c[0] + 0.5 + d[0] * 0.28) * CELL, hgt[c[1] * W + c[0]] || 0, (c[1] + 0.5 + d[1] * 0.28) * CELL); };
+  const near = (rm, types, dist, fallback) => { const ds = decorIn(rm, types); for (let k = 0; k < 3 && ds.length; k++) { const p = beside(pick(ds), dist); if (p) return p; } return fallback ? fallback() : null; };
+  // 主題ごとの出やすさ
+  const DAMP = ['ruin', 'crypt', 'cellar', 'garden', 'bath', 'mine', 'prison'], DRY = ['forge', 'kitchen', 'library', 'scriptorium', 'treasury', 'observatory', 'armory', 'clockwork', 'warroom', 'throne', 'alchemy'];
+  const CHEST_P = { treasury: 1, storage: 0.7, crypt: 0.7, barracks: 0.6, throne: 0.6, armory: 0.5, cellar: 0.5 };
+  const CHEST_BY = ['throne', 'sarcophagus', 'goldpile', 'cratestack', 'footlocker', 'winerack', 'weaponrack', 'armorstand'];
+  const HERB_P = { garden: 1, ruin: 0.9, bath: 0.7, crypt: 0.4, mine: 0.3, cellar: 0.3, prison: 0.3, alchemy: 0.5 };
+  const HERB_BY = ['moss', 'vines', 'puddle', 'fountain', 'roots', 'bush', 'crack', 'shrooms'];
+  const CRYSTAL_P = { mine: 0.6, ruin: 0.45, ritual: 0.35, observatory: 0.2, garden: 0.15, bath: 0.15, crypt: 0.15, corridor: 0.1 };
+  // 部屋に転がっている素材・道具: [主題, 物, 確率, そばに在る置物, 数]
+  const LOOT = [['forge', 'iron', 0.8, ['anvil', 'furnace'], 2], ['armory', 'iron', 0.5, ['weaponrack', 'armorstand'], 1], ['clockwork', 'iron', 0.7, ['gearwall', 'rubble'], 2], ['mine', 'iron', 0.5, ['minecart', 'rubble'], 1],
+    ['crypt', 'bone', 0.7, ['coffin', 'sarcophagus', 'bones'], 2], ['prison', 'bone', 0.6, ['bones', 'chains'], 1], ['torture', 'bone', 0.6, ['cage', 'bones'], 1], ['specimen', 'bone', 0.6, ['specimen', 'bones'], 1],
+    ['alchemy', 'ether', 0.3, ['cauldron', 'alembic'], 1], ['shrine', 'amulet', 0.25, ['statue'], 1], ['ritual', 'amulet', 0.3, ['obelisk'], 1], ['barracks', 'lantern', 0.2, ['footlocker', 'bunk'], 1], ['warroom', 'lantern', 0.25, ['maptable'], 1]];
   rooms.forEach((rm, i) => {
     if (rm.kind === 'secret' || rm.kind === 'sealed') {
       const cs = floorCellsIn(rm).sort(() => r() - 0.5);
@@ -210,17 +243,26 @@ export function generate(seed, floor) {
       const final = floor === FINAL_FLOOR;
       spawns.push({ pos: cellPos(rm.cx, rm.cy), type: 'dragon', boss: true, final, bossKind: 'dragon' });
     }
-    const chestP = rm.kind !== 'room' ? 0.05 : rm.theme === 'storage' || rm.theme === 'crypt' || rm.mod === 'closet' ? 0.7 : 0.35;
-    if (r() < chestP && i !== 0) chests.push(randomCellIn(rm));
-    if (r() < (rm.kind !== 'room' ? 0.12 : rm.theme === 'ruin' ? 0.9 : 0.45)) herbs.push(randomCellIn(rm));
+    const T = rm.theme;
+    // 宝箱: 宝物庫・物置・墓所・兵舎などに多く、玉座や棺・積み荷のそば、無ければ壁際に
+    const chestP = rm.kind !== 'room' ? 0.05 : rm.mod === 'closet' ? 0.7 : CHEST_P[T] ?? 0.3;
+    if (r() < chestP && i !== 0) (T === 'treasury' && r() < 0.6 ? richChests : chests).push(near(rm, CHEST_BY, 1.3, () => byWall(rm)));
+    // 霊草: 水気と土のある所(庭園・廃墟・浴場)の、苔・蔦・水たまり・ひび割れのそばに生える。火や紙の部屋にはまず生えない
+    const herbP = rm.kind !== 'room' ? 0.12 : HERB_P[T] ?? (DRY.includes(T) ? 0.08 : 0.3);
+    for (let k = 0, n = T === 'garden' ? ri(2, 3) : 1; k < n; k++) if (r() < herbP) herbs.push(near(rm, HERB_BY, 0.6, () => byWall(rm)));
+    // 素材・道具: 鍛冶場の金床のそばに鉄屑、墓所の棺のそばに骨片…
+    if (i !== 0 && rm !== sanctRoom && rm !== portalRoom) for (const [th, mat, p, by, n] of LOOT) {
+      if (th !== T) continue;
+      for (let k = 0; k < n; k++) if (r() < p) { const pos = near(rm, by, 1.0); if (pos) loots.push({ pos, mat }); }
+    }
     // 壁沿いの松明と魔晶
     for (const [xx, yy] of floorCellsIn(rm)) {
       for (const [dx, dy] of wallSide(xx, yy)) {
         const p = new THREE.Vector3((xx + 0.5 + dx * 0.47) * CELL, 2.6 + Math.min(2.2, hgt[yy * W + xx] || 0) * 0.5, (yy + 0.5 + dy * 0.47) * CELL);
         const k = (xx * 31 + yy * 17 + dx * 5 + dy * 3) % 9;
         if (k === 0 && r() < (rm.theme === 'ruin' ? 0.3 : rm.kind !== 'room' ? 0.45 : 0.7)) torches.push({ pos: p, dir: [dx, dy], cell: [xx + dx, yy + dy] });
-        else if (k === 4 && r() < (rm.theme === 'ruin' ? 0.45 : 0.15)) crystals.push({ pos: new THREE.Vector3((xx + 0.5 + dx * 0.36) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.36) * CELL), dir: [dx, dy] });
-        else if (k === 7 && rm.kind === 'room' && r() < (rm.theme === 'ruin' || rm.theme === 'crypt' ? 0.5 : 0.2)) mushrooms.push(new THREE.Vector3((xx + 0.5 + dx * 0.33 + (r() - 0.5) * 0.2) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.33 + (r() - 0.5) * 0.2) * CELL));
+        else if (k === 4 && r() < (CRYSTAL_P[rm.theme] ?? 0.06)) crystals.push({ pos: new THREE.Vector3((xx + 0.5 + dx * 0.36) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.36) * CELL), dir: [dx, dy] });
+        else if (k === 7 && rm.kind === 'room' && r() < (DAMP.includes(rm.theme) ? 0.5 : DRY.includes(rm.theme) ? 0 : 0.15)) mushrooms.push(new THREE.Vector3((xx + 0.5 + dx * 0.33 + (r() - 0.5) * 0.2) * CELL, hgt[yy * W + xx] || 0, (yy + 0.5 + dy * 0.33 + (r() - 0.5) * 0.2) * CELL));
       }
     }
   });
@@ -229,8 +271,13 @@ export function generate(seed, floor) {
   while (spawns.filter(x => !x.boss).length > cap) { const i = spawns.findIndex((x, k) => !x.boss && r() < 0.15); if (i >= 0) spawns.splice(i, 1); }
   for (const pl of plats) if (r() < 0.65) { const c = pick(pl.cells); chests.push(cellPos(c[0], c[1], 0.4)); }
   // 古文書(言霊の手掛かり): 毎階2〜3。書庫に置かれやすい
-  const scrollRooms = realRooms.slice(1).filter(rm => rm !== sanctRoom).sort((a, b) => (b.theme === 'library') - (a.theme === 'library') || r() - 0.5).slice(0, ri(2, 3));
-  for (const rm of scrollRooms) scrolls.push(randomCellIn(rm));
+  // 知の部屋(書庫・写本室・天文室・錬金工房…)から先に選び、書見台や机の上、無ければ本の山や像のそばに置く
+  const LORE = { library: 3, scriptorium: 3, observatory: 2, alchemy: 2, warroom: 1, shrine: 1, ritual: 1 };
+  const scrollRooms = realRooms.slice(1).filter(rm => rm !== sanctRoom).map(rm => [rm, (LORE[rm.theme] || 0) + r()]).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, ri(2, 3));
+  for (const rm of scrollRooms) {
+    const tops = decorIn(rm, Object.keys(TOP));
+    scrolls.push(tops.length ? onTop(pick(tops)) : near(rm, ['bookpile', 'scrollrack', 'statue', 'maptable', 'obelisk', 'orrery'], 0.9, () => byWall(rm)));
+  }
 
   // 部屋の仕掛け: 術で解く謎・試練の碑・祈りの祭壇。半分ほどの部屋に一つ
   const roomEvents = [];
@@ -304,7 +351,7 @@ export function generate(seed, floor) {
   const gasTraps = [];
   const trapCells = rooms.filter(rm => rm !== rooms[0] && rm !== sanctRoom && rm !== portalRoom).flatMap(rm => floorCellsIn(rm)).filter(([xx, yy]) => !used.has(xx + ',' + yy));
   for (let k = 0; k < 2 + Math.floor(floor / 3) && trapCells.length; k++) { const c = trapCells.splice(Math.floor(r() * trapCells.length), 1)[0]; used.add(c[0] + ',' + c[1]); gasTraps.push(cellPos(c[0], c[1], 0.5)); }
-  return { coopEvents, oddShrooms, gasTraps, roomEvents, mushrooms, secrets, richChests, seed, floor, grid, hgt, plats, rooms: rooms.filter(rm => rm.kind !== 'secret' && rm.kind !== 'sealed'), start: rooms[0], portalRoom, sanctRoom, portal: cellPos(portalRoom.cx, portalRoom.cy), spawns, scrolls, chests, herbs, crystals, torches, decor, braziers };
+  return { coopEvents, oddShrooms, gasTraps, roomEvents, mushrooms, secrets, richChests, seed, floor, grid, hgt, plats, rooms: rooms.filter(rm => rm.kind !== 'secret' && rm.kind !== 'sealed'), start: rooms[0], portalRoom, sanctRoom, portal: cellPos(portalRoom.cx, portalRoom.cy), spawns, scrolls, chests, herbs, crystals, torches, decor, braziers, loots };
 }
 
 // 出現表: [種類, 重み, 出始める層, 層ごとの重みの変化]
@@ -393,7 +440,7 @@ function buildStructure(dg) {
 }
 
 export function buildMeshes(dg) {
-  if (!TEX) TEX = { wall: stoneWall(), floor: stoneFloor(), ceil: ceilingTex(), flame: glowSprite('rgba(255,140,40,0.9)') };
+  if (!TEX) TEX = { wall: surface('wall', stoneWall()), floor: surface('floor', stoneFloor()), ceil: surface('ceil', ceilingTex()), flame: glowSprite('rgba(255,140,40,0.9)') };
   const group = new THREE.Group();
   group.add(buildStructure(dg));
   // 松明

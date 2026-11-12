@@ -83,6 +83,13 @@ export function buildArena(d,group) {
     veil.position.y=2.6;veil.visible=false;frame.add(veil);d.arenaVeils.push(veil);group.add(frame);
   }
 }
+// 登場: 封印が閉じてからの数秒、守護者は眠りから起き上がって吠える(その間は攻撃しない)
+export const ARENA_INTRO=4.2;
+export function arenaIntro(a=G.dungeon?.arena){
+  if(!a||a.phase==='cleared')return 1;
+  if(a.phase!=='active')return 0;
+  return Math.max(0,Math.min(1,((G.time||0)-(a.activeAt??-99))/ARENA_INTRO));
+}
 export function updateArena() {
   const d=G.dungeon,a=d?.arena;if(!a||G.mode!=='coop')return;
   if(G.isHost) {
@@ -93,6 +100,8 @@ export function updateArena() {
       a.phase='active';G.ui?.log('背後の封印が閉じた。守護者を倒せ。','#cfb6df');
     }
   }
+  if(a.phase==='active'&&a.seenPhase!=='active')a.activeAt=a.seenPhase?(G.time||0):-99; // 途中から(再開・途中参加)なら登場は飛ばす
+  a.seenPhase=a.phase;
   const open=a.phase==='dormant'?0:a.phase==='opening'?Math.min(1,((G.time||0)-(a.openAt||0))/1.6):1;
   for(const {hinge,side}of d.arenaDoors||[])hinge.rotation.y=side*open*1.5;
   for(const v of d.arenaVeils||[]){v.visible=a.phase==='active';v.material.opacity=.52+Math.sin((G.time||0)*1.8)*.06;}

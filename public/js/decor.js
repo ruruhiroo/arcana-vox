@@ -1,5 +1,6 @@
 // 部屋の調度品: 書架・机・燭台・棺・骨・樽・木箱・像・折れた柱・瓦礫・石筍
 // 部屋の主題(書庫/墓所/物置/祠/廃墟)ごとに置かれ、迷宮が「そこにあった場所」に見えるようにする
+import { makeModel } from './glbmodels.js';
 import * as THREE from 'three';
 import { glowSprite } from './textures.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -656,6 +657,14 @@ export function buildDecor(dg, group) {
   dg.hazards = [];
   for (const d of dg.decor || []) {
     const b = BUILD[d.type]?.(m); if (!b) continue;
+    // Blender で彫った調度品(models/decor-*.glb)があれば、形だけ差し替える(灯りや炎の絵はそのまま残す)
+    const forged = makeModel('decor-' + d.type);
+    if (forged) {
+      for (const c of [...b.g.children]) if (!c.isSprite && !c.isLight) b.g.remove(c);
+      forged.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      b.g.add(forged);
+      b.lid = b.lid ? forged.getObjectByName('lid') || null : null;
+    }
     b.g.position.copy(d.pos); b.g.rotation.y = d.rot; b.g.scale.setScalar(d.s || 1);
     group.add(b.g);
     d.obj = b.g; d.lid = b.lid || null; // 調べた時に蓋が開く

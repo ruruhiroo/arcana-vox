@@ -1,7 +1,7 @@
 import { dragonProfile } from './dragon-profiles.js';
 import * as THREE from 'three';
 import { G } from './state.js';
-import { dragonAttack, breathTurn, sweepTurn, smooth } from './dragon-rules.js';
+import { dragonAttack, breathTurn, sweepTurn, smooth, attackPrims, spinTurn } from './dragon-rules.js';
 import { sfx } from './audio.js';
 
 // 外部画像不要の流れる炎。3層の乱流面に白熱芯・橙・赤い縁を分ける。
@@ -68,20 +68,21 @@ export function updateDragonVisual(v, e, p, dt) {
   const key = `${s.serial}:${s.stage}`;
   if (key !== v.key) {
     v.key = key; v.impacted = false; v.emit = 0;
-    if (charge) sfx.dragonCharge?.(e.pos, s.move);
-    if (strike && s.move === 'breath') sfx.dragonFire?.(e.pos);
+    if (charge) sfx.dragonCharge?.(e.pos, a.anim || s.move);
+    if (strike && (s.move === 'breath' || a.flame)) sfx.dragonFire?.(e.pos);
     if (strike && s.move === 'sweep') sfx.dragonTail?.(e.pos);
   }
   const travelling=s.stage==='idle'&&s.travel;
   if(travelling&&!v.travelling){v.travelling=true;G.fx.burst(e.pos.clone().add(new THREE.Vector3(0,.3,0)),profile.kind==='reaper'?profile.color:0xb2a28b,20,{speed:3,up:1,size:.5,life:.65});sfx.dragonWing?.(e.pos);}
   if(!travelling&&v.travelling){v.travelling=false;G.fx.burst(e.pos.clone().add(new THREE.Vector3(0,.3,0)),profile.kind==='reaper'?profile.color:0xb2a28b,34,{speed:4,up:1.3,size:.6,life:.75});sfx.dragonLand?.(e.pos);}
   const mouth = e.body.userData.head.localToWorld(e.body.userData.mouthOffset?.clone() || new THREE.Vector3(0, 0, -1.35));
-  const fire = s.move === 'breath' && strike ? smooth(p / .12) * (1 - smooth((p - .86) / .14)) : 0;
+  const flame = s.move === 'breath' || !!a.flame; // 吐息と、吐きながら回る大技
+  const fire = flame && strike ? smooth(p / .12) * (1 - smooth((p - .86) / .14)) : 0;
   v.glow.position.copy(mouth); v.glow.scale.setScalar(charge ? .4 + p * 1.1 : 1.4);
-  v.glow.material.opacity = s.move === 'breath' ? charge ? p * .75 : fire * .8 : 0;
+  v.glow.material.opacity = flame ? charge ? p * .75 : fire * .8 : 0;
   v.light.position.copy(mouth); v.light.color.setHex(profile.color); v.glow.material.color.setHex(profile.hot);
-  v.light.intensity = fire * 180 + (charge && s.move === 'breath' ? p * 45 : 0);
-  const end = at(s, a.range, breathTurn(p), .7), dir = end.clone().sub(mouth), length = dir.length();
+  v.light.intensity = fire * 180 + (charge && flame ? p * 45 : 0);
+  const end = at(s, a.range, a.shape === 'spin' ? spinTurn(a, p) : breathTurn(p), .7), dir = end.clone().sub(mouth), length = dir.length();
   v.flames.forEach((f, i) => {
     f.visible = fire > .001; if (!f.visible) return;
     f.position.copy(mouth); f.quaternion.setFromUnitVectors(up, dir.clone().normalize());
@@ -133,7 +134,7 @@ export function updateDragonVisual(v, e, p, dt) {
   if (strike && v.emit <= 0) {
     v.emit = .065;
     if (s.move === 'meteor' && p < a.hitStart) G.fx.burst(v.meteor.position, profile.color, 5, {speed:2,up:4,size:.6,life:.4});
-    if (s.move === 'breath' && fire > .1) {
+    if (flame && fire > .1) {
       const tip = mouth.clone().lerp(end, .5 + Math.random() * .45);
       G.fx.burst(tip, profile.color, 4, { speed: 4, up: 2, size: .35, life: .8 });
       G.fx.burst(mouth, profile.hot, 2, { speed: 5, size: .2, life: .45 });
@@ -157,8 +158,60 @@ export function updateDragonVisual(v, e, p, dt) {
     const distance = G.player?.pos.distanceTo(center) ?? 42;
     G.shake = Math.max(G.shake || 0, Math.max(0, .65 * (1 - distance / 35)));
   }
+  if (a.shape) specialVisual(v, e, s, a, p, dt, charge, strike, profile);
   // 消火直後の余熱と火の粉。回復時間に有害な見えない炎は残さない。
   if (s.move === 'breath' && s.stage === 'recover' && p < .3 && v.emit <= 0) {
     v.emit = .12; G.fx.burst(mouth, profile.color, 3, { speed: 1, up: 2, size: .3, life: .6 });
   }
+}
+
+// ---- 固有技の見た目: 構えの間は当たる形の縁に光の粒が集まり(予兆)、当たる瞬間に柱・壁・輪になって噴き上がる ----
+const fwd = yaw => [-Math.sin(yaw), -Math.cos(yaw)];
+function specialVisual(v, e, s, a, p, dt, charge, strike, profile) {
+  const prims = attackPrims(s), y = s.origin[1] + .25, col = profile.color, hot = profile.hot;
+  const P3 = (x, z, h = 0) => new THREE.Vector3(x, y + h, z);
+  if (v.spKey !== s.serial) { v.spKey = s.serial; v.spFired = new Set(); }
+  v.spEmit = (v.spEmit || 0) - dt;
+  const tick = v.spEmit <= 0; if (tick) v.spEmit = .07;
+  const mote = { speed: .6, up: 1.6, size: .32, life: .55 };
+  if (charge && tick) {
+    const n = 2 + Math.round(p * 5);
+    for (const q of prims) {
+      if (q.k === 'circle') {
+        for (let i = 0; i < (q.spot ? n : n * 3); i++) { const an = Math.random() * 6.283; G.fx.burst(P3(q.x + Math.sin(an) * q.r, q.z + Math.cos(an) * q.r), col, 1, mote); if (q.inner) G.fx.burst(P3(q.x + Math.sin(an) * q.inner, q.z + Math.cos(an) * q.inner), hot, 1, mote); }
+        if (q.spot) G.fx.burst(P3(q.x, q.z, .1), hot, 1, { ...mote, up: 3 });
+      } else if (q.k === 'line') {
+        const [fx, fz] = fwd(q.yaw);
+        for (let i = 0; i < n * 2; i++) { const f = Math.random() * q.len, sd = (Math.random() < .5 ? -1 : 1) * q.w / 2; G.fx.burst(P3(q.x + fx * f - fz * sd, q.z + fz * f + fx * sd), col, 1, mote); }
+      } else {
+        for (let i = 0; i < n * 2; i++) { const sd = Math.random() < .5 ? -1 : 1, f = (q.inner || 0) + Math.random() * (q.r - (q.inner || 0)), [fx, fz] = fwd(q.yaw + sd * q.half); G.fx.burst(P3(q.x + fx * f, q.z + fz * f), col, 1, mote); }
+      }
+    }
+  }
+  if (!strike) return;
+  prims.forEach((q, i) => {
+    if (q.k === 'arm' || q.t1 > q.t0 + .05) {       // 続けて当たるもの: 回る腕・突進
+      if (!tick || p < q.t0 || p > q.t1) return;
+      const arm = q.k === 'arm', [fx, fz] = fwd(arm ? q.yaw + spinTurn(a, p) : q.yaw), ox = arm ? q.x : e.pos.x, oz = arm ? q.z : e.pos.z;
+      for (let f = (q.inner || 0) + 1; f < q.r; f += arm ? 3 : 2) G.fx.burst(P3(ox + fx * f, oz + fz * f, .4), (f | 0) % 2 ? col : hot, 3, { speed: 3, up: 3.5, size: .6, life: .55 });
+      return;
+    }
+    if (p < q.t0 || v.spFired.has(i)) return;
+    v.spFired.add(i);
+    if (q.k === 'circle' && q.spot) {
+      G.fx.burst(P3(q.x, q.z, .3), col, 34, { speed: 7, up: 9, size: .75, life: .9 }); G.fx.burst(P3(q.x, q.z, 1.5), hot, 12, { speed: 3, up: 12, size: .5, life: .7 }); sfx.crumble?.(P3(q.x, q.z));
+    } else if (q.k === 'circle') {
+      for (let rr = Math.max(q.inner, 2); rr <= q.r; rr += 3.2) { const cnt = Math.min(28, Math.max(6, Math.round(rr * 1.6))); for (let j = 0; j < cnt; j++) { const an = j / cnt * 6.283 + rr; G.fx.burst(P3(q.x + Math.sin(an) * rr, q.z + Math.cos(an) * rr, .3), j % 3 ? col : hot, 2, { speed: 4, up: 6, size: .65, life: .8 }); } }
+      sfx.crumble?.(P3(q.x, q.z));
+    } else if (q.k === 'line') {
+      const [fx, fz] = fwd(q.yaw);
+      for (let f = 1.5; f < q.len; f += 2.2) for (const sd of q.w > 4 ? [-q.w / 3, 0, q.w / 3] : [0]) G.fx.burst(P3(q.x + fx * f - fz * sd, q.z + fz * f + fx * sd, .4), (f | 0) % 2 ? col : hot, 4, { speed: 3, up: 8, size: .6, life: .8 });
+      sfx.dragonFire?.(e.pos);
+    } else {
+      for (let f = 2; f < q.r; f += 2.6) { const cnt = Math.max(1, Math.round(q.half * f / 1.6)); for (let j = -cnt; j <= cnt; j++) { const [fx, fz] = fwd(q.yaw + j / cnt * q.half); G.fx.burst(P3(q.x + fx * f, q.z + fz * f, .5), (j + cnt) % 2 ? col : hot, 3, { speed: 4, up: 5, size: .6, life: .7 }); } }
+      sfx.dragonTail?.(e.pos);
+    }
+    const dist = G.player?.pos.distanceTo(P3(q.x, q.z)) ?? 40;
+    G.shake = Math.max(G.shake || 0, (a.ult ? .8 : .45) * Math.max(0, 1 - dist / 35));
+  });
 }

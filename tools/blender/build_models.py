@@ -593,13 +593,20 @@ def bat():
 BUILDERS = {'skeleton': skeleton, 'ghoul': ghoul, 'knight': knight, 'ogre': ogre, 'imp': imp, 'scribe': scribe,
             'lich': lich, 'golem': golem, 'spider': spider, 'bat': bat, 'wraith': wraith, 'slime': slime}
 
-for name, fn in BUILDERS.items():
-    if ONLY and name not in ONLY:
-        continue
-    try:
-        rig = fn()
-        build(rig, os.path.abspath(os.path.join(OUT, name + '.glb')))
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print('FAILED', name, e)
+if __name__ == '__main__':
+    for name, fn in BUILDERS.items():
+        if ONLY and name not in ONLY:
+            continue
+        try:
+            rig = fn()
+            if os.environ.get('FORGE'):
+                import forge
+                importlib.reload(forge)
+                pv = os.environ.get('PREVIEW')
+                forge.build(rig, os.path.abspath(os.path.join(OUT, name + '.glb')), preview=os.path.join(pv, name + '.png') if pv else None)
+            else:
+                build(rig, os.path.abspath(os.path.join(OUT, name + '.glb')))
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print('FAILED', name, e)

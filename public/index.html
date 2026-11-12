@@ -260,6 +260,17 @@
   #goals .keys { font-size: 14px; color: var(--ink-dim); margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid rgba(216,180,106,.2); }
   #goals .keys b { color: #ffd76a; letter-spacing: .2em; margin-left: 4px; }
   #goals .keys span { font-size: 12px; }
+  #bossTitle { position: fixed; left: 0; right: 0; bottom: 24%; text-align: center; pointer-events: none; opacity: 0; z-index: 30; }
+  #bossTitle.on { animation: bossTitle 4.6s ease-out forwards; }
+  #bossTitle .bt-name { font-family: "Shippori Mincho B1", serif; font-size: clamp(30px, 5vw, 64px); letter-spacing: .32em; color: #efe6d0; text-shadow: 0 0 24px rgba(0,0,0,.9), 0 2px 2px #000; }
+  #bossTitle .bt-sub { font-size: 14px; letter-spacing: .5em; color: #c8b48a; margin-bottom: 10px; text-shadow: 0 0 10px #000; }
+  #bossTitle .bt-line { width: min(60vw, 720px); height: 1px; margin: 16px auto 0; background: linear-gradient(90deg, transparent, #d8c08a, transparent); }
+  @keyframes bossTitle { 0% { opacity: 0; letter-spacing: .1em; filter: blur(6px); } 18% { opacity: 1; filter: blur(0); } 78% { opacity: 1; } 100% { opacity: 0; } }
+  .beast h4 { margin: 0 0 2px; color: #f0d890; }
+  .beast .sub { color: #c8a868; font-size: 13px; margin-bottom: 8px; letter-spacing: .08em; }
+  .beast dl { margin: 0; font-size: 14px; line-height: 1.75; }
+  .beast dt { color: #9a8a6a; font-size: 12px; margin-top: 6px; }
+  .beast dd { margin: 0; }
   .spguide { line-height: 1.85; font-size: 15px; margin-bottom: 14px; }
   .spguide p { margin: 0 0 8px; }
   .spguide b { color: #f0d890; }
@@ -485,6 +496,82 @@
     #book nav { flex-direction: row; overflow-x: auto; padding: 8px; }
     #book nav h2 { display: none; }
   }
+
+  /* ==== HUD 改: 画面に溶け込む意匠 ====
+     手本はエルデンリングの画面: 枠や板を置かず、細い線と余白と字の組み方だけで見せる。
+     ・生命/魔力/持久の帯は左上に細く。数字は添えるだけ。
+     ・地図は四角い板をやめ、縁が闇に溶ける円い水鏡に。
+     ・課題は板をやめ、左から闇がにじむ帯の上に細い字で。
+     ・主(ぬし)の名と体力は画面の下に、長く細く。
+     ・戦っていない間は、全体が静かに薄くなる。 */
+  #vitals { left: 30px; top: 24px; bottom: auto; width: 320px; display: flex; flex-direction: column; transition: opacity 1.4s; }
+  #vitals #statusIcons { order: 9; margin-top: 10px; font-size: 13px; }
+  #vitals .bar { height: 9px; margin-top: 6px; border: none; border-radius: 1px; overflow: visible;
+    background: linear-gradient(180deg, rgba(0,0,0,.78), rgba(22,18,14,.6));
+    box-shadow: 0 0 0 1px rgba(0,0,0,.7), 0 0 0 2px rgba(196,164,104,.2), 0 2px 8px rgba(0,0,0,.5); }
+  #vitals .bar::before, #vitals .bar::after { content: ''; position: absolute; top: 50%; width: 5px; height: 5px; background: #b89a5e; transform: translateY(-50%) rotate(45deg); box-shadow: 0 0 4px rgba(0,0,0,.8); }
+  #vitals .bar::before { left: -7px; } #vitals .bar::after { right: -7px; }
+  #vitals .bar > div { border-radius: 1px; box-shadow: inset 0 1px 0 rgba(255,255,255,.22), inset 0 -2px 3px rgba(0,0,0,.45); }
+  #vitals .bar span { inset: auto; left: calc(100% + 14px); top: -3px; padding: 0; line-height: 15px; font-size: 11.5px; letter-spacing: .06em; white-space: nowrap; color: rgba(232,220,192,.5); text-shadow: 0 0 3px #000; }
+  #vitals #hpBar { width: 100%; } #vitals #mpBar { width: 80%; height: 7px; } #vitals #stBar { width: 66%; height: 4px; margin-top: 6px; }
+  #vitals #shBar { height: 3px; width: 100%; margin: 0 0 -3px; box-shadow: none; background: none; } #vitals #shBar::before, #vitals #shBar::after { display: none; }
+  #hpBar > div { background: linear-gradient(90deg, #4e0d0a, #a8231a 55%, #d2452f); }
+  #mpBar > div { background: linear-gradient(90deg, #0e1f48, #2850ae 55%, #5a8cec); }
+  #stBar > div { background: linear-gradient(90deg, #32481a, #7ea046 60%, #b6d27a); }
+
+  #topLeft { top: 92px !important; left: 30px !important; transition: opacity 1.4s; }
+  #floorLabel { font-size: 14px; font-weight: 500; letter-spacing: .42em; color: rgba(216,190,130,.85); text-shadow: 0 0 6px #000; }
+  #modeLabel { font-size: 11px; letter-spacing: .3em; opacity: .55; }
+  #goals { width: 300px; margin-top: 14px; padding: 8px 14px 8px 12px; font-size: 13.5px; border-left: 1px solid rgba(196,164,104,.45);
+    background: linear-gradient(90deg, rgba(4,3,6,.5), rgba(4,3,6,.22) 60%, transparent); }
+  #goals.fresh { box-shadow: none; background: linear-gradient(90deg, rgba(60,44,14,.5), rgba(4,3,6,.2) 60%, transparent); }
+  #goals .gh, #goals .big { font-size: 12.5px; letter-spacing: .22em; font-weight: 500; }
+  #goals .keys { font-size: 12.5px; } #goals .gi { line-height: 1.7; } #goals .quest { font-size: 13px; }
+
+  #minimap { right: 26px; top: 22px; width: 188px; height: 188px; border: none; border-radius: 50%; opacity: .9; transition: opacity 1.4s;
+    background: radial-gradient(circle, rgba(6,5,9,.55) 0%, rgba(6,5,9,.3) 55%, transparent 72%);
+    -webkit-mask-image: radial-gradient(circle, #000 56%, rgba(0,0,0,.5) 64%, transparent 71%); mask-image: radial-gradient(circle, #000 56%, rgba(0,0,0,.5) 64%, transparent 71%); }
+  #mapRing { position: absolute; right: 26px; top: 22px; width: 188px; height: 188px; border-radius: 50%; pointer-events: none; transition: opacity 1.4s;
+    background: repeating-conic-gradient(from -1deg, rgba(210,180,120,.55) 0 2deg, transparent 2deg 30deg);
+    -webkit-mask-image: radial-gradient(circle, transparent 66%, #000 66.5%, #000 69.5%, transparent 70%); mask-image: radial-gradient(circle, transparent 66%, #000 66.5%, #000 69.5%, transparent 70%); }
+  #mapRing::after { content: ''; position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(210,180,120,.0); }
+  #log { top: 226px; right: 26px; width: 380px; font-size: 13.5px; opacity: .9; }
+  #log div { margin: 4px 0; letter-spacing: .03em; }
+
+  #crosshair::before, #crosshair::after { display: none; }
+  #crosshair i { inset: 9px; border: none; background: rgba(255,244,214,.75); box-shadow: 0 0 4px rgba(0,0,0,.9); }
+
+  #hotbar { left: 30px !important; right: auto; bottom: 28px; transform: none; gap: 5px; transition: opacity 1.4s; }
+  #hotbar .slot { width: 58px; min-height: 58px; height: 58px; padding: 0; background: radial-gradient(circle, rgba(20,16,12,.55), rgba(6,5,8,.35)); border: 1px solid rgba(196,164,104,.28); box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 3px 10px rgba(0,0,0,.45); }
+  #hotbar .slot.empty { opacity: .45; }
+  #hotbar .slot.held { border-color: rgba(240,210,140,.9); box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 16px rgba(230,190,110,.45), inset 0 0 12px rgba(230,190,110,.18); }
+  #hotbar .slot .k { top: auto; bottom: 1px; right: 4px; font-size: 10.5px; color: rgba(216,190,130,.6); }
+
+  #dragonHud { top: auto; bottom: 96px; width: min(820px, 64vw); padding: 0; text-align: left; background: none; border: none; box-shadow: none; }
+  #dragonName { font-size: 17px; letter-spacing: .2em; color: #e6dcc2; text-shadow: 0 0 8px #000, 0 1px 1px #000; padding-left: 2px; }
+  #dragonHud .dragonHp { height: 7px; margin: 7px 0 0; border: none; background: linear-gradient(180deg, rgba(0,0,0,.8), rgba(24,14,14,.65)); box-shadow: 0 0 0 1px rgba(0,0,0,.75), 0 0 0 2px rgba(196,164,104,.22), 0 3px 12px rgba(0,0,0,.6); }
+  #dragonHealth { background: linear-gradient(90deg, #5a0d0f, #a51e22 60%, #cf3a30); box-shadow: inset 0 1px 0 rgba(255,255,255,.2); }
+
+  #banner { top: 26%; }
+  #banner::before { content: ''; position: absolute; left: 50%; top: -18px; bottom: -18px; width: 100vw; transform: translateX(-50%); z-index: -1;
+    background: linear-gradient(180deg, transparent, rgba(0,0,0,.42) 28%, rgba(0,0,0,.42) 72%, transparent); }
+  #banner .big { font-size: 40px; font-weight: 500; letter-spacing: .44em; color: #eadfc4; text-shadow: 0 0 18px rgba(0,0,0,.95), 0 2px 2px #000; }
+  #banner .big::after { content: ''; display: block; height: 1px; width: min(560px, 60vw); margin: 14px auto 10px; background: linear-gradient(90deg, transparent, #cdb47c, transparent); }
+  #banner .small { font-size: 15.5px; letter-spacing: .08em; color: #cfc4a8; margin: 0 auto; }
+
+  #micState { font-size: 12px; opacity: .6; letter-spacing: .04em; }
+  #prompt { font-size: 14.5px; letter-spacing: .1em; }
+  #hud.calm #vitals, #hud.calm #hotbar { opacity: .5; }
+  #hud.calm #minimap, #hud.calm #mapRing { opacity: .55; }
+  #hud.calm #topLeft { opacity: .6; }
+  /* ---- 文字と帯の傷み: 擦れて欠けた箔押しの字、引っかき傷のある帯(模様は js/ui.js が起動時に作る) ---- */
+  #floorLabel, #modeLabel, #banner .big, #banner .small, #bossTitle .bt-name, #bossTitle .bt-sub, #target, #lobby h1, #prompt, #clickToPlay, #vowFx .vtitle, #tut, #goals {
+    -webkit-mask-image: var(--wear, none); mask-image: var(--wear, none); -webkit-mask-size: 300px 300px; mask-size: 300px 300px; }
+  #banner .big, #bossTitle .bt-name, #lobby h1 { -webkit-mask-size: 420px 420px; mask-size: 420px 420px; }
+  #vitals .bar, #hotbar > * { position: relative; }
+  #vitals .bar::after, #hotbar > *::after { content: ''; position: absolute; inset: 0; background-image: var(--scuff, none); background-size: 260px 260px; pointer-events: none; opacity: .8; }
+  #hotbar > *:nth-child(2n)::after { background-position: 90px 40px; } #hotbar > *:nth-child(3n)::after { background-position: 30px 150px; }
+  #mpBar::after { background-position: 70px 120px; } #stBar::after { background-position: 140px 60px; }
 </style>
 <script>
 // アプリ版: 記録はブラウザの保存領域とファイルの両方に置く。ブラウザ側はアドレス(ポート)が変わると別物になるので、
@@ -577,6 +664,7 @@
   <div id="crosshair"><i></i></div>
   <div id="topLeft"><div id="floorLabel">第1層</div><div id="modeLabel"></div><div id="party"></div><div id="goals" class="hidden"></div></div>
   <canvas id="minimap" width="210" height="210"></canvas>
+  <div id="mapRing"></div>
   <div id="log"></div>
   <div id="prompt"></div>
   <div id="chantBox"><div id="chantText"></div><div id="chantFormula"></div></div>
@@ -670,6 +758,7 @@
       <button data-tab="help" data-book="grimoire">心得</button>
       <button data-tab="craft" data-book="grimoire">調合書</button>
       <button data-tab="spirits" data-book="grimoire">精霊</button>
+      <button data-tab="beasts" data-book="grimoire">魔物の記録</button>
       <button class="ghost-switch" id="bookSwitch"></button>
       <button class="close" id="bookClose">閉じる</button>
     </nav>

@@ -8,6 +8,8 @@ import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, expandChant, chantG
 import { W, H, CELL, lineOfSight } from './dungeon.js';
 import { keyOf } from './controls.js';
 import { SPIRITS, BOND_NAMES, bondProgress } from './spirits.js';
+import { BESTIARY, BESTIARY_INTRO, GUARDIAN_LORE } from './bestiary.js';
+import { ENEMY_TYPES } from './entities.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -41,6 +43,13 @@ let bookKey = SAVE_KEY;
 // 道具袋の魔導書の札: 誓った属性の色と紋
 const GSLOT_EL = { fire: ['#6a1c12', '#2a0a06', '#f0a850', '炎'], ice: ['#1c4466', '#0a1a2a', '#cfeaff', '氷'], thunder: ['#3a2466', '#140a2a', '#f0dc70', '雷'], wind: ['#1e5038', '#0a2014', '#d0eab0', '風'], holy: ['#e8dcb8', '#9a8a60', '#7a5a1a', '聖'], void: ['#26143a', '#08040e', '#b080e8', '闇'] };
 let gslotEl;
+// 守護者の登場: 画面の下寄りに、名を大きく静かに出す
+export function bossTitle(name, sub = '') {
+  let el = document.getElementById('bossTitle');
+  if (!el) { el = document.createElement('div'); el.id = 'bossTitle'; el.innerHTML = '<div class="bt-sub"></div><div class="bt-name"></div><div class="bt-line"></div>'; document.body.appendChild(el); }
+  el.querySelector('.bt-name').textContent = name; el.querySelector('.bt-sub').textContent = sub ? `— ${sub} の守護者 —` : '';
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+}
 export function setGrimoireElement(el) {
   if (el === gslotEl) return; gslotEl = el;
   const c = GSLOT_EL[el];
@@ -161,6 +170,7 @@ export function quickSlotsHtml(withKeys) {
 }
 
 export const UI = {
+  bossTitle: (name, sub) => bossTitle(name, sub),
   floatText(pos, text, color = '#fff') {
     const el = document.createElement('div'); el.className = 'float'; el.textContent = text; el.style.color = color;
     $('floats').appendChild(el);
@@ -292,7 +302,7 @@ $('bookClose').onclick = closeBook;
 $('bookSwitch').classList.add('hidden');
 
 function renderBook() {
-  $('bookTitle').textContent = ['words', 'help', 'craft', 'spirits'].includes(tab) ? '教本' : BOOKS[book].title;
+  $('bookTitle').textContent = ['words', 'help', 'craft', 'spirits', 'beasts'].includes(tab) ? '教本' : BOOKS[book].title;
   $('bookClose').textContent = `閉じる (${BOOKS[book].key})`;
   document.querySelectorAll('#book nav button[data-tab]').forEach(b => {
     b.classList.toggle('sel', b.dataset.tab === tab);
@@ -318,6 +328,20 @@ function renderBook() {
         if (!met) return `<div class="spcard unmet"><h4>？？？</h4><div class="lore">まだ出会っていない精霊。古文書の中に、その名が眠っている。</div></div>`;
         return `<div class="spcard"><h4 style="color:${sp.color}"><ruby>${sp.name}<rt>${sp.ruby}</rt></ruby></h4><div class="word">真名の言霊『${w.core}』(${w.ruby})</div><div class="lore">${sp.lore}</div><div class="bond">縁: ${BOND_NAMES[b.level]}${b.level < BOND_NAMES.length - 1 ? '' : '(極み)'} ・ 威力 ${Math.round((0.95 + 0.04 * b.level) * 100)}%</div><div class="bar"><i style="width:${Math.round(b.frac * 100)}%;background:${sp.color}"></i></div></div>`;
       }).join('')}</div>`;
+  } else if (tab === 'beasts') {
+    // 魔物の記録: 倒した魔物の「なぜ、その姿なのか」が記される
+    const seen = BOOK.seen || {};
+    const card = (name, sub, rows) => `<div class="spcard beast"><h4>${name}</h4><div class="sub">${sub}</div><dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div>`;
+    const unknown = t => `<div class="spcard unmet"><h4>？？？</h4><div class="lore">${t}</div></div>`;
+    pg.innerHTML = `<h3>魔物の記録</h3><div class="spguide"><p>${BESTIARY_INTRO}</p><p class="muted">討ち果たした魔物の由来は、ここに記される。姿には、必ず理由がある。</p></div>
+      <h4 style="color:#d8b46a;margin:14px 0 8px">迷宮に棲むもの</h4>
+      <div class="spirits">${Object.entries(BESTIARY).map(([id, b]) => seen[id]
+        ? card(ENEMY_TYPES[id]?.name || id, b.title, [['何者か', b.who], ['なぜ、この姿か', b.why], ['見るべき所', b.sign], ['弱みの理由', b.weak]])
+        : unknown('まだ討っていない魔物。')).join('')}</div>
+      <h4 style="color:#d8b46a;margin:18px 0 8px">守護者 ― 砕けた「沈黙」の一片を抱くもの</h4>
+      <div class="spirits">${Object.entries(GUARDIAN_LORE).map(([el, g]) => seen['g_' + el]
+        ? card(g.name, '守護者', [['なぜ、この姿か', g.why], ['戦い方の理由', g.hint]])
+        : unknown('まだ討っていない守護者。')).join('')}</div>`;
   } else if (tab === 'words') {
     const order = ['element', 'form', 'effect', 'target', 'mod', 'trigger'];
     const sorted = [...WORDS].sort((a, b) => order.indexOf(a.cat) - order.indexOf(b.cat));
@@ -390,7 +414,17 @@ function renderBook() {
     const move = d => { const j = selSpell + d; if (j < 0 || j >= BOOK.spells.length) return; commit(); const sp = BOOK.spells; [sp[selSpell], sp[j]] = [sp[j], sp[selSpell]]; if (G.page === selSpell) G.page = j; else if (G.page === j) G.page = selSpell; selSpell = j; saveBook(); G.onPageChange?.(); renderBook(); };
     $('spUp').onclick = () => move(-1); $('spDown').onclick = () => move(1);
   } else if (tab === 'craft') {
-    const names = { herb: '霊草', crystal: '魔晶', bone: '骨片', iron: '鉄屑' };
+    const names = { shard: '言霊の欠片', herb: '霊草', crystal: '魔晶', bone: '骨片', iron: '鉄屑' };
+    // 写本: 欠片を綴って、望んだ種類の言霊の古文書を作る。属性そのものの写本はとても重い
+    const EL_JP = { fire: '紅蓮', ice: '氷獄', thunder: '雷霆', wind: '颶風', holy: '聖光', void: '深淵' };
+    const unknownOf = cat => WORDS.filter(w => w.cat === cat && !w.cursed && !G.known.has(w.id) && !(G.inv['scroll_' + w.id] > 0));
+    const scribe = [];
+    for (const [cat, label] of [['form', '出し方'], ['effect', '効果'], ['mod', '修飾']]) if (unknownOf(cat).length)
+      scribe.push({ id: 'scroll', name: `写本「${label}」`, need: { shard: 2, crystal: 2 }, desc: `まだ知らない「${label}」の言霊がどれか一つ記された古文書を綴る(残り ${unknownOf(cat).length} 語)。`, make: () => 'scroll_' + unknownOf(cat)[Math.floor(Math.random() * unknownOf(cat).length)].id });
+    for (const w of unknownOf('element'))
+      scribe.push({ id: 'scroll', name: `秘奥の写本『${w.core}』`, need: { shard: 6, crystal: 4, iron: 2 }, desc: `属性「${EL_JP[w.id] || w.core}」そのものを覚える古文書。迷宮ではまず見つからない。望んだ属性を選んで綴れるが、素材は重い。`, make: () => 'scroll_' + w.id, rare: true });
+    for (const el of Object.keys(EL_JP)) if (G.known.has(el) && ((BOOK.mastery || {})[el] || 0) + (G.inv['tome_' + el] || 0) < 3)
+      scribe.push({ id: 'tome_' + el, name: `秘伝書『${EL_JP[el]}』`, need: { shard: 3, crystal: 3, bone: 2 }, desc: `読むと${EL_JP[el]}の術の威力が +15%(全三巻。いま ${((BOOK.mastery || {})[el] || 0)} 巻)。`, make: () => 'tome_' + el });
     pg.innerHTML = `<h3>調合</h3>
       <div class="inv">${Object.entries(names).map(([k, n]) => `<span>${n} <b>${G.inv[k] || 0}</b></span>`).join('')}</div>
       <div class="recipes">${RECIPES.map((r, i) => {
@@ -399,7 +433,22 @@ function renderBook() {
           <p>素材: ${Object.entries(r.need).map(([k, n]) => `${names[k]}×${n}`).join(' ')}</p>
           <button class="btn small ${ok ? '' : 'ghost'}" data-craft="${i}" ${ok ? '' : 'disabled'}>調合する</button></div>`;
       }).join('')}</div>
+      <h3 style="margin-top:22px">写本と秘伝書</h3>
+      <p class="muted">言霊の欠片は、守護者(三つ)や精鋭の魔物から、また、すでに覚えている古文書を読んで砕くと手に入る。</p>
+      <div class="recipes">${scribe.map((r, i) => {
+        const ok = canCraft(G.inv, r);
+        return `<div class="recipe" ${r.rare ? 'style="border-color:#b070ff"' : ''}><b>${r.name}</b><p>${r.desc}</p>
+          <p>素材: ${Object.entries(r.need).map(([k, n]) => `${names[k]}×${n}`).join(' ')}</p>
+          <button class="btn small ${ok ? '' : 'ghost'}" data-scribe="${i}" ${ok ? '' : 'disabled'}>綴る</button></div>`;
+      }).join('') || '<p class="muted">いま綴れるものは無い。</p>'}</div>
       <p class="muted" style="margin-top:14px">素材は迷宮の霊草・壁の魔晶・宝箱・倒した魔物から得られる。持ち物は下の6枠だけ。1〜6で持ち替え、左クリックで使用・装備、Gで落とす。</p>`;
+    pg.querySelectorAll('[data-scribe]').forEach(b => b.onclick = () => {
+      const r = scribe[+b.dataset.scribe];
+      if (!r || !canCraft(G.inv, r)) { UI.log('材料か空き枠が足りない'); return; }
+      for (const [k, n] of Object.entries(r.need)) G.inv[k] -= n;
+      const made = r.make(); G.invAdd(made, 1);
+      UI.log(`${r.name}を綴った — 持って読めば身に付く`, r.rare ? '#d8a0ff' : '#ffe08a'); renderBook(); UI.renderHotbar();
+    });
     pg.querySelectorAll('[data-craft]').forEach(b => b.onclick = () => {
       const r = RECIPES[+b.dataset.craft];
       if(!canCraft(G.inv,r)){UI.log('材料か空き枠が足りない');return;}
@@ -426,3 +475,29 @@ export const RECIPES = [
   { id: 'flash', name: '閃光玉', need: { iron: 1, crystal: 1 }, desc: '周囲10mの魔物を2.5秒間怯ませる。' },
   { id: 'lantern', name: '導灯', need: { iron: 2, herb: 1 }, desc: 'この層の地図をすべて照らし出す。' },
 ];
+
+// ---- 画面の文字と帯の傷み: 起動時に二枚の模様を作り、CSS(--wear / --scuff)から使う ----
+//   --wear  = 文字の抜け(擦れた所は字が薄れ、引っかき傷で欠ける)
+//   --scuff = 帯や枠の上の引っかき傷・汚れ
+(() => {
+  try {
+    let seed = 20261107; const r = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const N = 256, mk = () => { const c = document.createElement('canvas'); c.width = c.height = N; return [c, c.getContext('2d')]; };
+    // 継ぎ目が出ないよう、縁をまたぐ物は反対側にも描く
+    const wrap = (g, fn) => { for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) { g.save(); g.translate(ox, oy); fn(); g.restore(); } };
+    const [wc, w] = mk();
+    w.fillStyle = '#fff'; w.fillRect(0, 0, N, N);
+    w.globalCompositeOperation = 'destination-out';
+    for (let i = 0; i < 16; i++) { const x = r() * N, y = r() * N, rad = 14 + r() * 34, a = 0.18 + r() * 0.3; wrap(w, () => { const gr = w.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); w.fillStyle = gr; w.fillRect(x - rad, y - rad, rad * 2, rad * 2); }); } // 擦れ
+    for (let i = 0; i < 260; i++) { const x = r() * N, y = r() * N, rad = 0.5 + r() * r() * 2.4, a = 0.4 + r() * 0.6; wrap(w, () => { w.fillStyle = `rgba(0,0,0,${a})`; w.beginPath(); w.arc(x, y, rad, 0, 7); w.fill(); }); } // 欠け
+    w.lineCap = 'round';
+    for (let i = 0; i < 26; i++) { const x = r() * N, y = r() * N, a = r() * Math.PI, len = 20 + r() * 90, lw = 0.6 + r() * 1.3, al = 0.5 + r() * 0.5, bend = (r() - 0.5) * 14; wrap(w, () => { w.strokeStyle = `rgba(0,0,0,${al})`; w.lineWidth = lw; w.beginPath(); w.moveTo(x, y); w.quadraticCurveTo(x + Math.cos(a) * len / 2 + bend, y + Math.sin(a) * len / 2 - bend, x + Math.cos(a) * len, y + Math.sin(a) * len); w.stroke(); }); } // 引っかき傷
+    const [sc, g] = mk();
+    g.lineCap = 'round';
+    for (let i = 0; i < 34; i++) { const x = r() * N, y = r() * N, a = (r() - 0.5) * 0.9 + (r() < 0.2 ? 1.3 : 0), len = 14 + r() * 80, lw = 0.5 + r() * 1.1, dark = r() < 0.7, al = 0.25 + r() * 0.4; wrap(g, () => { g.strokeStyle = dark ? `rgba(0,0,0,${al})` : `rgba(255,240,210,${al * 0.45})`; g.lineWidth = lw; g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke(); }); }
+    for (let i = 0; i < 12; i++) { const x = r() * N, y = r() * N, rad = 8 + r() * 26, a = 0.12 + r() * 0.2; wrap(g, () => { const gr = g.createRadialGradient(x, y, 0, x, y, rad); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2); }); }
+    for (let i = 0; i < 120; i++) { g.fillStyle = `rgba(0,0,0,${0.2 + r() * 0.4})`; g.beginPath(); g.arc(r() * N, r() * N, 0.4 + r() * 1.2, 0, 7); g.fill(); }
+    const st = document.documentElement.style;
+    st.setProperty('--wear', `url(${wc.toDataURL('image/png')})`); st.setProperty('--scuff', `url(${sc.toDataURL('image/png')})`);
+  } catch (e) { console.warn('wear', e); }
+})();

@@ -4,9 +4,11 @@ import { bindNox, animateNox } from './nox-model.js';
 import { sculptGuardian } from './guardian-sculpt.js';
 import { buildDragon, animateDragon } from './dragon-model.js';
 import { smooth, sweepTurn } from './dragon-rules.js';
+import { bindForge, animateForge } from './guardian-asset.js';
 
 // 共通の戦闘インターフェースを持つ独自の守護者リグ。翼竜の色替えにしない。
 export function buildGuardian(kind = 'dragon') {
+  { const forged = makeModel('guardian-' + kind), bound = forged && bindForge(forged, kind); if (bound) return bound; } // Blender で彫った守護者があれば、それを使う
   if (kind === 'dragon') return buildDragon();
   if (kind === 'reaper') { const asset=makeModel('guardian-reaper'); if(asset)return bindNox(asset); }
   const root=new THREE.Group(); root.scale.setScalar(2.2);
@@ -81,6 +83,7 @@ export function buildGuardian(kind = 'dragon') {
   root.traverse(o=>{if(o.isMesh)o.castShadow=true;});return root;
 }
 export function animateGuardian(ud,t,moving) {
+  if(ud.asset==='forge'){animateForge(ud,t,moving);return;}
   if(ud.asset==='nox-v2'){animateNox(ud,t);animateGuardianTravel(ud,t);return;}
   if(ud.kind==='dragon'||ud.species==='beast'||ud.species==='griffin') {
     animateDragon(ud,t,moving);

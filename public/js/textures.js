@@ -59,6 +59,17 @@ function bake(size, heightFn, colorFn, strength = 2.5) {
   return { map: tex(cc, true), normalMap: tex(nc), roughnessMap: tex(rc) };
 }
 
+// Blender で作った質感(textures/<名前>_color.jpg など)を読み込み、届いたら手続き生成の絵と差し替える。
+// 読み込めない時は、手続き生成のまま使う。
+export function surface(name, fallback) {
+  if (typeof document === 'undefined') return fallback;
+  const loader = new THREE.TextureLoader();
+  for (const [key, suffix] of [['map', '_color'], ['normalMap', '_normal'], ['roughnessMap', '_rough']]) {
+    loader.load(`textures/${name}${suffix}.jpg`, t => { const dst = fallback[key]; if (!dst) return; dst.dispose(); dst.image = t.image; dst.needsUpdate = true; /* 大きさが違うので、GPU側の領域を作り直させる */ }, undefined, () => {});
+  }
+  return fallback;
+}
+
 export function stoneWall() {
   const n = makeNoise(256, 11), n2 = makeNoise(256, 23);
   const rows = 6, cols = 3;

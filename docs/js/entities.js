@@ -7,7 +7,7 @@ import { sfx } from './audio.js';
 import { buildEnemyModel, animateEnemy } from './enemymodels.js';
 import { buildGuardian, animateGuardian } from './guardian-model.js';
 import { dragonElement, DRAGON_PROFILES } from './dragon-profiles.js';
-import { makeModel, animateGlb, dieGlb } from './glbmodels.js';
+import { makeModel, animateGlb, dieGlb, playGlb } from './glbmodels.js';
 import { compile, withCallName } from './lexicon.js';
 // 写本師が唱える呪文 (プレイヤーと同じ言霊)
 import { WORD_BY_ID } from './lexicon.js';
@@ -18,6 +18,20 @@ let RUNE_TEX = null, GLOW_TEX = null;
 
 // ---------- 魔導師 ----------
 function mageMesh(color) {
+  // Blender で彫った魔導師(models/mage.glb)があればそれを使い、衣と杖の結晶を持ち主の色に染める
+  const forged = makeModel('mage');
+  if (forged) {
+    let crystal = null;
+    forged.traverse(o => {
+      if (!o.isMesh) return;
+      o.material = o.material.clone();
+      if (o.material.name === 'tint') o.material.color.set(color).lerp(new THREE.Color(0xffffff), 0.25);
+      if (o.material.name === 'crystal') { o.material.color.set(color); o.material.emissive.set(color); crystal = o; }
+    });
+    forged.userData.crystal = crystal;
+    forged.userData.forged = true;
+    return forged;
+  }
   const g = new THREE.Group();
   const cloth = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0 });
   const trim = new THREE.MeshStandardMaterial({ color: 0xb08a3c, roughness: 0.4, metalness: 0.8 });
@@ -97,10 +111,18 @@ export class Mage {
     this.root.position.copy(this.pos);
     if (this.model) {
       this.model.rotation.y = this.yaw; // 顔(-Z)を視線の向きへ
-      const st = this.model.userData.staff;
-      st.rotation.x = this.chanting ? -0.9 + Math.sin(G.time * 8) * 0.05 : -0.15;
-      this.model.userData.crystal.material.emissiveIntensity = this.chanting ? 4 + Math.sin(G.time * 12) * 1.5 : 2;
-      if (this.downed) { this.model.rotation.x = -1.4; this.model.position.y = 0.25; } else { this.model.rotation.x = 0; this.model.position.y = Math.abs(Math.sin(G.time * 7)) * this.vel.length() * 0.012; }
+      const ud = this.model.userData;
+      if (ud.crystal) ud.crystal.material.emissiveIntensity = this.chanting ? 4 + Math.sin(G.time * 12) * 1.5 : 2;
+      if (ud.forged) {
+        // 倒れる / 詠唱の構え / 術を放つ / 歩く / 立つ
+        const cast = this.castLock > 0 && !this.chanting;
+        if (cast && !ud.wasCast && ud.actions.attack) { ud.cur = null; ud.atkT = ud.actions.attack.getClip().duration * 0.9; }
+        ud.wasCast = cast; ud.atkT = Math.max(0, (ud.atkT || 0) - dt);
+        playGlb(ud, this.downed ? 'die' : ud.atkT > 0 ? 'attack' : this.chanting ? 'chant' : this.vel.length() > 0.4 ? 'walk' : 'idle', dt, this.downed ? 0.1 : 0.2);
+      } else {
+        ud.staff.rotation.x = this.chanting ? -0.9 + Math.sin(G.time * 8) * 0.05 : -0.15;
+        if (this.downed) { this.model.rotation.x = -1.4; this.model.position.y = 0.25; } else { this.model.rotation.x = 0; this.model.position.y = Math.abs(Math.sin(G.time * 7)) * this.vel.length() * 0.012; }
+      }
       this.root.visible = this.alive;
     }
   }
@@ -272,7 +294,7 @@ export class Enemy {
     this.hitT = Math.max(0, this.hitT - dt);
     // 縁取り: 精巧なモデルは控えめに(暗がりで輪郭が分かる程度)
     const subduedRim = ud.kind === 'glb' || this.type === 'dragon';
-    this.rimU.strength.value = (subduedRim ? 0.22 : this.type === 'golem' ? 0.4 : 0.8) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (subduedRim ? 0.05 : 0.12) + this.hitT * 3; // 巨竜の広い翼が白く飛ばないよう、輪郭だけを控えめに照らす
+    this.rimU.strength.value = (subduedRim ? 0.18 : this.type === 'golem' ? 0.3 : 0.45) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (subduedRim ? 0.05 : 0.1) + this.hitT * (subduedRim ? 0.9 : 2.2); // 巨竜の広い翼が白く飛ばないよう、輪郭だけを控えめに照らす
     if (this.sigil) this.sigil.rotation.z += dt * 0.6;
   }
   think(dt) {

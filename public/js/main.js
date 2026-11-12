@@ -54,6 +54,7 @@ import { UI, BOOK, loadBook, saveBook, wipeBook, forgetBook, openBook, closeBook
 import { gainProf, shortChantPenalty, profPower, profSummary, EL_JP as PROF_EL, profTitle, rankName } from './proficiency.js';
 import { SLOTS as SAVE_SLOTS, currentSlot, useSlot, slotInfo, loadRun, saveRun, clearRun, deleteSlot } from './save.js';
 import { initAudio, sfx, setListener, getAudioCtx, cycleAmbience, setAmbience, setMasterVolume } from './audio.js';
+import { startMusic, setMusic, setMusicLevel, setMusicDuck } from './music.js';
 import { initVoice, voiceSupported, startListening, stopListening, setContinuous, isContinuous, setTTS, ttsOn, engine as voiceEngine } from './voice.js';
 // オフライン認識では詠唱文の飾りの言葉を聞き取りにくいので、判定を緩める
 const lenientChant = () => voiceEngine === 'vosk';
@@ -237,7 +238,7 @@ const keys = {};
 async function startGame({ tutorial = false } = {}) {
   G.run = { keys: 0, done: false }; G.FINAL_FLOOR = FINAL_FLOOR;
   G.stats = { moved: 0, looked: 0, read: 0, flips: 0, kills: 0, chests: 0, eloquent: 0 };
-  initAudio(); applySettings();
+  initAudio(); startMusic(); applySettings();
   loadBook();
   G.noSave = tutorial;
   const run = tutorial ? null : loadRun(); // 記録の続きから
@@ -756,7 +757,8 @@ function learnWord(pick) {
   UI.renderHotbar();
 }
 
-G.onEnemyKilled = e => {
+// fromNet = 部屋の主から「倒れた」と知らされた時(客の側)。記録・討伐数・鍵頁・踏破は全員で数え、戦利品は部屋の主だけが落とす
+G.onEnemyKilled = (e, fromNet = false) => {
   { // 魔物の記録: 初めて討った魔物の由来を魔導書に記す
     const key = e.type === 'dragon' ? 'g_' + (e.dragon?.element || 'fire') : e.type;
     BOOK.seen ||= {};
@@ -776,6 +778,7 @@ G.onEnemyKilled = e => {
       UI.banner(`封印の鍵頁 (${G.run.keys}/3)`, G.run.keys >= 3 ? `すべて揃った。第${FINAL_FLOOR}層の書庫の番人のもとへ` : '主の亡骸から、封印を解く頁を得た', 6);
     }
   }
+  if (fromNet) return;
   const drops = e.T.drops;
   const items = [];
   const n = 1 + (Math.random() < 0.5) + (e.boss ? 3 : 0);
@@ -1545,12 +1548,12 @@ invEl.addEventListener('click', e => { if (e.target === invEl) closeInventory();
 
 // ---------- Esc メニューと設定 ----------
 const SETTINGS_KEY = 'arcana_vox_settings_v1';
-const settings = { volume: 0.8, ambience: 1, npcVoice: true, sens: 1 };
+const settings = { volume: 0.8, ambience: 1, music: 1, npcVoice: true, sens: 1 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch {}
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
 function applySettings() {
   setMasterVolume(settings.volume);
-  setAmbience(settings.ambience);
+  setAmbience(settings.ambience); setMusicLevel(settings.music ?? 1);
   setTTS(settings.npcVoice);
   applyControls();
 }
@@ -1568,7 +1571,7 @@ function openMenu() {
   releaseKeys();
   menu.classList.remove('hidden'); G.uiOpen = true;
   document.exitPointerLock?.();
-  $('mVol').value = settings.volume * 100; $('mAmb').value = settings.ambience; $('mNpc').checked = settings.npcVoice; $('mSens').value = opts.sens * 100; showKeysPanel(false);
+  $('mVol').value = settings.volume * 100; $('mBgm').value = settings.music ?? 1; $('mAmb').value = settings.ambience; $('mNpc').checked = settings.npcVoice; $('mSens').value = opts.sens * 100; showKeysPanel(false);
   $('mQuit').classList.toggle('hidden', !window.desktop);
   $('mRoom').classList.toggle('hidden', !G.roomCode);
   if (G.roomCode) $('mRoom').innerHTML = `部屋コード <b>${G.roomCode}</b> ・ ${G.net.players?.size || 1}人`;
@@ -1590,6 +1593,7 @@ $('mResume').onclick = closeMenu;
 $('mGrimoire').onclick = () => { menu.classList.add('hidden'); openBook('grimoire'); };
 $('mInv').onclick = () => { menu.classList.add('hidden'); openInventory(); };
 $('mVol').oninput = e => { settings.volume = e.target.value / 100; applySettings(); saveSettings(); };
+$('mBgm').onchange = e => { settings.music = +e.target.value; applySettings(); saveSettings(); };
 $('mAmb').onchange = e => { settings.ambience = +e.target.value; applySettings(); saveSettings(); };
 $('mNpc').onchange = e => { settings.npcVoice = e.target.checked; applySettings(); saveSettings(); };
 $('mSens').oninput = e => { opts.sens = e.target.value / 100; saveControls(); };
@@ -1926,7 +1930,10 @@ function onNet(m) {
     }
     case 'chant': { const r = findMage(m.id); if (r) { r.setChant(m.text, m.n); if (m.text) G.hearChant(r, m.text); } break; }
     case 'cast': { const r = findMage(m.id); if (r) { G.fx.cast(r, G.fx.spellFromIds(m.words), m.aim); noteCast(r.id, m.words); if (m.chorus) UI.log(`${r.name}と合唱詠唱!`, '#ffd76a'); } break; }
-    case 'dmg': G.fx.damage(G.player, m.amount, m.elements, findAny(m.src), { melee: m.opts?.melee, dir: m.opts?.dir, power: m.opts?.power, tier: m.opts?.tier, silent: m.opts?.silent }); break;
+    case 'dmg': G.fx.damage(G.player, m.amount, m.elements, findAny(m.src), { melee: m.opts?.melee, dir: m.opts?.dir, power: m.opts?.power, tier: m.opts?.tier, silent: m.opts?.silent });
+      // 守護者の固有技の追加の効き目(鈍る・燃える)は、受けた本人の側で掛ける
+      if (m.opts?.fx === 'slow') G.player.status.slow = { t: 3 }; else if (m.opts?.fx === 'burn') G.player.status.burn = { t: 3, dps: 4, src: findAny(m.src) };
+      break;
     case 'heal': G.fx.heal(G.player, m.amount, findAny(m.src)); break;
     case 'shield': G.fx.shield(G.player, m.amount, m.dur, m.thorns); break;
     case 'edmg': { const e = G.enemies.find(x => x.id === m.eid); if (e && G.isHost) G.fx.damage(e, m.amount, m.elements, findAny(m.src), { dir: m.dir, power: m.power, tier: m.tier, atk: m.atk, hitPoint: m.hitPoint }); break; }
@@ -1945,7 +1952,8 @@ function onNet(m) {
     case 'gelem': { const e = G.enemies.find(x => x.id === m.id); if (e) applyGuardElem(e, m.el, false); break; }
     case 'gbar': { const e = G.enemies.find(x => x.id === m.id); if (e) setBarrier(e, m.on, false); break; }
     case 'espawn': spawnEnemy(m.id, m.type, new THREE.Vector3().fromArray(m.pos), m.floor, m.summoner); break;
-    case 'ekill': { const e = G.enemies.find(o => o.id === m.id); if (e && e.alive) { e.hp = 0; G.fx.kill(e, null); } break; }
+    case 'ekill': { const e = G.enemies.find(o => o.id === m.id); if (e && e.alive) { e.hp = 0; G.fx.kill(e, null); G.onEnemyKilled(e, true); } break; }
+    case 'combo': { const e = G.enemies.find(o => o.id === m.eid); if (e) UI.floatText(e.pos.clone().add(new THREE.Vector3(0, 2.0, 0)), '連携!', '#ffe08a'); break; }
     case 'loot': for (const l of m.items) addPickup(l.id, 'loot', new THREE.Vector3(l.x, l.y||0, l.z), { mat: l.mat, gear:l.gear }); break;
     case 'pick': { const k = G.pickups.find(o => o.id === m.id); if (k) pickUp(k, true); break; }
     case 'dig': applyDig(m.cells, true); break;
@@ -2195,6 +2203,16 @@ function updatePlayer(dt) {
   if (G.shake > 0) { G.shake = Math.max(0, G.shake - dt * 1.6); const k = G.shake * 0.035; camera.rotation.x += (Math.random() - 0.5) * k; camera.rotation.y += (Math.random() - 0.5) * k; }
 
   // 手元の書物
+  // 音楽の曲調: 守護者と戦っている / 魔物に追われている / 聖域にいる / 探索している。詠唱中は音を下げる
+  G.musicT = (G.musicT || 0) - dt;
+  if (G.musicT <= 0) {
+    G.musicT = 0.4;
+    const boss = G.enemies.find(e => e.alive && e.type === 'dragon' && e.dragon);
+    const fight = boss && G.dungeon?.arena?.phase === 'active' && boss.pos.distanceTo(p.pos) < 60;
+    const chased = G.enemies.some(e => e.alive && e.aggro && e.type !== 'dragon' && e.pos.distanceToSquared(p.pos) < 22 * 22);
+    setMusic(fight ? 'boss' : chased ? 'combat' : G.floor === 0 || G.inSanctuary?.(p.pos) ? 'sanct' : 'explore', { floor: Math.max(1, G.floor), phase2: !!fight && boss.dragon.phase === 2 });
+    setMusicDuck(!!p.chanting);
+  }
   if (G.run && G.floor > 0 && !G.run.done && !G.noSave) G.run.time = (G.run.time || 0) + dt; // 旅の時計(迷宮の中にいる間だけ進む)
   VM.update(dt, { bob, chanting: p.chanting, chantWords: p.chantWords, reading: G.reading && G.held === 'grimoire', alive: p.alive && !p.downed, time: G.time, drinkK: p.status.drinking ? 1 - p.status.drinking.t / (p.status.drinking.d || 1) : -1, work: G.work ? { kind: G.work.k.kind, prog: Math.min(1, G.work.t / G.work.dur) } : null });
   // 頁を読む・めくる間は、手元を照らす光を弱める(紙が白く飛ばないように)

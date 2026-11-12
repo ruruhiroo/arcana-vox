@@ -33,6 +33,9 @@ function drawDragon(e, dt) {
     G.shake = Math.max(G.shake || 0, 0.7); sfx.growl?.(e.pos); sfx.dragonCharge?.(e.pos, 'meteor');
     for (let k = 0; k < 3; k++) G.fx?.burst(e.pos.clone().add(new THREE.Vector3(0, 0.5 + k, 0)), dragonProfile(s).color, 50, { speed: 10 + k * 3, up: 0.6, size: 0.5, life: 0.6 });
   }
+  if (v.key !== key && s.stage === 'windup' && dragonAttack(s).ult) { // 大技: 名を告げ、長く構える(部屋の主にも客にも見せる)
+    G.ui?.banner(dragonAttack(s).label, dragonProfile(s).name + ' ― 大技', 2.8); G.shake = Math.max(G.shake || 0, 0.8); sfx.growl?.(e.pos);
+  }
   if (intro > 0 && intro < 1 && !e.introShown) { e.introShown = true; G.ui?.bossTitle?.(dragonProfile(s).name, dragonProfile(s).title); }
   if (intro >= 0.5 && intro < 1 && !e.roared) { e.roared = true; G.shake = Math.max(G.shake || 0, 0.9); sfx.dragonCharge?.(e.pos, 'meteor'); sfx.growl?.(e.pos); G.fx?.burst(e.pos.clone().add(new THREE.Vector3(0, 0.4, 0)), 0xb2a28b, 60, { speed: 7, up: 1.5, size: 0.6, life: 0.9 }); }
   Object.assign(e.body.userData, { intro, stage: s.stage, move: dragonAttack(s).anim || s.move, progress: v.progress, travelProgress: s.stage === 'idle' && s.travel ? v.progress : -1 });
@@ -133,9 +136,6 @@ export function updateDragons(dt) {
       const facing = Math.atan2(e.pos.x - target.pos.x, e.pos.z - target.pos.z), off = Math.abs(Math.atan2(Math.sin(facing - e.yaw), Math.cos(facing - e.yaw)));
       const ctx = { adaptive: !!G.dungeon?.arena, chanting: targets.some(m => m.chanting && m.pos.distanceTo(e.pos) < 12), behind: off > 2.1, still: e.guardianExposure.get(target.id ?? target)?.still || 0, rand: [Math.random(), Math.random(), Math.random(), Math.random(), Math.random(), Math.random()] };
       const event = stepDragon(s, e.stun > 0 && s.stage !== 'recover' ? 0 : dt, { health: e.hp / e.maxHp, distance: d, origin: e.pos.toArray(), target: target.pos.toArray(), yaw: e.yaw, ctx });
-      if (event === 'windup' && dragonAttack(s).ult) { // 大技: 名を告げ、長く構える
-        G.ui?.banner(dragonAttack(s).label, dragonProfile(s).name + ' ― 大技', 2.8); G.shake = Math.max(G.shake || 0, 0.8); sfx.growl?.(e.pos);
-      }
       if (event === 'strike' && dragonAttack(s).blink && canMove) { // 影渡り: 相手の向こう側へ現れ、振り向いて斬る
         const tp = new THREE.Vector3(...s.target), away = tp.clone().sub(e.pos).setY(0).normalize();
         G.fx?.burst(e.pos.clone().add(new THREE.Vector3(0, 1.5, 0)), dragonProfile(s).color, 50, { speed: 5, up: 2, size: .6, life: .7 });
@@ -154,9 +154,9 @@ export function updateDragons(dt) {
           e.dragonHit.add(m.id ?? m);
           const hitA = dragonAttack(s), fxk = hitA.effect;
           const dir = m.pos.clone().sub(e.pos).setY(0).normalize(); if (fxk === 'pull') dir.negate();
-          G.fx.damage(m, hitA.damage * (1 + Math.min(.5, (G.floor - 1) * .025)), [s.element || 'fire'], e, { dir, power: fxk === 'knock' ? 1.7 : fxk === 'pull' ? 1.2 : .7 });
+          G.fx.damage(m, hitA.damage * (1 + Math.min(.5, (G.floor - 1) * .025)), [s.element || 'fire'], e, { dir, power: fxk === 'knock' ? 1.7 : fxk === 'pull' ? 1.2 : .7, fx: fxk });
           // 固有技の追加の効き目: 鈍る・燃える・吸われる
-          if (m.status) {
+          if (m.status && m.kind !== 'remote') {   // 離れた仲間には、通信で本人の側に掛ける
             if (fxk === 'slow') m.status.slow = { t: 3 };
             if (fxk === 'burn') m.status.burn = { t: 3, dps: 4, src: e };
           }

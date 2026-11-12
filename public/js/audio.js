@@ -2,6 +2,7 @@
 let ctx = null, master = null, noiseBuf = null, listenerPos = { x: 0, z: 0 };
 
 export const getAudioCtx = () => ctx;
+export const getMaster = () => master;
 
 export function initAudio() {
   if (ctx) return;

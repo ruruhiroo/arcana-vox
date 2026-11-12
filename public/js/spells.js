@@ -379,7 +379,7 @@ export const FX = {
       this.damage(t, amount, elements, src, { ...opts, enchantHit: true });
       return this.damage(t, 10 * en.power, en.elements, src, { enchantHit: true, power: en.power, tier: 0 });
     }
-    if (t.isMage && t.kind === 'remote') { G.net?.send({ t: 'dmg', to: t.netId, amount, elements, src: src?.id, opts: { melee: opts.melee, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, silent: opts.silent } }); return; }
+    if (t.isMage && t.kind === 'remote') { G.net?.send({ t: 'dmg', to: t.netId, amount, elements, src: src?.id, opts: { melee: opts.melee, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, silent: opts.silent, fx: opts.fx } }); return; }
     if (t === G.player && src && !src.isMage && amount > 0 && !opts.silent) G.onEnemyHit?.(src); // 魔物の技(声を狂わせる など)
     if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, atk: opts.atk, hitPoint: opts.hitPoint }); return; }
     let a = amount, mouthStagger = false;
@@ -411,7 +411,7 @@ export const FX = {
     // 連携: 別の魔導師が、違う属性で4秒以内に続けて当てると傷が増える(仲間と属性を散らすほど強い)
     if (!t.isMage && src?.isMage && elements.length && !opts.silent && !opts.enchantHit) {
       const now = G.time || 0, L = t.lastHit;
-      if (L && L.id !== src.id && L.el !== elements[0] && now - L.t < 4) { a *= 1.25; G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 2.0, 0)), '連携!', '#ffe08a'); }
+      if (L && L.id !== src.id && L.el !== elements[0] && now - L.t < 4) { a *= 1.25; G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 2.0, 0)), '連携!', '#ffe08a'); G.net?.send({ t: 'combo', eid: t.id }); }
       t.lastHit = { id: src.id, el: elements[0], t: now };
     }
     if (t.guardian && t.barrier && !opts.silent) { const k = G.guardHit?.(t, src) ?? 1; a *= k; if (k < 1) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 1.6, 0)), '結界', '#d0a0ff'); }

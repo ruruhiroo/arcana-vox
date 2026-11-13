@@ -34,10 +34,11 @@ export function applyTo(mage, kind, local = true, durOverride = 0) {
   if (kind === 'tiny') delete mage.status.giant; if (kind === 'giant') delete mage.status.tiny;
   mage.status[kind] = { t: ef.dur };
   if (ef.voice) mage.status.vfx = { t: ef.dur, mode: ef.voice };
+  const voiceOnly = !!ef.voice && !['tiny', 'giant'].includes(kind);
   if (mage === G.player) {
-    H.ui.banner(ef.name, ef.msg, 3);
+    if (!voiceOnly) H.ui.banner(ef.name, ef.msg, 3);
   } else if (mage.netId != null && ef.voice) G.net?.setVoiceFx?.(mage.netId, ef.voice);
-  G.fx?.burst(mage.pos.clone().setY(1.2), 0xc070ff, 30, { speed: 2, up: 1.5 });
+  if (!(voiceOnly && mage === G.player)) G.fx?.burst(mage.pos.clone().setY(1.2), 0xc070ff, 30, { speed: 2, up: 1.5 });
   if (local) G.net?.send({ t: 'msc', id: mage.id, kind, dur: durOverride || 0 });
 }
 // 仲間から届いた知らせ
@@ -58,7 +59,7 @@ export function foeHit(foe, p) {
   if (Math.random() > c.p) return;
   p._curseT = (G.time || 0) + 6; // 立て続けには掛からない
   const kind = c.kind || VOICE_ONLY[Math.floor(Math.random() * VOICE_ONLY.length)];
-  H.ui.floatText?.(p.pos.clone().setY(p.pos.y + 1.6), `${c.name}!`, '#e0a0ff');
+  if (p !== G.player) H.ui.floatText?.(p.pos.clone().setY(p.pos.y + 1.6), `${c.name}!`, '#e0a0ff');
   applyTo(p, kind, true, 20);
 }
 
@@ -135,6 +136,6 @@ export const eyeScale = p => p.root?.scale.x || 1;
 export function badges(p) {
   const out = [];
   for (const k of ['tiny', 'giant', 'invert', 'drunk']) if (p.status[k]) out.push(`${EFFECTS[k].name} ${Math.ceil(p.status[k].t)}秒`);
-  if (p.status.vfx && !p.status.tiny && !p.status.giant) out.push(`${VOICE_NAMES[p.status.vfx.mode]} ${Math.ceil(p.status.vfx.t)}秒`);
+  if (p !== G.player && p.status.vfx && !p.status.tiny && !p.status.giant) out.push(`${VOICE_NAMES[p.status.vfx.mode]} ${Math.ceil(p.status.vfx.t)}秒`);
   return out;
 }

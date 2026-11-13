@@ -128,19 +128,26 @@ def ghoul():
     throat = nk + V((0, 0.05, 0.03)) * s
     mouth = hc + V((0, 0.1, -0.07)) * s
 
+    FUR, FUR_D, PAW = (0.95, 0.9, 0.8), (0.55, 0.47, 0.38), (0.5, 0.34, 0.24)
+
     def col(p, near, n):
-        c = mix(hexc(SKIN), (0.3, 0.27, 0.2), max(0, -n) * 1.3)
-        c = mix(c, (0.52, 0.42, 0.4), max(0, n) * 0.5)
-        if near and near[:4] in ('hand', 'foot', 'farm'):
-            c = mix(c, (0.16, 0.11, 0.1), 0.55 if near[:4] in ('hand', 'foot') else 0.2)
-        dm = (p - mouth).length / (0.065 * s)
-        if dm < 1:
-            c = mix(c, (0.2, 0.05, 0.05), 0.8 * (1 - dm) ** 0.7)          # 口のまわりの古い血
-        dt = (p - throat).length / (0.05 * s)
-        if dt < 1:
-            c = mix(c, (0.3, 0.1, 0.1), 0.6 * (1 - dt))                    # 喉の傷
-        if p.y > ch.y + 0.05 * s and abs(p.x) < 0.07 * s and ch.z - 0.12 * s < p.z < ch.z + 0.08 * s and n > -0.1:
-            c = mix(c, (0.22, 0.07, 0.06), 0.45)                           # 胸に垂れた血
+        shade = max(0, -n) * 0.9
+        if p.z < 0.168:
+            return mix(PAW, (0.16, 0.1, 0.07), shade)                                     # 足
+        if hand_d(p) <= 0.072:
+            return mix(PAW, (0.2, 0.13, 0.09), shade)                                     # 前足
+        if (p - V((0, -0.275, 0.3))).length < 0.09:
+            return mix(FUR, FUR_D, shade)                                                 # 尾
+        d = p - hc
+        if p.z < nk.z + 0.06 and d.z < -0.12 and abs(p.x) < 0.2:
+            return mix((0.94, 0.9, 0.8), (0.55, 0.5, 0.42), shade)                        # 襟巻き
+        c = mix(FUR, FUR_D, shade * 0.8)
+        if abs(d.x) > 0.2 and d.z < -0.03:
+            c = mix(c, PAW, sm(-d.z, 0.1, 0.24))                                          # 耳の先は焦げ茶
+        for sx in (-1, 1):
+            k = 1 - min(1, ((d.x - sx * 0.125) / 0.042) ** 2 + ((d.z + 0.075) / 0.028) ** 2)
+            if k > 0 and d.y > 0.05:
+                c = mix(c, (0.98, 0.58, 0.55), 0.5 * k)                                   # 頬の赤み
         return c
     r.color_fn = col
     eyeballs(r, eyes, 0.0085 * s, eye, 0xffe040)
@@ -675,77 +682,104 @@ def bat():
 # 迷宮で唯一「声を持つ」者。だから口元だけは頭巾から出ている(詠唱のため)。
 # 左手に開いた魔導書、右手に結晶の杖。衣は持ち主の色に染まる(材質 tint)。
 def mage():
+    """灯し子: 歩く溶けかけの蝋燭。愛らしくはないが、どこか気になる何か。寸胴の蝋の体に、とぼけた丸い目が二つ。口は無い。
+    頭から垂れる色蝋と、芯の先の火が持ち主の色。大きな魔導書を抱えている。他の者から見た魔導師の姿"""
     r = Rig('mage')
-    H = 1.72
-    humanoid(r, H=H, rad=0.85, w=0.95, hunch=0.05, muscle=0.4, fingers=False)
-    r.bump = 0.003
+    H = 1.3
+    humanoid(r, H=H, rad=1.2, w=1.05, leg=0.6, arm=0.62, neck=0.5, muscle=0, fingers=False)
+    r.bump = 0.0012
     r.surface = 'skin'
-    r.mat('skin', rough=0.6)
-    r.mat('tint', rough=0.9)
+    r.detail = 0.02
+    r.mottle = (0.96, 1.04)
+    r.mat('skin', rough=0.5)
+    r.mat('tint', rough=0.45)
     crystal = r.mat('crystal', 0xffffff, emit=2.5)
     leather = r.mat('leather', rough=0.7)
     gold = r.mat('gold', rough=0.4, metal=0.8)
-    wood = r.mat('wood', rough=0.75)
     paper = r.mat('cloth', rough=0.9)
-    s = H / 1.8
-    flesh(r, s=s, w=0.92, m=0.45)
-    hc, eyes = head(r, s=s, hs=1.0, jaw=1.0, brow=0.9, nose=1.0, ears=0)
-    hips, ch = J(r, 'hips'), J(r, 'chest')
-    R0 = 0.4 * s
-    clay(r, frust((0, -0.02, 0.03), (0, -0.01, hips.z + 0.04), R0, 0.19 * s, 28))
-    clay(r, frust((0, hips.y, hips.z), (0, ch.y, ch.z + 0.05 * s), 0.2 * s, 0.19 * s, 24))
-    clay(r, ell(ch + V((0, -0.01, 0.05)) * s, V((0.25, 0.14, 0.075)) * s))                       # 肩掛け
+    wick = r.mat('wick', 0x1a1410, rough=0.9)
+    for S, sx in (('_L', -1), ('_R', 1)):                # 腕は体から離して下げる
+        for nm, dx, dz in (('uarm', 0.15, 0.0), ('farm', 0.25, 0.04), ('hand', 0.29, 0.06)):
+            pj = r.joints[nm + S]['pos']
+            pj.x += sx * dx
+            pj.z += dz
+    hips, ch, nk = J(r, 'hips'), J(r, 'chest'), J(r, 'neck')
+    Z0, Z1 = hips.z - 0.14, nk.z + 0.26                  # 蝋の胴の下端と上端
+    RB, RT = 0.27, 0.245
+    hc = V((0, 0, Z1 - 0.17))                             # 目のある高さ
+    # --- 蝋の胴: 寸胴の柱。少し傾き、上の縁は溶けて盛り上がっている ---
+    clay(r, frust((0, 0, Z0), (0.015, 0, Z1), RB, RT, 32))
+    clay(r, ell((0.015, 0, Z1 - 0.01), V((RT + 0.012, RT + 0.012, 0.13))))                # 丸く溶けた頭
+    clay(r, ell((0, 0, Z0 + 0.02), V((RB + 0.012, RB + 0.012, 0.04))))                    # 丸めた下の縁
+    DRIPS = [(0.3, 0.2, 0.055), (2.84, 0.26, 0.06), (3.9, 0.16, 0.05), (5.0, 0.22, 0.055)]
+    for a, ln, w in DRIPS:                               # 縁から垂れた蝋(角度, 長さ, 太さ)
+        x, y = math.cos(a) * (RT + 0.012) + 0.015, math.sin(a) * (RT + 0.012)
+        k = 1 + (RB - RT) / RT * ln / (Z1 - Z0)
+        clay(r, cap((x, y, Z1 + 0.01), (x * k, y * k, Z1 - ln), w, w * 0.75))
+        clay(r, ell((x * k, y * k, Z1 - ln - w * 0.3), w * 1.05))                           # 垂れた先の玉
     for S, sx in (('_L', -1), ('_R', 1)):
-        sh, el, wr = J(r, 'clav' + S), J(r, 'uarm' + S), J(r, 'farm' + S)
-        clay(r, frust(sh, el, 0.07 * s, 0.066 * s, 16))
-        clay(r, frust(el, el.lerp(wr, 0.9), 0.064 * s, 0.1 * s, 18))
-        clay(r, ell(el, 0.068 * s))
-    # 頭巾: 目元まで深く被り、口元と顎は出す
-    clay(r, ell(hc + V((0, -0.03, 0.035)) * s, V((0.104, 0.118, 0.118)) * s))
-    clay(r, ell(hc + V((0, 0.06, 0.045)) * s, V((0.085, 0.06, 0.05)) * s))                       # 目元にかかる庇
-    clay(r, cap(hc + V((0, -0.1, 0.07)) * s, hc + V((0, -0.19, -0.05)) * s, 0.055 * s, 0.012 * s))
-    for i in range(14):
-        a = i / 14 * TAU + 0.2
-        for z, k in ((0.25, 0.9), (0.55, 0.72)):
-            dent(r, (math.cos(a) * R0 * k, math.sin(a) * R0 * k - 0.02, z * s), V((0.035, 0.035, 0.28)) * s, 0.02 * s)
+        sh, el, wr, hd = J(r, 'clav' + S), J(r, 'uarm' + S), J(r, 'farm' + S), J(r, 'hand' + S)
+        clay(r, frust(sh, el, 0.04, 0.034, 14))                                          # 細い腕
+        clay(r, frust(el, wr, 0.034, 0.03, 14))
+        clay(r, ell(el, 0.036))
+        clay(r, ell(hd + V((0, 0.01, -0.01)), V((0.05, 0.054, 0.054))))                  # 指の無い手
+        th, shn = J(r, 'thigh' + S), J(r, 'shin' + S)
+        clay(r, cap(J(r, 'pelvis' + S), th, 0.058, 0.05))
+        clay(r, cap(th, shn, 0.05, 0.044))
+        clay(r, ell(V((shn.x, 0.04, 0.05)), V((0.068, 0.11, 0.05))))                     # 平たい足
+    # 目: 蝋に指で突いたような二つの穴。大きさも高さも揃っていない
+    EYES = [(-0.078, 0.0, 0.026, (0, 0)), (0.078, 0.0, 0.026, (0, 0))]
 
-    def is_robe(p, nb):
-        if min(R.seg_dist(p, J(r, 'farm' + S), J(r, 'hand' + S) + (J(r, 'hand' + S) - J(r, 'farm' + S)) * 0.9) for S in ('_L', '_R')) < 0.05 * s and min((p - J(r, 'farm' + S)).length for S in ('_L', '_R')) > 0.03 * s:
-            return 0.0                                                                       # 袖口から出た手
-        if p.y > hc.y + 0.045 * s and abs(p.x) < 0.07 * s and hc.z - 0.125 * s < p.z < hc.z + 0.0 * s:
-            return 0.0                                                                       # 口元と顎
-        return 1.0
-    region(r, 'cloth', is_robe, lambda p, n: tuple(0.6 + 0.2 * n - (0.2 if p.z < 0.1 * s else 0) for _ in range(3)), 0.92)
-    r.slot_fn = lambda p, nb: 'tint' if is_robe(p, nb) > 0.5 else None
-    r.color_fn = lambda p, near, n: mix((0.78, 0.6, 0.5), (0.4, 0.26, 0.2), max(0, -n) * 1.3 + (0.45 if p.z > hc.z - 0.02 * s else 0))
-    # 帯・薬瓶・巻物筒
-    r.part(ring(0.215 * s, 0.028, (0, 0, hips.z + 0.03), seg=24, scale=(1, 0.82, 1)), 'hips', leather, 0x3a2416)
-    r.part(box((0.07, 0.03, 0.05), (0, 0.185 * s, hips.z + 0.03)), 'hips', gold, 0xb08a3c, smooth=False)
-    for k, x in enumerate((0.13, 0.2)):
-        r.part(cone(0.028, 0.03, 0.09, (x * s, 0.13 * s - k * 0.05, hips.z - 0.06), seg=10), 'hips', leather, (0x8a2a2a, 0x2a4a8a)[k])
-        r.part(cone(0.012, 0.014, 0.035, (x * s, 0.13 * s - k * 0.05, hips.z + 0.0), seg=8), 'hips', wood, 0x6a5030)
-    r.part(cone(0.035, 0.035, 0.42, (-0.02, ch.y - 0.17, ch.z - 0.08), rot=(0, 0.9, 0), seg=12), 'chest', leather, 0x4a3020)
-    r.part(ring(0.4 * s, 0.014, (0, -0.02, 0.04), seg=28), 'hips', gold, 0xb08a3c)
-    # 魔導書(左手)と結晶の杖(右手)
-    hl = J(r, 'hand_L')
+    def drip_d(p):
+        best = 9.0
+        for a, ln, w in DRIPS:
+            x, y = math.cos(a) * (RT + 0.012) + 0.015, math.sin(a) * (RT + 0.012)
+            k = 1 + (RB - RT) / RT * ln / (Z1 - Z0)
+            best = min(best, R.seg_dist(p, V((x, y, Z1 + 0.01)), V((x * k, y * k, Z1 - ln - w * 0.3))) - w * 1.05)
+        return best
+
+    def is_tint(p, nb=None):
+        return 1.0 if (p.z > Z1 + 0.015 or (p.z > Z0 + 0.2 and drip_d(p) < 0.004)) else 0.0      # 頭に流した色蝋と、その垂れ
+    region(r, 'cloth', is_tint, lambda p, n: tuple(0.78 + 0.14 * n for _ in range(3)), 0.45)
+    r.slot_fn = lambda p, nb: 'tint' if is_tint(p) > 0.5 else None
+
+    def col(p, near, n):
+        c = mix((0.9, 0.86, 0.76), (0.62, 0.56, 0.47), max(0, -n) * 0.8)                  # 古びた蝋の色
+        if p.z < Z0 + 0.12:
+            c = mix(c, (0.3, 0.26, 0.22), sm(Z0 + 0.12 - p.z, 0, 0.12) * 0.7)             # 足元は煤けている
+        if p.z < Z0 - 0.03 or (abs(p.x) > RB + 0.06 and p.z < Z1 - 0.1):
+            c = mix((0.5, 0.46, 0.4), (0.2, 0.17, 0.14), max(0, -n))                      # 手足は少し暗い蝋
+        return c
+    r.color_fn = col
+    eye = r.mat('eye', 0xffffff, rough=0.5, emit=0.3)
+    pupil = r.mat('pupil', 0x0a0806, rough=0.3)
+    for ex, ez, rad, look in EYES:
+        ey = math.sqrt(max(0.0, (RT + 0.014) ** 2 - ex ** 2))
+        r.part(sphere(rad, (ex, ey, hc.z + ez), seg=16, rings=10, scale=(1, 0.55, 1.12)), 'head', pupil, 0x0a0806)
+        r.part(sphere(rad * 0.28, (ex - 0.008, ey + rad * 0.5, hc.z + ez + 0.01), seg=8, rings=6, scale=(1, 0.5, 1)), 'head', eye, 0xffffff)   # 小さな光
+    # 芯と、その先の火(持ち主の色。詠唱すると強く光る)
+    wz = Z1 + 0.06
+    r.part(cone(0.012, 0.009, 0.12, (0.03, -0.01, wz + 0.05), rot=(0.12, 0.1, 0), seg=6), 'head', wick, 0x1a1410)
+    r.part(sphere(0.05, (0.036, -0.016, wz + 0.17), seg=8, rings=6, scale=(0.75, 0.75, 1.5)), 'head', crystal, 0xffffff)
+    # 大きな魔導書を、胸の前に開いて抱える(胸の骨に付け、両手を添える)
+    TH = -1.0
+    bc = V((0, RB + 0.12, ch.z - 0.06))
+    off = lambda x, y: bc + V((x, y * math.cos(TH), y * math.sin(TH)))
     for sx in (-1, 1):
-        r.part(box((0.12, 0.013, 0.18), (hl.x + sx * 0.061, hl.y + 0.1, hl.z + 0.03), rot=(0.5, sx * -0.18, 0)), 'hand_L', paper, 0xd8ccac, smooth=False)
-    r.part(box((0.255, 0.012, 0.195), (hl.x, hl.y + 0.092, hl.z + 0.022), rot=(0.5, 0, 0)), 'hand_L', leather, 0x4a1418, smooth=False)
-    h = J(r, 'hand_R')
-    r.part(cone(0.016, 0.022, 1.75, (h.x, h.y + 0.02, h.z + 0.3), seg=8), 'hand_R', wood, 0x3a2412)
-    for k in range(3):
-        a = k / 3 * TAU
-        r.part(cone(0.01, 0.003, 0.14, (h.x + math.cos(a) * 0.04, h.y + 0.02 + math.sin(a) * 0.04, h.z + 1.2), rot=(math.sin(a) * 0.45, -math.cos(a) * 0.45, 0), seg=5), 'hand_R', gold, 0xb08a3c)
-    r.part(sphere(0.055, (h.x, h.y + 0.02, h.z + 1.27), seg=6, rings=4, scale=(0.8, 0.8, 1.7)), 'hand_R', crystal, 0xffffff, smooth=False)
-    humanoid_anims(r, stride=0.34, armswing=0.12, attack='cast')
-    book = {'uarm_L': qx(0.5) @ qy(-0.1), 'farm_L': qx(1.05)}        # 本を胸の前に開いて持つ
+        r.part(box((0.2, 0.014, 0.27), tuple(off(sx * 0.102, -0.011)), rot=(TH, 0, 0)), 'chest', paper, 0xe8dcbc, smooth=False)
+    r.part(box((0.43, 0.012, 0.29), tuple(bc), rot=(TH, 0, 0)), 'chest', leather, 0x5a1a20, smooth=False)
+    r.part(box((0.03, 0.02, 0.29), tuple(off(0, 0.004)), rot=(TH, 0, 0)), 'chest', gold, 0xd0a850, smooth=False)
+    humanoid_anims(r, stride=0.55, armswing=0.18, attack='cast', speed_bob=0.05)
+    book = {'uarm_L': qx(0.5) @ qy(-0.1), 'farm_L': qx(1.05), 'uarm_R': qx(0.5) @ qy(0.1), 'farm_R': qx(1.05)}        # 本を胸の前に、両手で開いて持つ
     for nm in ('walk', 'idle'):
         frames, loop, fn = r.anims[nm]
         r.anims[nm] = (frames, loop, (lambda f: (lambda t: {**f(t), **book}))(fn))
-    r.anims['chant'] = (36, True, lambda t: {**book, 'uarm_L': qx(0.75) @ qy(-0.1), 'farm_L': qx(1.2), 'uarm_R': qx(1.0 + 0.06 * math.sin(t * TAU)) @ qy(0.25), 'farm_R': qx(0.5),
-                                              'head': qx(-0.18 + 0.03 * math.sin(t * TAU * 2)), 'chest': qx(0.04 * math.sin(t * TAU)), '_loc': V((0, 0, 0.0))})
-    r.tris = 10000
-    r.voxel = 0.0065
+    w0 = r.anims['idle'][2]
+    r.anims['idle'] = (48, True, lambda t: {**w0(t), 'head': qz(0.1 * math.sin(t * TAU)), 'chest': qz(0.04 * math.sin(t * TAU + 0.6))})   # ゆっくり左右に傾く
+    r.anims['chant'] = (36, True, lambda t: {**book, 'uarm_L': qx(0.75) @ qy(-0.1), 'farm_L': qx(1.2), 'uarm_R': qx(0.75) @ qy(0.1), 'farm_R': qx(1.2),
+                                              'head': qx(-0.1 + 0.05 * math.sin(t * TAU * 2)), 'chest': qx(0.04 * math.sin(t * TAU)), '_loc': V((0, 0, 0.015 * math.sin(t * TAU)))})
+    r.tris = 9000
+    r.voxel = 0.006
     return r
 
 

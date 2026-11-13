@@ -1,12 +1,17 @@
 // 派手な魔法の演出: 衝撃波・火花・焦げ跡・属性ごとの余韻・画面の揺れ・瓦礫
 import * as THREE from 'three';
 import { G, rand } from './state.js';
-import { glowSprite } from './textures.js';
+import { glowSprite, runeCircleTex } from './textures.js';
 import { ELEMENTS } from './lexicon.js';
 
 const GLOW = glowSprite();
 G.vfx = [];
 const add = (obj, update) => { if (obj) G.scene.add(obj); G.vfx.push({ obj, update }); };
+let RUNE = null;
+const rune = () => { try { RUNE ||= runeCircleTex(); } catch { /* 描画の無い環境(試験) */ } return RUNE; };
+// 加算で光る材質(重なっても白く飛びすぎないよう、少し暗めに作る)
+const glowMat = (color, opacity = 1, extra = {}) => new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(0.75), transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, ...extra });
+const ease = k => 1 - (1 - k) * (1 - k);
 const scorchTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
   const gr = g.createRadialGradient(64, 64, 4, 64, 64, 62); gr.addColorStop(0, 'rgba(0,0,0,.85)'); gr.addColorStop(0.6, 'rgba(10,6,4,.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
@@ -47,11 +52,13 @@ export function bigImpact(pos, color, power = 1, elements = []) {
   if (pos.y < 2.2) scorch(new THREE.Vector3(pos.x, 0.03, pos.z), 0.8 + P * 0.6);
   // 属性ごとの余韻
   const el = elements[0];
-  if (el === 'fire') embers(pos, 1.6 + P);
-  if (el === 'ice') shards(pos, 10 + P * 6);
-  if (el === 'thunder') arcs(pos, color, 3 + Math.round(P * 2));
-  if (el === 'holy') pillar(pos, color, P);
-  if (el === 'void') implode(pos, color, P);
+  if (pos.y < 1.9 && P > 0.5) sigil(new THREE.Vector3(pos.x, 0.06, pos.z), color, 1.3 + P * 0.9);   // 床に魔法陣が灼きつく
+  if (el === 'fire') { fireball(pos, P); embers(pos, 1.6 + P); }
+  if (el === 'ice') { shards(pos, 10 + P * 6); if (pos.y < 2) frost(pos, P); }
+  if (el === 'thunder') { skyBolt(pos, color, P); arcs(pos, color, 3 + Math.round(P * 2)); }
+  if (el === 'wind') vortex(pos, color, P);
+  if (el === 'holy') { pillar(pos, color, P); halo(pos, color, P); }
+  if (el === 'void') { implode(pos, color, P); singularity(pos, color, P); }
   shake(0.12 + P * 0.16, pos);
 }
 
@@ -59,6 +66,87 @@ function scorch(pos, size) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(size * 2, size * 2), new THREE.MeshBasicMaterial({ map: scorchTex, transparent: true, depthWrite: false, opacity: 0.85 }));
   m.rotation.x = -Math.PI / 2; m.rotation.z = Math.random() * 6.28; m.position.copy(pos);
   let t = 0; add(m, dt => { t += dt; if (t > 18) m.material.opacity = Math.max(0, 0.85 * (1 - (t - 18) / 6)); return t < 24; });
+}
+// 床の魔法陣: 回りながら広がり、灼きついて消える
+function sigil(pos, color, size) {
+  const tex = rune(); if (!tex) return;
+  [[1, 1.6, color, 0.8], [0.6, -2.6, 0xffffff, 0.5]].forEach(([k, w, c, op]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glowMat(c, 0, { map: tex }));
+    m.rotation.x = -Math.PI / 2; m.position.copy(pos); m.position.y += k * 0.01; m.rotation.z = Math.random() * 6.28;
+    let t = 0; add(m, dt => { t += dt; const f = t / 1.1; m.scale.setScalar(size * k * 2 * (0.3 + 0.7 * ease(Math.min(1, f * 3)))); m.rotation.z += dt * w * (1 - f * 0.7); m.material.opacity = op * Math.min(1, f * 10) * (1 - f) * (1 - f); return f < 1; });
+  });
+}
+// 炎: 火球がふくらんで弾け、黒煙まじりの火柱が立ちのぼる
+function fireball(pos, P) {
+  const geo = new THREE.SphereGeometry(1, 20, 14);
+  [[0xd03a08, 1.2, 0.45, 0.2], [0xe07818, 0.8, 0.32, 0.2], [0xe0a850, 0.4, 0.2, 0.25]].forEach(([c, R, life, op]) => {
+    const m = new THREE.Mesh(geo, glowMat(c, op)); m.position.copy(pos);
+    let t = 0; add(m, dt => { t += dt; const f = t / life; m.scale.setScalar((0.25 + ease(f)) * R * (0.6 + P * 0.45)); m.scale.y *= 1 + f * 0.5; m.position.y = pos.y + f * 0.6; m.material.opacity = op * (1 - f) * (1 - f); return f < 1; });
+  });
+  for (let i = 0; i < 16 + P * 10; i++) { const a = Math.random() * 6.28, r = rand(0, 0.5); G.particles.emit(pos.clone().add(new THREE.Vector3(Math.cos(a) * r, rand(0, 0.4), Math.sin(a) * r)), new THREE.Vector3(Math.cos(a) * 0.6, rand(2.5, 5.5), Math.sin(a) * 0.6), i % 4 === 0 ? 0x2a1a12 : i % 2 ? 0xff7a20 : 0xffd070, rand(0.45, 0.9), rand(0.5, 1.1)); }
+}
+// 氷: 着弾点から氷の棘が放射状に突き出し、しばらく残って砕ける
+function frost(pos, P) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xdff4ff, emissive: 0x4aa8ff, emissiveIntensity: 0.7, roughness: 0.08, metalness: 0.1, flatShading: true, transparent: true, opacity: 0.92 });
+  const n = 7 + Math.round(P * 3), geo = new THREE.ConeGeometry(0.13, 1, 5);
+  const group = new THREE.Group(); group.position.set(pos.x, 0, pos.z);
+  for (let i = 0; i < n; i++) {
+    const a = i / n * 6.28 + rand(-0.25, 0.25), r = i === 0 ? 0 : rand(0.25, 0.8) * (0.7 + P * 0.35), h = (i === 0 ? 1.5 : rand(0.6, 1.2)) * (0.7 + P * 0.4);
+    const s = new THREE.Mesh(geo, mat); s.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r); s.scale.set(1 + r * 0.6, h, 1 + r * 0.6);
+    s.rotation.z = -Math.cos(a) * r * 0.55; s.rotation.x = Math.sin(a) * r * 0.55; group.add(s);
+  }
+  let t = 0; group.scale.set(1, 0.01, 1);
+  add(group, dt => { t += dt; group.scale.y = t < 0.12 ? Math.max(0.01, t / 0.12) * 1.15 : t < 0.2 ? 1.15 - (t - 0.12) * 1.9 : 1; if (t > 1.3) { mat.opacity = Math.max(0, 0.92 * (1 - (t - 1.3) / 0.5)); group.scale.y = Math.max(0.01, 1 - (t - 1.3) * 1.2); } if (t >= 1.8) { geo.dispose(); mat.dispose(); } return t < 1.8; });
+  for (let i = 0; i < 26; i++) { const a = Math.random() * 6.28; G.particles.emit(new THREE.Vector3(pos.x, 0.15, pos.z), new THREE.Vector3(Math.cos(a) * rand(1.5, 4), rand(0, 0.5), Math.sin(a) * rand(1.5, 4)), 0xcfeeff, rand(0.5, 0.9), rand(0.5, 1)); }   // 床を這う冷気
+}
+// 雷: 天井から着弾点へ、太い稲妻が二度またたく
+function skyBolt(pos, color, P) {
+  const top = pos.y + 9, seg = 9, group = new THREE.Group();
+  const core = glowMat(0xffffff, 1), sheath = glowMat(color, 0.6);
+  const build = () => {
+    while (group.children.length) group.remove(group.children[0]);
+    let a = new THREE.Vector3(pos.x + rand(-1.2, 1.2), top, pos.z + rand(-1.2, 1.2));
+    for (let i = 1; i <= seg; i++) {
+      const f = i / seg, b = i === seg ? pos.clone() : new THREE.Vector3(pos.x + rand(-0.7, 0.7) * (1 - f), top + (pos.y - top) * f, pos.z + rand(-0.7, 0.7) * (1 - f));
+      const len = a.distanceTo(b), mid = a.clone().add(b).multiplyScalar(0.5), q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      for (const [w, m] of [[0.035, core], [0.11 + P * 0.03, sheath]]) { const c = new THREE.Mesh(BOLT_GEO, m); c.position.copy(mid); c.quaternion.copy(q); c.scale.set(w, len, w); group.add(c); }
+      if (i > 2 && i < seg && Math.random() < 0.45) { const e = b.clone().add(new THREE.Vector3(rand(-1.3, 1.3), rand(-1.2, -0.3), rand(-1.3, 1.3))), l2 = b.distanceTo(e), c = new THREE.Mesh(BOLT_GEO, core); c.position.copy(b.clone().add(e).multiplyScalar(0.5)); c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), e.clone().sub(b).normalize()); c.scale.set(0.02, l2, 0.02); group.add(c); }   // 枝
+      a = b;
+    }
+  };
+  build();
+  let t = 0, re = false;
+  add(group, dt => { t += dt; if (!re && t > 0.09) { re = true; build(); } const f = t / 0.26; core.opacity = (t < 0.06 || (t > 0.09 && t < 0.16)) ? 1 : 0.25 * (1 - f); sheath.opacity = core.opacity * 0.6; if (f >= 1) { core.dispose(); sheath.dispose(); } return f < 1; });
+}
+const BOLT_GEO = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true);
+// 風: 三日月の刃が渦を巻いて立ちのぼる
+function vortex(pos, color, P) {
+  const group = new THREE.Group(); group.position.copy(pos);
+  const geo = new THREE.TorusGeometry(1, 0.035, 5, 28, Math.PI * 1.25), mats = [];
+  for (let i = 0; i < 5; i++) { const m = glowMat(i % 2 ? 0xffffff : color, 0.8); mats.push(m); const b = new THREE.Mesh(geo, m); b.rotation.x = Math.PI / 2 + rand(-0.25, 0.25); b.rotation.z = rand(0, 6.28); b.position.y = -0.3 + i * 0.32; b.userData.r = 0.35 + i * 0.16; group.add(b); }
+  let t = 0;
+  add(group, dt => { t += dt; const f = t / 0.7; group.children.forEach((b, i) => { b.rotation.z += dt * (14 - i * 1.5); b.scale.setScalar(b.userData.r * (0.5 + ease(f) * (1.1 + P * 0.5))); b.position.y += dt * (0.8 + i * 0.25); mats[i].opacity = 0.8 * (1 - f); }); if (f >= 1) { geo.dispose(); mats.forEach(m => m.dispose()); } return f < 1; });
+  for (let i = 0; i < 30; i++) { const a = Math.random() * 6.28, r = rand(0.3, 1.2); G.particles.emit(pos.clone().add(new THREE.Vector3(Math.cos(a) * r, rand(-0.3, 0.6), Math.sin(a) * r)), new THREE.Vector3(-Math.sin(a) * 5, rand(1, 3), Math.cos(a) * 5), i % 3 ? color : 0xffffff, rand(0.15, 0.3), rand(0.35, 0.7)); }
+}
+// 聖: 光の輪が柱を昇り、光の粒が舞い上がる
+function halo(pos, color, P) {
+  const geo = new THREE.TorusGeometry(1, 0.02, 5, 40);
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Mesh(geo, glowMat(i === 1 ? 0xffffff : color, 0)); m.rotation.x = Math.PI / 2; m.position.set(pos.x, Math.max(0.1, pos.y - 0.6), pos.z);
+    let t = -i * 0.12; add(m, dt => { t += dt; if (t < 0) return true; const f = t / 0.75; m.position.y += dt * (3.2 + P); m.scale.setScalar((0.9 + P * 0.35) * (1 - f * 0.45)); m.material.opacity = 0.9 * Math.min(1, f * 8) * (1 - f); if (f >= 1) m.material.dispose(); return f < 1; });
+  }
+  for (let i = 0; i < 24; i++) { const a = Math.random() * 6.28, r = rand(0.1, 0.9); G.particles.emit(new THREE.Vector3(pos.x + Math.cos(a) * r, rand(0.1, 1.2), pos.z + Math.sin(a) * r), new THREE.Vector3(0, rand(1.5, 4), 0), i % 2 ? 0xfff4c8 : color, rand(0.12, 0.26), rand(0.7, 1.3)); }
+}
+// 闇: 光を呑む黒い球が一瞬ふくらみ、縮んで弾ける
+function singularity(pos, color, P) {
+  const R = 0.7 + P * 0.45, geo = new THREE.SphereGeometry(1, 20, 14);
+  const dark = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x020005, transparent: true, opacity: 0.96 })); dark.position.copy(pos);
+  const rim = new THREE.Mesh(geo, glowMat(color, 0.7, { side: THREE.BackSide })); rim.position.copy(pos);
+  let t = 0, popped = false;
+  add(dark, dt => { t += dt; const f = t / 0.42, s = f < 0.55 ? ease(f / 0.55) * R : R * Math.max(0, 1 - (f - 0.55) / 0.45); dark.scale.setScalar(Math.max(0.001, s)); rim.scale.setScalar(Math.max(0.001, s * 1.18));
+    if (f >= 1 && !popped) { popped = true; G.scene.remove(rim); rim.material.dispose(); dark.material.dispose(); geo.dispose(); for (let i = 0; i < 36; i++) { const v = new THREE.Vector3(rand(-1, 1), rand(-0.3, 1), rand(-1, 1)).normalize().multiplyScalar(rand(4, 9)); G.particles.emit(pos.clone(), v, i % 3 ? color : 0x4a1a80, rand(0.2, 0.4), rand(0.3, 0.6)); } }
+    return f < 1; });
+  G.scene.add(rim);
 }
 function embers(pos, dur) {
   let t = 0; add(null, dt => { t += dt; for (let i = 0; i < 3; i++) G.particles.emit(pos.clone().add(new THREE.Vector3(rand(-0.8, 0.8), 0, rand(-0.8, 0.8))).setY(0.1), new THREE.Vector3(rand(-0.3, 0.3), rand(1, 2.4), rand(-0.3, 0.3)), Math.random() < 0.5 ? 0xff7020 : 0xffc040, 0.18, 1.1); return t < dur; });
@@ -83,6 +171,8 @@ function pillar(pos, color, P) {
   const m = new THREE.Mesh(new THREE.CylinderGeometry(0.5 + P * 0.3, 0.7 + P * 0.4, 6, 20, 1, true), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
   m.position.set(pos.x, 3, pos.z); let t = 0;
   add(m, dt => { t += dt; m.material.opacity = 0.45 * (1 - t / 0.8); m.scale.x = m.scale.z = 1 - t * 0.6; return t < 0.8; });
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 9, 10, 1, true), glowMat(0xffffff, 0.8)); c.position.set(pos.x, 4.5, pos.z); let t2 = 0;
+  add(c, dt => { t2 += dt; c.material.opacity = 0.8 * (1 - t2 / 0.5); c.scale.x = c.scale.z = 1 + t2 * 2; return t2 < 0.5; });
 }
 function implode(pos, color, P) {
   for (let i = 0; i < 40 + P * 20; i++) { const off = new THREE.Vector3(rand(-1, 1), rand(-0.5, 1), rand(-1, 1)).normalize().multiplyScalar(rand(1.5, 3)); G.particles.emit(pos.clone().add(off), off.clone().multiplyScalar(-2.2), color, 0.35, 0.45); }

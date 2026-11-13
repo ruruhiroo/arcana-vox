@@ -26,6 +26,9 @@ function mageMesh(color) {
       if (!o.isMesh) return;
       o.material = o.material.clone();
       if (o.material.name === 'tint') o.material.color.set(color).lerp(new THREE.Color(0xffffff), 0.25);
+      if (o.material.name === 'pupil') { o.material.color.set(0x120c18); o.material.roughness = 0.55; o.material.metalness = 0; o.material.envMapIntensity = 0; }   // 黒目は光を拾わせない
+      if (o.material.name === 'glint') { o.material.emissiveIntensity = 0; o.material.color.set(0x9a9eaa); o.material.roughness = 0.8; }
+      if (o.material.name === 'eye') { o.material.emissive.set(0xffffff); o.material.emissiveIntensity = 0.22; o.material.color.set(0xe8e8ee); o.material.roughness = 0.7; }   // 白目は、暗がりでも見える程度にだけ光らせる
       if (o.material.name === 'crystal') { o.material.color.set(color); o.material.emissive.set(color); crystal = o; }
     });
     forged.userData.crystal = crystal;
@@ -174,6 +177,45 @@ export const ENEMY_TYPES = {
   golem:    { name: '石像兵', hp: 240, speed: 1.5, dmg: 22, range: 2.3, cd: 2.0, radius: 0.85, weak: ['thunder'], resist: ['fire', 'ice', 'wind'], drops: ['iron', 'iron', 'crystal', 'crystal'] },
 };
 
+// ---- 近接の振り方 ----
+// wind = 振りかぶってから武器が届くまでの秒 / rec = 振った後の硬直の秒 / dmg = 傷の倍率 / reach = 届く距離の足し前 / arc = 当たる向きの幅(正面から左右へ、ラジアン)
+// 傷は「振り始め」ではなく、武器が届いた瞬間(wind 秒後)に、その時まだ届く所にいる者だけが受ける。振りかぶりの終わり際は向きを変えられないので、横へ動けば避けられる
+export const SWINGS = {
+  light: { label: '小振り',     wind: 0.36, rec: 0.38, dmg: 0.7,  reach: 0.1,  arc: 0.95, track: 0.8,  w: 3, cd: 0.4,  pose: 'jab' },
+  heavy: { label: '大振り',     wind: 0.95, rec: 1.1,  dmg: 1.7,  reach: 0.3,  arc: 0.7,  track: 0.6,  w: 2, cd: 0.9,  pose: 'over', push: 7, shake: 0.28, thud: true, growl: true },
+  sweep: { label: '薙ぎ払い',   wind: 0.62, rec: 0.75, dmg: 1.0,  reach: 0.4,  arc: 1.5,  track: 0.7,  w: 2, cd: 0.8,  pose: 'sweep', all: true, push: 3.5 },
+  lunge: { label: '踏み込み突き', wind: 0.55, rec: 0.85, dmg: 1.25, reach: 0.55, arc: 0.45, track: 0.55, w: 2, cd: 0.85, pose: 'lunge', step: 11 },
+  slam:  { label: '叩きつけ',   wind: 0.85, rec: 1.2,  dmg: 1.0,  reach: 0,    arc: 9,    track: 1,    w: 3, cd: 1,    pose: 'over', radial: 3.2, push: 9, shake: 0.35, thud: true, growl: true },
+};
+// 種類ごとに使える振り方(無い種類は小振りと大振り)
+const SWING_SET = {
+  skeleton: ['light', 'heavy', 'sweep', 'lunge'], knight: ['light', 'heavy', 'sweep', 'lunge'], ghoul: ['light', 'light', 'sweep', 'lunge'],
+  ogre: ['slam', 'sweep', 'heavy'], golem: ['heavy', 'sweep', 'light'], slime: ['light', 'lunge'], bat: ['light', 'lunge'], spider: ['light', 'heavy'],
+};
+// 模型の攻撃の動きの中で、武器が届く瞬間の位置(0〜1)
+const ATK_FRAC = { skeleton: 0.58, ghoul: 0.55, knight: 0.55, ogre: 0.62, golem: 0.62 };
+const smooth = x => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+// 振り方ごとの体の動き: [前後の傾き, ひねり, 横の傾き, 前への踏み出し(m), 沈み(m)] を「振りかぶり」と「届いた瞬間」で持つ
+const SWING_POSE = {
+  jab:   { wind: [0.07, 0.12, 0, 0.05, 0],      hit: [-0.16, -0.14, 0, -0.16, -0.02] },
+  over:  { wind: [0.26, 0, 0, 0.14, 0.05],      hit: [-0.42, 0, 0, -0.3, -0.12] },
+  sweep: { wind: [-0.06, 0.75, -0.2, 0.05, -0.04], hit: [-0.14, -0.85, 0.24, -0.14, -0.06] },
+  lunge: { wind: [-0.14, 0.1, 0, 0.24, -0.09],  hit: [-0.3, -0.06, 0, -0.6, -0.05] },
+};
+// 今の体の動き(振りかぶり → 届く直前に一気に振り抜く → 硬直の間は振り抜いた姿勢のまま → ゆっくり戻る)
+export function swingPose(s, out = [0, 0, 0, 0, 0]) {
+  const V = s.V, P0 = SWING_POSE[V.pose] || SWING_POSE.jab, p = s.t / V.wind;
+  if (p < 1) {
+    const a = smooth(Math.min(1, p / 0.78)), k = p < 0.78 ? 0 : Math.pow((p - 0.78) / 0.22, 2);
+    for (let i = 0; i < 5; i++) out[i] = P0.wind[i] * a * (1 - k) + P0.hit[i] * k;
+  } else {
+    const q = (s.t - V.wind) / V.rec, back = 1 - smooth((q - 0.55) / 0.45);
+    for (let i = 0; i < 5; i++) out[i] = P0.hit[i] * back;
+    if (V.thud) out[2] += Math.sin(q * 26) * 0.035 * Math.max(0, 1 - q * 1.6);   // 大振りの後は、反動で体が揺れる
+  }
+  return out;
+}
+
 // 種類ごとの縁取りの色 (暗がりでも輪郭と種類が分かるように)
 export const ENEMY_RIM = { dragon: 0xb98763, skeleton: 0xff5a3a, slime: 0x7dff4a, wraith: 0xb565ff, golem: 0xff9a2a, scribe: 0xff4a8a, ghoul: 0xc8ff5a, bat: 0xff4a4a, spider: 0xff3a1a, imp: 0xffa040, knight: 0x60c8ff, ogre: 0xffb060, lich: 0x60ff9a };
 // 標準材質に「視線と直交する面ほど光る」縁取りを足す
@@ -234,7 +276,7 @@ export class Enemy {
     this.phase = Math.random() * 6.28;
     this.body = enemyMesh(type, boss ? 1.8 : this.elite ? 1.18 : 1, floor);
     this.root = new THREE.Group(); this.root.add(this.body);
-    this.rimU = { color: { value: new THREE.Color(this.elite ? 0xd0a040 : ENEMY_RIM[type] || 0xffffff) }, strength: { value: 0.9 } };
+    this.rimU = { color: { value: new THREE.Color(this.elite ? 0xd0a040 : 0x8a94a8) }, strength: { value: 0.3 } };
     addRim(this.body, this.rimU);
     this.hitT = 0;
     if (boss) {
@@ -276,14 +318,23 @@ export class Enemy {
     const moving = (this._lastX !== undefined) && Math.hypot(this.pos.x - this._lastX, this.pos.z - this._lastZ) > dt * 0.4;
     this._lastX = this.pos.x; this._lastZ = this.pos.z;
     this.attackAnim = Math.max(0, this.attackAnim - dt * 3);
+    if (this.swing) {
+      this.swing.t += dt;
+      if (this.stun > 0 && !this.swing.hit) this.cancelSwing();                                     // 振りかぶりの間に怯ませれば、振りは止まる
+      else if (!G.isHost && this.swing.t >= this.swing.V.wind + this.swing.V.rec) this.swing = null;   // 部屋の主でない側は、見た目だけ
+    }
     // 種類ごとの動き(体の揺れ・浮き) と、関節の動き(歩く・振る・漂う)
     if (ud.kind === 'glb') {
       if (T.fly) b.position.y = (T.flyH || 0.3) + Math.sin(t * 2.2 + ph) * 0.15; // 飛ぶ者は宙に
+      // 振りに合わせた体の動き(踏み込む・ひねる・振り抜いて沈む)
+      const sz = (T.h || 1.8) / 1.8, bp = this._bp ||= [0, 0, 0, 0, 0];
+      if (this.swing) swingPose(this.swing, bp); else for (let i = 0; i < 5; i++) bp[i] *= Math.max(0, 1 - dt * 9);
+      b.rotation.x = bp[0]; b.rotation.y = bp[1]; b.rotation.z = bp[2]; b.position.z = bp[3] * sz; if (!T.fly) b.position.y = bp[4] * sz; else b.position.y += bp[4] * sz;
       if (this.attackAnim > (this._prevAtk || 0) + 0.01) this._atkPending = true; this._prevAtk = this.attackAnim;
       // 遠くの魔物は動きの計算を間引く(重くならないように)
       this._animAcc = (this._animAcc || 0) + dt; this._animN = ((this._animN || 0) + 1) % 3;
       const far = G.player ? this.pos.distanceTo(G.player.pos) > 28 : false;
-      if (!far || this._animN === 0 || this._atkPending) { animateGlb(ud, this._animAcc, moving, (T.speed / 2.6) * this.speedMul, this._atkPending); this._animAcc = 0; this._atkPending = false; }
+      if (!far || this._animN === 0 || this._atkPending) { animateGlb(ud, this._animAcc, moving, (T.speed / 2.6) * this.speedMul, this._atkPending && (this._atkSpec || true)); this._animAcc = 0; this._atkPending = false; this._atkSpec = null; }
     }
     else if (this.type === 'skeleton') b.position.y = moving ? Math.abs(Math.sin(t * 9 + ph)) * 0.04 : 0;
     else if (this.type === 'slime') b.position.y = moving ? Math.abs(Math.sin(t * 5 + ph)) * 0.22 : 0;
@@ -294,13 +345,14 @@ export class Enemy {
     this.hitT = Math.max(0, this.hitT - dt);
     // 縁取り: 精巧なモデルは控えめに(暗がりで輪郭が分かる程度)
     const subduedRim = ud.kind === 'glb' || this.type === 'dragon';
-    this.rimU.strength.value = (subduedRim ? 0.18 : this.type === 'golem' ? 0.3 : 0.45) + (this.elite ? 0.25 : 0) + Math.sin(t * 3 + ph) * (subduedRim ? 0.05 : 0.1) + this.hitT * (subduedRim ? 0.9 : 2.2); // 巨竜の広い翼が白く飛ばないよう、輪郭だけを控えめに照らす
+    this.rimU.strength.value = (subduedRim ? 0.1 : 0.16) + (this.elite ? 0.22 : 0) + this.hitT * (subduedRim ? 0.9 : 1.6); // 巨竜の広い翼が白く飛ばないよう、輪郭だけを控えめに照らす
     if (this.sigil) this.sigil.rotation.z += dt * 0.6;
   }
   think(dt) {
     const T = this.T;
     if (this.stun > 0) { this.stun -= dt; return; }
     if (this.type === 'dragon') return; // 専用AIが予兆・攻撃・反撃時間を管理する
+    if (this.swing) { this.runSwing(dt); return; }
     // 目標選択
     if (this.target && G.inSanctuary?.(this.target.pos)) { this.target = null; this.aggro = false; }
     if (!this.target || !this.target.alive || this.target.downed || Math.random() < dt * 0.5) {
@@ -409,32 +461,90 @@ export class Enemy {
   }
   attack() {
     const t = this.target; if (!t) return;
-    this.attackAnim = 1;
     const T = this.T;
-    if (T.slam) {
-      // 叩きつけ: 周りの者をまとめて打ち、吹き飛ばす
-      G.fx.burst(this.pos.clone().setY(0.2), 0xb09070, 60, { speed: 6, up: 2 });
-      G.shake = Math.max(G.shake || 0, 0.35);
-      for (const m of G.mages) {
-        if (!m.alive || m.downed) continue;
-        const v = m.pos.clone().sub(this.pos); v.y = 0; const dd = v.length();
-        if (dd > 3.2) continue;
-        G.fx.damage(m, this.dmg * (1.1 - dd * 0.15), [], this, { melee: true });
-        if (m.vel) m.pushV = v.normalize().multiplyScalar(9);
-      }
-      sfx.hit(this.pos);
-      return;
-    }
     if (T.ranged) {
+      this.attackAnim = 1; G.net?.send({ t: 'eatk', id: this.id, v: '' });
       const from = this.pos.clone(); from.y = (this.pos.y || 0) + 1.5;
       const to = t.pos.clone(); to.y = (t.pos.y || 0) + 1.1;
       G.fx.enemyBolt(this, from, to.sub(from).normalize(), T.bolt);
-    } else {
-      G.fx.damage(t, this.dmg * rand(0.85, 1.15), [], this, { melee: true });
-      if (T.web && t.status) t.status.slow = { t: 2.5 }; // 糸で絡める
-      if (T.drain) { this.hp = Math.min(this.maxHp, this.hp + this.dmg * 0.6); } // 血を吸う
-      sfx.hit(t.pos);
-      if (t.thorns && t.shield > 0) G.fx.damage(this, 12, t.thorns, t, {});
+      return;
+    }
+    this.startSwing(this.chooseSwing());
+  }
+  // その場に合った振り方を選ぶ: 相手が遠めなら踏み込み、何人も近くにいれば薙ぎ払い、相手が動けないなら大振り。同じ振りは続けにくい
+  chooseSwing() {
+    const T = this.T, t = this.target, list = SWING_SET[this.type] || ['light', 'heavy'];
+    const d = Math.hypot(t.pos.x - this.pos.x, t.pos.z - this.pos.z), ratio = d / (T.range + (t.radius || 0.4));
+    const near = G.mages.filter(m => m.alive && !m.downed && Math.hypot(m.pos.x - this.pos.x, m.pos.z - this.pos.z) < T.range + 1.4).length;
+    const stuck = !!(t.status && (t.status.slow || t.status.bound || t.status.frozen)) || !!t.chanting;
+    const weight = n => {
+      const V = SWINGS[n]; let w = V.w;
+      if (n === 'sweep') w *= near >= 2 ? 4 : 0.7;
+      if (n === 'lunge') w *= ratio > 0.72 ? 3.2 : ratio < 0.45 ? 0.15 : 1;
+      if (n === 'light') w *= ratio > 0.8 ? 0.4 : 1;
+      if (n === 'heavy') w *= stuck ? 3 : this.hp < this.maxHp * 0.35 ? 1.8 : 1;
+      if (n === this.lastSwing) w *= n === 'light' ? 0.9 : 0.25;          // 小振りは続けて出ることがある(連撃)
+      return w;
+    };
+    const uniq = [...new Set(list)], ws = uniq.map(n => weight(n) * list.filter(x => x === n).length);
+    let r = Math.random() * ws.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < uniq.length; i++) { r -= ws[i]; if (r <= 0) return uniq[i]; }
+    return uniq[0];
+  }
+  // 振り始める(部屋の主が決め、他の者には見た目だけ伝える)
+  startSwing(name) {
+    const V = SWINGS[name]; if (!V) { this.attackAnim = 1; return; }
+    this.swing = { V, name, t: 0, hit: false, stepped: false }; this.lastSwing = name;
+    this.attackAnim = 1; this._atkSpec = { wind: V.wind, rec: V.rec, frac: ATK_FRAC[this.type] || 0.55 };
+    if (V.growl) sfx.growl(this.pos);
+    if (G.isHost) G.net?.send({ t: 'eatk', id: this.id, v: name });
+  }
+  cancelSwing() {
+    this.swing = null; this.cd = Math.max(this.cd, 0.6);
+    const ud = this.body.userData; if (ud.kind === 'glb') { ud.sw = null; ud.atkT = 0; }
+  }
+  // 振りの途中(部屋の主): 終わり際まで相手を追って向きを変え、届いた瞬間に当たりを調べ、その後は硬直する
+  runSwing(dt) {
+    const s = this.swing, V = s.V, T = this.T, tg = this.target;
+    if (tg && tg.alive && s.t < V.wind * V.track) this.yaw = Math.atan2(-(tg.pos.x - this.pos.x), -(tg.pos.z - this.pos.z));
+    if (V.step && !s.stepped && s.t >= V.wind * 0.62) { s.stepped = true; if (!this.status.bound) this.knock.add(new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).multiplyScalar(V.step)); }
+    if (!s.hit && s.t >= V.wind) { s.hit = true; this.strike(V); }
+    if (s.t >= V.wind + V.rec) { this.swing = null; this.cd = T.cd * V.cd * rand(0.75, 1.15); }
+    this.knock.multiplyScalar(Math.max(0, 1 - dt * 5));
+    const dx = this.knock.x * dt, dz = this.knock.z * dt;
+    moveWithCollision(this.pos, dx, dz, this.radius, this.team, CLIMB);
+    this.vel.set(dx / dt, 0, dz / dt);
+  }
+  // 武器が届いた瞬間: その時に届く所・向きにいる者だけが傷を受ける
+  strike(V) {
+    const T = this.T, fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+    let any = false;
+    for (const m of (V.all || V.radial ? G.mages : [this.target])) {
+      if (!m || !m.alive || m.downed) continue;
+      const v = m.pos.clone().sub(this.pos); v.y = 0; const dd = v.length();
+      let mul = V.dmg * rand(0.9, 1.1);
+      if (V.radial) { if (dd > V.radial) continue; mul = V.dmg * (1.1 - dd * 0.15); }
+      else {
+        if (dd > T.range + (m.radius || 0.4) + V.reach + 0.15) continue;
+        if (dd > 0.6 && Math.acos(Math.max(-1, Math.min(1, (v.x * fx + v.z * fz) / dd))) > V.arc) continue;
+        if (Math.abs((m.pos.y || 0) - (this.pos.y || 0)) > 2.4 && !T.fly) continue;       // 高さが大きく違えば届かない
+      }
+      any = true;
+      G.fx.damage(m, this.dmg * mul, [], this, { melee: true });
+      if (V.push && m.vel && dd > 0.01) m.pushV = v.normalize().multiplyScalar(V.push);
+      if (T.web && m.status) m.status.slow = { t: 2.5 }; // 糸で絡める
+      if (T.drain) this.hp = Math.min(this.maxHp, this.hp + this.dmg * 0.6); // 血を吸う
+      G.fx.burst(m.pos.clone().add(new THREE.Vector3(-fx * 0.3, 1.1, -fz * 0.3)), 0xffd0a0, V.dmg > 1.3 ? 26 : 12, { speed: V.dmg > 1.3 ? 5 : 3, up: 1 });
+      sfx.hit(m.pos);
+      if (m.thorns && m.shield > 0) G.fx.damage(this, 12, m.thorns, m, {});
+    }
+    if (V.thud) {
+      // 大振りは外れても床を打つ(土ぼこりと揺れ)
+      const at = V.radial ? this.pos.clone() : this.pos.clone().add(new THREE.Vector3(fx, 0, fz).multiplyScalar(T.range * 0.8));
+      G.fx.burst(at.setY((this.pos.y || 0) + 0.2), 0xb09070, V.radial ? 60 : 30, { speed: V.radial ? 6 : 4, up: 2 });
+      const pd = G.player ? G.player.pos.distanceTo(this.pos) : 99;
+      if (pd < 9) G.shake = Math.max(G.shake || 0, V.shake * (any ? 1 : 0.6));
+      if (!any) sfx.hit(this.pos);
     }
   }
   dispose() { G.scene.remove(this.root); }

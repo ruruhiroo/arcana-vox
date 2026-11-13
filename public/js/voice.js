@@ -62,7 +62,9 @@ export function initVoice(h) {
   return true;
 }
 
+let pttWanted = false;
 export function startListening() {
+  pttWanted = true;
   if (W.ready && engine === 'vosk' && !vosk.listening && !vosk.starting) engine = 'whisper'; // 録音準備中には切り替えない
   if (engine === 'whisper') { wStart(); return; }
   if (engine === 'vosk') { voskStart(); return; }
@@ -72,6 +74,7 @@ export function startListening() {
 }
 
 export function stopListening() {
+  pttWanted = false;
   if (continuous) return;
   if (engine === 'whisper') { wStop(); return; }
   if (engine === 'vosk') { voskStop(); return; }
@@ -210,17 +213,35 @@ const W_RATE = 16000;
 const HALLU = /ご視聴|ありがとうございました|チャンネル登録|字幕|おやすみなさい|^[\s。、.…]*$/;
 export const aiStatus = () => W.ready ? 'ready' : W.failed ? 'failed' : W.worker ? (W.pct >= 0 ? 'loading:' + W.pct : 'loading') : 'off';
 
-function loadWhisper() {
+function loadWhisper(cpu = false) {
   if (W.worker || !window.Worker) return;
   try { W.worker = new Worker(new URL('./whisper-worker.js', import.meta.url), { type: 'module' }); }
   catch (e) { W.failed = true; return; }
+  W.cpu = cpu;
   W.worker.onmessage = ({ data }) => {
     if (data.type === 'progress') { W.pct = data.p; handlers.ai?.('loading:' + data.p + ':' + data.mb); }
-    else if (data.type === 'ready') { W.ready = true; handlers.ai?.('ready:' + data.device); if (!vosk.listening && !vosk.starting && !vosk.wanted && engine === 'vosk' && !continuous) engine = 'whisper'; }
-    else if (data.type === 'error') { console.warn('Whisper failed', data.msg); W.failed = true; handlers.ai?.('failed'); }
+    else if (data.type === 'ready') { W.ready = true; W.device = data.device; handlers.ai?.('ready:' + data.device); if (!vosk.listening && !vosk.starting && !vosk.wanted && engine === 'vosk' && !continuous) engine = 'whisper'; }
+    else if (data.type === 'error') { console.warn('Whisper failed', data.msg); whisperDown('error'); }
     else if (data.type === 'result') onWhisperResult(data);
   };
-  W.worker.postMessage({ type: 'load' });
+  // 別スレッドそのものが落ちた時(メモリ不足・GPU の喪失など)。放っておくと「聞き取り中…」のまま戻らない
+  W.worker.onerror = e => { console.warn('Whisper worker crashed', e?.message || e); whisperDown('crash'); };
+  W.worker.postMessage({ type: 'load', cpu });
+}
+// 聞き取りの返事を待つのは WAIT_MS まで。過ぎたら打ち切って、唱え直せる状態に戻す
+const WAIT_MS = 9000;
+function watch() { clearTimeout(W.watch); W.watch = setTimeout(() => { W.timeouts = (W.timeouts || 0) + 1; console.warn('Whisper timeout', W.timeouts); releaseWait(); handlers.ai?.('timeout'); if (W.timeouts >= 2) whisperDown('slow'); }, WAIT_MS); }
+function releaseWait() { clearTimeout(W.watch); W.pending.clear(); W.busy = false; if (!continuous && !W.rec) handlers.state('idle'); else if (continuous) handlers.state('listening'); }
+// AI 認識が使えなくなった: いったん端末内の軽い認識(Vosk)に戻し、GPU で動かしていたなら CPU の軽いモデルで入れ直す
+function whisperDown(why) {
+  const wasGpu = !W.cpu, wasListening = W.rec || W.wanted || continuous;
+  try { W.worker?.terminate(); } catch {}
+  clearTimeout(W.watch); clearTimeout(W.stopTimer);
+  W.worker = null; W.ready = false; W.rec = false; W.wanted = false; W.busy = false; W.pending.clear(); W.timeouts = 0; W.pct = -1; W.device = null;
+  if (engine === 'whisper') engine = 'vosk';
+  handlers.state('idle');
+  if (wasGpu) { handlers.ai?.('retry-cpu'); loadWhisper(true); } else { W.failed = true; handlers.ai?.('failed'); }
+  if (wasListening && (continuous || pttWanted)) startListening();
 }
 async function wMic() {
   if (W.ctx) return true;
@@ -274,12 +295,13 @@ function sendWhisper(kind) {
   if (peak < 0.015 || voiced < 0.3 || audio.length < W_RATE * 0.3) { if (!continuous) handlers.state('idle'); return; } // 声が無かった
   W.busy = true;
   const request = ++W.request; W.pending.add(request);
-  handlers.state('thinking');
+  handlers.state('thinking'); watch();
   W.worker.postMessage({ type: 'run', id: W.id, session: W.session, request, kind, audio }, [audio.buffer]);
 }
 function onWhisperResult({ id, session, request, kind, text }) {
   if (!W.pending.delete(request)) return; // 同じ返答を二度使わない
   W.busy = W.pending.size > 0;
+  if (kind !== 'interim') { clearTimeout(W.watch); W.timeouts = 0; }
   if (session !== W.session) return; // 次の V 詠唱に古い結果を混ぜない
   const t = HALLU.test(text) || !/[ぁ-んァ-ヶ一-龯]/.test(text) ? '' : text;
   if (kind === 'interim') { if (id === W.id && t && (W.rec || continuous)) handlers.interim(t); return; }

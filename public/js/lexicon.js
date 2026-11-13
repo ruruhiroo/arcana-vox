@@ -17,9 +17,15 @@ export const ELEMENTS = {
 
 // id, 表記, ルビ(読み上げ), 分類, 値, 消費, 認識別名, 謎めいた手掛かり, 真の意味
 export const WORDS = [
-  {id:'blink',text:'転移',ruby:'てんい',cat:'effect',val:'blink',cost:24,alias:['転移','てんい'],hint:'「一歩を折り畳み、彼方へ」',meaning:'自分を視線方向へ最大8m転移。壁・家具・ボスの封印は越えられない。再使用まで5秒。'},
+  {id:'blink',text:'転移',ruby:'てんい',cat:'effect',val:'blink',cost:24,alias:['転移','てんい'],hint:'「影に沈み、影より出でよ」',meaning:'影の術。自分を視線方向へ最大8m転移。壁・家具・ボスの封印は越えられない。再使用まで5秒。'},
+  // 誓いの術(sworn = その属性に誓った者だけが授かる。古文書からは出ない)
+  {id:'flamejet',text:'火炎放射',ruby:'かえんほうしゃ',cat:'effect',val:'flamejet',cost:26,sworn:'fire',alias:['火炎放射','かえんほうしゃ'],hint:'「息を吐け、それが焔となる」',meaning:'誓いの術(炎)。2.4秒のあいだ、向いている先へ炎を吹き続ける。届くのは7m。燃焼も付く。再使用まで6秒。'},
+  {id:'frostwave',text:'凍波',ruby:'とうは',cat:'effect',val:'frostwave',cost:24,sworn:'ice',alias:['凍波','とうは'],hint:'「足元から、静寂が広がる」',meaning:'誓いの術(氷)。自分の周り6mの敵を凍らせて止め、その後もしばらく鈍らせる。再使用まで6秒。'},
+  {id:'sparkstep',text:'雷歩',ruby:'らいほ',cat:'effect',val:'sparkstep',cost:22,sworn:'thunder',alias:['雷歩','らいほ'],hint:'「一歩が、稲妻になる」',meaning:'誓いの術(雷)。向いている先へ最大7m、稲妻になって駆け抜ける。通り道の敵を撃ち、一瞬しびれさせる。再使用まで6秒。'},
+  {id:'gust',text:'突風',ruby:'とっぷう',cat:'effect',val:'gust',cost:18,sworn:'wind',alias:['突風','とっぷう'],hint:'「近寄るな、と風が言う」',meaning:'誓いの術(風)。向いている先8mの敵を、まとめて遠くへ吹き飛ばす。再使用まで6秒。'},
+  {id:'sanctum',text:'聖域',ruby:'せいいき',cat:'effect',val:'sanctum',cost:26,sworn:'holy',alias:['聖域','せいいき'],hint:'「ここより先、穢れは入れぬ」',meaning:'誓いの術(聖)。身の異常を祓い、生命を25癒す。周り6mの不死の者を灼く。再使用まで6秒。'},
   {id:'levitate',text:'浮遊',ruby:'ふゆう',cat:'effect',val:'levitate',cost:18,alias:['浮遊','ふゆう'],hint:'「大地の鎖よ、足を放せ」',meaning:'12秒、地面から約1m浮く。落下を和らげるが、敵の攻撃は受ける。'},
-  {id:'survey',text:'探知',ruby:'たんち',cat:'effect',val:'survey',cost:12,alias:['探知','たんち'],hint:'「隠れし道よ、気配を示せ」',meaning:'半径24mの地形を地図に記し、拾える品の数を知る。'},
+  {id:'survey',text:'探知',ruby:'たんち',cat:'effect',val:'survey',cost:12,alias:['探知','たんち'],hint:'「闇は全てを見ている」',meaning:'影の術。半径24mの地形を地図に記し、拾える品の数を知る。'},
   {id:'cleanse',text:'浄化',ruby:'じょうか',cat:'effect',val:'cleanse',cost:16,alias:['浄化','じょうか'],hint:'「淀みを祓い、清らに戻れ」',meaning:'自分の燃焼・毒・鈍足・束縛・呪い・誤射による変化を取り除く。声の呪いは対象外。'},
   {id:'recall',text:'帰還',ruby:'きかん',cat:'effect',val:'recall',cost:35,alias:['帰還','きかん'],hint:'「帰るべき灯へ、この身を導け」',meaning:'その層の入口へ戻る。14m以内に敵がいる時とボス戦中は使えない。'},
   { id: 'fire', text: '紅蓮', ruby: 'ぐれん', cat: 'element', val: 'fire', cost: 8,
@@ -146,9 +152,14 @@ export const WORDS = [
 
 // 詠唱の一節 (ふりがな付き記法 {漢字|よみ})。短い「核」(紅蓮など)だけ唱えても通じる
 const PHRASES_RUBY = {
-  blink:'{転移|てんい}の{道|みち}を{折|お}り{畳|たた}め',
+  blink:'{転移|てんい}の{影|かげ}よ{道|みち}を{折|お}り{畳|たた}め',
+  flamejet:'{火炎放射|かえんほうしゃ}の{息|いき}よ{焼|や}き{払|はら}え',
+  frostwave:'{凍波|とうは}の{静寂|せいじゃく}よ{広|ひろ}がれ',
+  sparkstep:'{雷歩|らいほ}の{一閃|いっせん}よ{駆|か}け{抜|ぬ}けよ',
+  gust:'{突風|とっぷう}の{息吹|いぶき}よ{吹|ふ}き{飛|と}ばせ',
+  sanctum:'{聖域|せいいき}の{光|ひかり}よ{穢|けが}れを{祓|はら}え',
   levitate:'{浮遊|ふゆう}の{翼|つばさ}よ{大地|だいち}を{離|はな}れよ',
-  survey:'{探知|たんち}の{光|ひかり}よ{隠|かく}れし{道|みち}を{示|しめ}せ',
+  survey:'{探知|たんち}の{影|かげ}よ{隠|かく}れし{道|みち}を{示|しめ}せ',
   cleanse:'{浄化|じょうか}の{風|かぜ}よ{淀|よど}みを{祓|はら}え',
   recall:'{帰還|きかん}の{灯|ひ}よ{我|われ}を{導|みちび}け',
   // 属性: 呼び名で終わる(この後に「となれ」などの命令が続く)
@@ -292,7 +303,11 @@ export function eloquence(rawText, known, lenient = false) {
 
 // 最初から使える: 属性ひとつ・回復・守護・灯火・威力アップ(覇気)と、出し方「発射」。設置(刻印)・衛星・付与などは古文書で学ぶ
 // はじめの属性は迷宮へ降りる前に選ぶ (ここには入れない)
-export const STARTER_WORDS = ['blink', 'survey', 'heal', 'ward', 'light', 'might', 'lance', 'enemy', 'self', 'ally']; // 締めは魔法の名で(「放て」は使わない)
+// 「我に」と効果一つで唱える術(探索の術と、誓いの術)
+export const UTILITY_WORDS = ['blink', 'levitate', 'survey', 'cleanse', 'recall', 'flamejet', 'frostwave', 'sparkstep', 'gust', 'sanctum'];
+// 属性ごとの誓いの術
+export const SWORN_ART = { fire: 'flamejet', ice: 'frostwave', thunder: 'sparkstep', wind: 'gust', holy: 'sanctum', void: 'blink' };
+export const STARTER_WORDS = ['heal', 'ward', 'light', 'might', 'lance', 'enemy', 'self', 'ally']; // 締めは魔法の名で(「放て」は使わない)
 
 // ---- 正規化: カタカナ→ひらがな、空白・記号除去 ----
 export function normalize(s) {
@@ -500,7 +515,7 @@ export function correctChant(raw) {
 // 属性(または効果)と形から決まる。詠唱の最後にこの名を呼ぶと術が完成する
 const CALL_EL = { fire: ['ファイア', 'ファイヤ', 'ファイヤー', 'ファイアー'], ice: ['アイス', 'アイスー'], thunder: ['サンダー', 'サンダ'], holy: ['ホーリー', 'ホーリ', 'ホリー'], void: ['ダーク', 'ダアク'], wind: ['ウィンド', 'ウインド', 'ウィンドー'] };
 const CALL_FORM = { lance: ['ランス', 'ランスー'], nova: ['ノヴァ', 'ノバ', 'ノーヴァ'], rain: ['レイン', 'レーン'], wall: ['ウォール', 'ウオール', 'ウォル'], orbit: ['サテライト', 'サテライ'], enchant: ['エンチャント', 'エンチャン'] };
-const CALL_EFF = { blink:['ブリンク'],levitate:['レビテーション'],survey:['サーチ'],cleanse:['ピュリファイ'],recall:['リターン'], heal: ['ヒーリング', 'ヒール', 'ヒーリン'], ward: ['プロテクション', 'プロテクト'], haste: ['ヘイスト', 'ヘースト'], light: ['ライト', 'ライトー'], might: ['ブースト', 'ブースト'], freeze: ['フリーズ', 'フリーズー', 'フリース'], bind: ['バインド', 'バインドー'], impact: ['インパクト', 'インパクトー'], poison: ['ポイズン', 'ポイズンー'], water: ['アクア', 'アクアー'] };
+const CALL_EFF = { flamejet:['フレイム'],frostwave:['ブリザード'],sparkstep:['スパーク'],gust:['ガスト'],sanctum:['サンクチュアリ'],blink:['ブリンク'],levitate:['レビテーション'],survey:['サーチ'],cleanse:['ピュリファイ'],recall:['リターン'], heal: ['ヒーリング', 'ヒール', 'ヒーリン'], ward: ['プロテクション', 'プロテクト'], haste: ['ヘイスト', 'ヘースト'], light: ['ライト', 'ライトー'], might: ['ブースト', 'ブースト'], freeze: ['フリーズ', 'フリーズー', 'フリース'], bind: ['バインド', 'バインドー'], impact: ['インパクト', 'インパクトー'], poison: ['ポイズン', 'ポイズンー'], water: ['アクア', 'アクアー'] };
 export const ATTACK_FX = ['freeze', 'bind', 'impact', 'poison', 'water'];
 function callParts(spell) {
   if (spell.elements.length) return [CALL_EL[spell.elements[0]], spell.form ? CALL_FORM[spell.form] : null];
@@ -605,7 +620,7 @@ export function compile(text, known) {
       case 'trigger': spell.released = true; break;
     }
   }
-  const utility=spell.effects.some(e=>['blink','levitate','survey','cleanse','recall'].includes(e));
+  const utility=spell.effects.some(e=>UTILITY_WORDS.includes(e));
   if(utility&&(spell.elements.length||spell.effects.length>1||spell.form||spell.rune||spell.target==='enemy'||spell.target==='ally')){spell.error='探索の術は「我に」と効果一つで唱えよ';return spell;}
   let p = 1;
   if (spell.max) p *= 1.8;
@@ -623,7 +638,7 @@ export function compile(text, known) {
   spell.tierName = ['初級', '中級', '上級'][spell.tier];
   p *= [0.58, 1, 1.6][spell.tier];
   const KIND = { fire: '炎', ice: '氷', thunder: '雷', holy: '聖', void: '闇', wind: '風' };
-  const EFF = { blink:'転移',levitate:'浮遊',survey:'探知',cleanse:'浄化',recall:'帰還', heal: '治癒', ward: '守護', haste: '加速', light: '灯火', might: '強化', freeze: '凍結', bind: '束縛', impact: '衝撃', poison: '蝕毒', water: '清流' };
+  const EFF = { flamejet:'火炎放射',frostwave:'凍波',sparkstep:'雷歩',gust:'突風',sanctum:'聖域',blink:'転移',levitate:'浮遊',survey:'探知',cleanse:'浄化',recall:'帰還', heal: '治癒', ward: '守護', haste: '加速', light: '灯火', might: '強化', freeze: '凍結', bind: '束縛', impact: '衝撃', poison: '蝕毒', water: '清流' };
   spell.school = spell.elements.length > 1 ? '複合' : spell.elements.length ? KIND[spell.elements[0]] : spell.effects.length ? EFF[spell.effects[0]] : '';
   spell.title = spell.school ? `${spell.tierName}${spell.school}魔術` : '';
   spell.power = p;

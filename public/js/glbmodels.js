@@ -8,10 +8,13 @@ export const GLB_TYPES = ['skeleton', 'ghoul', 'knight', 'ogre', 'imp', 'scribe'
   ...['wallshelf', 'shelf', 'readtable', 'longtable', 'desk', 'lectern', 'pew', 'barrel', 'crate', 'cratestack', 'coffin', 'sarcophagus', 'pillar', 'statue', 'bookpile', 'throne', 'anvil', 'obelisk'].map(n => 'decor-' + n)];
 const cache = {};
 let loading = null;
+// 模型の読み込みの進み具合(ローディング画面が見る)
+export const loadProgress = { done: 0, total: 0 };
 
 export function preloadModels() {
   if (loading) return loading;
   const loader = new GLTFLoader();
+  loadProgress.total = GLB_TYPES.length; loadProgress.done = 0;
   loading = Promise.all(GLB_TYPES.map(t => new Promise(res => loader.load(`models/${t}.glb`, g => {
     g.scene.traverse(o => {
       if (!o.isMesh) return;
@@ -26,8 +29,8 @@ export function preloadModels() {
       if (m.metalnessMap) m.metalness = 0.55; // 焼き込んだ金属は、環境の映り込みが無い迷宮でも暗く沈まないように抑える
       if (m.normalMap) m.normalScale.set(1.2, 1.2);
     });
-    cache[t] = g; res();
-  }, undefined, e => { console.warn('model', t, e); res(); }))));
+    cache[t] = g; loadProgress.done++; res();
+  }, undefined, e => { console.warn('model', t, e); loadProgress.done++; res(); }))));
   return loading;
 }
 export const hasModel = t => !!cache[t];
@@ -64,7 +67,15 @@ export function animateGlb(ud, dt, moving, speed, attackStart) {
     const a = ud.actions.attack;
     a.reset().setEffectiveWeight(1).play();
     if (ud.cur && ud.cur !== a) a.crossFadeFrom(ud.cur, 0.08, false);
-    ud.cur = a; ud.atkT = a.getClip().duration * 0.95;
+    ud.cur = a; const dur = a.getClip().duration;
+    // attackStart が { wind, rec, frac } なら、動きの frac の位置(武器が届く瞬間)が wind 秒後に来るように速さを合わせ、その後 rec 秒かけて戻す
+    if (typeof attackStart === 'object') { ud.sw = { ...attackStart, t: 0, dur }; ud.atkT = attackStart.wind + attackStart.rec; }
+    else { ud.sw = null; a.timeScale = 1; ud.atkT = dur * 0.95; }
+  }
+  if (ud.sw && ud.actions.attack) {
+    const s = ud.sw; s.t += dt;
+    ud.actions.attack.timeScale = s.t < s.wind ? s.dur * s.frac / s.wind : s.dur * (1 - s.frac) * 0.97 / s.rec;
+    if (s.t >= s.wind + s.rec) ud.sw = null;
   }
   if (ud.atkT > 0) ud.atkT -= dt;
   else {

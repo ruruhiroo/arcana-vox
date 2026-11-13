@@ -5,14 +5,16 @@
 const LIB = new URL('../vendor/nm/@huggingface/transformers/dist/', self.location.href).href;
 let asr = null;
 let queue = Promise.resolve(); // 認識は1つずつ順番に
+// 途中経過の認識は、新しい依頼が来たら古い分を飛ばす(溜まると、言い終えた後の確定がずっと待たされる)
+let newestInterim = 0, staleBefore = 0;
 
-async function load() {
+async function load(cpu) {
   const { pipeline, env } = await import(LIB + 'transformers.min.js');
   env.allowLocalModels = false;
   env.backends.onnx.wasm.wasmPaths = LIB;
   let device = 'wasm', model = 'onnx-community/whisper-base', dtype = 'q8';
   try {
-    const adapter = await navigator.gpu?.requestAdapter();
+    const adapter = cpu ? null : await navigator.gpu?.requestAdapter();
     if (adapter) {
       device = 'webgpu'; model = 'onnx-community/whisper-small';
       dtype = { encoder_model: adapter.features.has('shader-f16') ? 'fp16' : 'fp32', decoder_model_merged: 'q4' };
@@ -42,13 +44,17 @@ async function load() {
 
 onmessage = async ({ data }) => {
   if (data.type === 'load') {
-    try { await load(); } catch (e) { postMessage({ type: 'error', msg: String(e?.message || e) }); }
-  } else if (data.type === 'run') queue = queue.then(() => run(data));
+    try { await load(data.cpu); } catch (e) { postMessage({ type: 'error', msg: String(e?.message || e) }); }
+  } else if (data.type === 'run') {
+    if (data.kind === 'interim') newestInterim = data.request; else staleBefore = data.request;
+    queue = queue.then(() => run(data));
+  }
 };
 async function run(data) {
   {
     let text = '';
-    try {
+    const stale = data.kind === 'interim' && (data.request !== newestInterim || data.request < staleBefore);
+    if (!stale) try {
       const out = await asr(data.audio, { language: 'japanese', task: 'transcribe', max_new_tokens: 80 });
       text = (out?.text || '').trim();
     } catch (e) { console.warn('whisper', e); }

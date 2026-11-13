@@ -263,14 +263,14 @@ function makeGrimoire() {
   // めくれる頁
   const turnPivot = new THREE.Group(); root.add(turnPivot);
   // 紙は綴じ目から順に起き上がり、外の縁が遅れてついてくる(しなる)。表には今まで開いていた頁、裏には次に開く頁が書かれている
-  const LN = 16;
+  const LN = 16, LEAF_A0 = 0.2 + 0.06, LEAF_A1 = Math.PI - 0.2 - 0.06;   // 頁の面の、わずかに上
   const leafGeo = new THREE.PlaneGeometry(W, H, LN, 1);
   const snap = () => { const c = document.createElement('canvas'); c.width = 640; c.height = 900; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return { canvas: c, tex: t }; };
   const prev = { left: snap(), right: snap() };
   const mirrored = canvas => { const t = new THREE.CanvasTexture(canvas); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = THREE.RepeatWrapping; t.repeat.x = -1; t.offset.x = 1; return t; };
   const backTex = { left: mirrored(pages.left.canvas), prevLeft: mirrored(prev.left.canvas) };
-  const leafFront = new THREE.Mesh(leafGeo, new THREE.MeshBasicMaterial({ color: 0xc4b392, side: THREE.FrontSide }));
-  const leafBack = new THREE.Mesh(leafGeo, new THREE.MeshBasicMaterial({ color: 0xc4b392, side: THREE.BackSide }));
+  const leafFront = new THREE.Mesh(leafGeo, new THREE.MeshBasicMaterial({ color: 0xc4b392, side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));   // 下の頁と重なる所で、必ず手前に描く
+  const leafBack = new THREE.Mesh(leafGeo, new THREE.MeshBasicMaterial({ color: 0xc4b392, side: THREE.BackSide, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));
   turnPivot.add(leafFront, leafBack); turnPivot.position.z = 0.0085; turnPivot.visible = false;
   const leaf = { geo: leafGeo, front: leafFront, back: leafBack, prev, backTex, n: LN,
     // angle: 0 = 右の頁の上に寝ている / π = 左の頁の上。lag = 外の縁の遅れ(rad)
@@ -278,7 +278,7 @@ function makeGrimoire() {
       const pos = leafGeo.attributes.position, dx = W / LN;
       let x = 0, z = 0;
       for (let i = 0; i <= LN; i++) {
-        if (i) { const u = (i - 0.5) / LN, th = angle - lag * Math.pow(u, 1.6); x += Math.cos(th) * dx; z += Math.sin(th) * dx; }
+        if (i) { const u = (i - 0.5) / LN, th = Math.max(LEAF_A0, Math.min(LEAF_A1, angle - lag * Math.pow(u, 1.6))); x += Math.cos(th) * dx; z += Math.sin(th) * dx; }
         for (const row of [0, 1]) { const k = row * (LN + 1) + i; pos.setX(k, x); pos.setZ(k, z + Math.sin(Math.min(1, i / LN * 1.6) * Math.PI) * 0.003); }
       }
       pos.needsUpdate = true;
@@ -292,6 +292,7 @@ function makeGrimoire() {
   const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.011, 0), new THREE.MeshStandardMaterial({ color: 0x302018, emissive: 0x000000, emissiveIntensity: 2.2, metalness: 0.3, roughness: 0.25 }));
   gem.scale.set(1, 1.4, 0.7); gem.position.set(0, -H / 2 - 0.004, 0.006); root.add(gem);
   root.add(glow, ring, makeSpineHand());
+  leaf.a0 = LEAF_A0; leaf.a1 = LEAF_A1;
   return { root, pages, glow, ring, turnPivot, leather, gold, ribbon, gem, edgeMat, leaf };
 }
 
@@ -572,7 +573,7 @@ export function buildViewModel(camera) {
       }
       st.flip = Math.max(0, st.flip - dt * 2.1);
       const k = 1 - st.flip, e2 = k * k * (3 - 2 * k);
-      const ang = fwd ? Math.PI * e2 : Math.PI * (1 - e2);
+      const ang = lf.a0 + (lf.a1 - lf.a0) * (fwd ? e2 : 1 - e2);
       lf.bend(ang, Math.sin(k * Math.PI) * 1.05 * (fwd ? 1 : -1));
       const shade = 0.72 + 0.28 * Math.abs(Math.cos(ang));          // 立っている間は陰る
       lf.front.material.color.setHex(0xc4b392).multiplyScalar(shade); lf.back.material.color.setHex(0xc4b392).multiplyScalar(shade);

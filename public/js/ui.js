@@ -127,6 +127,14 @@ export function loadBook() {
     BOOK.known = BOOK.known.filter(id => id !== 'release'); BOOK.understood = (BOOK.understood || []).filter(id => id !== 'release');
     BOOK.chantVer = 10;
   }
+  if ((BOOK.chantVer || 0) < 11) {
+    // 転移と探知は、最初から持つ術ではなくなった(古文書から覚える影の術)。闇に誓った者だけは、そのまま持ち続ける
+    if (!fresh && BOOK.affinityChosen !== 'void') {
+      BOOK.known = BOOK.known.filter(id => id !== 'blink' && id !== 'survey'); BOOK.understood = (BOOK.understood || []).filter(id => id !== 'blink' && id !== 'survey');
+      BOOK.spells = BOOK.spells.filter(s => !['短距離転移', '気配の探知'].includes(s.name));
+    }
+    BOOK.chantVer = 11;
+  }
   BOOK.mastery ||= {};
   ensureUtilityBook();
   G.known = new Set(BOOK.known);
@@ -155,9 +163,9 @@ export const rubify = str => esc(str).replace(RUBY_RE, m => RUBY_MAP[m]);
 const coreLine = text => tokenize(text).map(t => RUBY_MAP[WORD_BY_ID[t.id].core]).join('<i class="sep">・</i>');
 
 // 持ち物6枠(1〜6キー)。素材・道具・未装着の装備はすべてこの枠に収まる。
+// 転移・探知の言霊を覚えていれば、その呪文を本に書いておく(覚えた時にも呼ぶ)
 export function ensureUtilityBook(){
-  BOOK.known=[...new Set([...(BOOK.known||[]),'blink','survey'])];
-  for(const [id,name]of [['blink','短距離転移'],['survey','気配の探知']])if(!BOOK.spells.some(s=>compile(s.text,null).effects.includes(id))){const base=expandChant('我に '+WORD_BY_ID[id].core);BOOK.spells.push({name,text:base+' '+callName(compile(base,null)),memo:WORD_BY_ID[id].meaning});}
+  for(const [id,name]of [['blink','影渡り'],['survey','影の眼']])if((BOOK.known||[]).includes(id)&&!BOOK.spells.some(s=>compile(s.text,null).effects.includes(id))){const base=expandChant('我に '+WORD_BY_ID[id].core);BOOK.spells.push({name,text:base+' '+callName(compile(base,null)),memo:WORD_BY_ID[id].meaning});}
 }
 export const QUICK_DEFAULT = [null, null, null, null, null, null];
 export function quickSlotsHtml(withKeys) {
@@ -226,7 +234,8 @@ export const UI = {
     $('party').innerHTML = others.map(m => {
       const hostile = m.team !== p.team;
       const st = !m.alive ? '(死亡)' : m.downed ? '(瀕死)' : '';
-      return `<div class="pm"><span style="color:${hostile ? '#ff9a8a' : '#cfe8ff'}">${esc(m.name)}</span> <span class="muted">${st}</span><div class="bar"><div style="width:${clamp(m.hp / m.maxHp * 100, 0, 100)}%;background:${hostile ? '#a33' : '#3a8'}"></div></div></div>`;
+      const c = hostile ? '#ff8a7a' : '#' + new THREE.Color(m.color ?? 0xcfe8ff).lerp(new THREE.Color(0xffffff), 0.45).getHexString();
+      return `<div class="pm${st ? ' down' : ''}" style="--c:${c}"><div class="nm"><span style="color:${c}">${esc(m.name)}</span><small>${st}</small></div><div class="bar"><div style="width:${clamp(m.hp / m.maxHp * 100, 0, 100)}%;background:${hostile ? '#c44' : c}"></div></div></div>`;
     }).join('');
     const dn = $('downed');
     if (p.downed) { dn.classList.remove('hidden'); dn.innerHTML = `倒れた…<br><small>仲間の「癒息」を待て (${Math.ceil(p.downT)})</small>`; }

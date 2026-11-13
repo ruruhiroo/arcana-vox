@@ -25,12 +25,9 @@ export const AURAS = {
   scriptorium: { name: '写本室', note: '写された言葉 ― 術の魔力消費 −20%', cost: 0.8 },
   mine: { name: '鉱坑', note: '魔晶の脈 ― 魔力の戻りが速い', regen: 1.6 },
 };
-// 調べられる置物: 置物の種類 → 仕掛け
+// 調べられる置物: 置物の種類 → 仕掛け。見てすぐ分かる物だけにする(天球儀・金床・大釜の仕掛けは、何が起きるか分かりにくいので外した)
 const KINDS = {
   fountain: { hint: '泉の水を飲む', color: 0x8fd8ff, h: 1.5 },
-  cauldron: { hint: '大釜で霊草を煮詰める(霊草 1)', color: 0x9effc8, h: 1.6 },
-  anvil: { hint: '金床で魔導書の留め金を打ち直す(鉄屑 2)', color: 0xffb060, h: 1.3 },
-  orrery: { hint: '天球儀を回す', color: 0xd8c8ff, h: 2.4 },
   sarcophagus: { hint: '石棺の蓋をずらす', color: 0xb070ff, h: 1.6 },
 };
 let H = null, cellRoom = null, cellOf = null, list = [], lastTheme = null, group = null;

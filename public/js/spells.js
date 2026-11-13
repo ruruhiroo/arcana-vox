@@ -169,7 +169,7 @@ function applyPayload(spell, caster, t, pl, mult = 1, dir = null, hitPoint = nul
 
 // ---------- 発現 ----------
 export const FX = {
-  burst, flash,
+  burst, flash, bigImpact,
   spellFromIds(ids) { return compile(ids.map(id => WORD_BY_ID[id].text).join(' '), null); },
 
   // aim: { origin, dir, point, targetId }

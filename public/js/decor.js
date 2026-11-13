@@ -3,6 +3,7 @@
 import { makeModel } from './glbmodels.js';
 import * as THREE from 'three';
 import { glowSprite } from './textures.js';
+import { ceilingAt } from './dungeon.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // 同じ材質の箱を一つの形にまとめる(壁一面の書架などを軽く描くため)
@@ -36,12 +37,21 @@ function mats() {
     let x = 2; const cols = ['#5a1a1a', '#2a3a5a', '#3a4a2a', '#5a4a2a', '#4a2a4a', '#6a5a3a', '#2a2a2a'];
     while (x < w - 8) { const bw = 10 + Math.random() * 16, bh = h * (0.7 + Math.random() * 0.28); g.fillStyle = cols[Math.floor(Math.random() * cols.length)]; g.fillRect(x, h - bh, bw, bh); g.fillStyle = 'rgba(200,170,90,.6)'; g.fillRect(x + 2, h - bh + 8, bw - 4, 2); g.fillRect(x + 2, h - 12, bw - 4, 2); x += bw + 1 + (Math.random() < 0.1 ? 10 : 0); }
   });
-  const stone = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#6a645c'; g.fillRect(0, 0, w, h); for (let i = 0; i < 3000; i++) { const v = Math.random() * 70; g.fillStyle = `rgba(${v},${v},${v},.16)`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } });
+  const stone = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#2a2622'; g.fillRect(0, 0, w, h);                                    // 目地
+    const rows = 4, bh = h / rows;
+    for (let r = 0; r < rows; r++) { const cols = 2 + (r % 2), bw = w / cols, off = (r % 2) * bw * 0.5;
+      for (let c = -1; c <= cols; c++) { const v = 84 + Math.random() * 34; g.fillStyle = `rgb(${v + 6},${v},${v - 8})`; g.fillRect(c * bw + off + 3, r * bh + 3, bw - 6, bh - 6); } }
+    for (let i = 0; i < 9000; i++) { const v = Math.random() * 80; g.fillStyle = `rgba(${v},${v},${v},.13)`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+    for (let i = 0; i < 40; i++) { const x = Math.random() * w, y = Math.random() * h, r = 20 + Math.random() * 70, gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(20,16,12,.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }   // 煤と染み
+    g.strokeStyle = 'rgba(10,8,6,.5)'; for (let i = 0; i < 10; i++) { g.lineWidth = 1; let x = Math.random() * w, y = Math.random() * h; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (Math.random() - 0.5) * 40; y += Math.random() * 30; g.lineTo(x, y); } g.stroke(); }   // ひび
+  });
+  for (const t of [wood, stone]) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.userData.tile = true; }
   M = {
     wood: new THREE.MeshStandardMaterial({ map: wood, roughness: 0.85 }),
     darkWood: new THREE.MeshStandardMaterial({ map: wood, color: 0x8a7a6a, roughness: 0.9 }),
     spines: new THREE.MeshStandardMaterial({ map: spines, roughness: 0.9 }),
-    stone: new THREE.MeshStandardMaterial({ map: stone, roughness: 0.95 }),
+    stone: new THREE.MeshStandardMaterial({ map: stone, color: 0xb8b0a6, roughness: 0.95 }),
     bone: new THREE.MeshStandardMaterial({ color: 0xd8ccb0, roughness: 0.8 }),
     iron: new THREE.MeshStandardMaterial({ color: 0x3a3632, metalness: 0.8, roughness: 0.5 }),
     wax: new THREE.MeshStandardMaterial({ color: 0xe8dcc0, roughness: 0.6, emissive: 0x3a2a10, emissiveIntensity: 0.4 }),
@@ -130,7 +140,7 @@ const BUILD = {
   },
   furnace(m) {
     const g = merged(m, [['stone', 2.4, 2.2, 1.2, 0, 1.1, 0], ['stone', 1.4, 1.6, 0.9, 0, 3.0, -0.1], ['stone', 0.8, 2.0, 0.6, 0, 4.6, -0.2]]);
-    const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.8), m.ember ||= new THREE.MeshStandardMaterial({ color: 0xff6a10, emissive: 0xff5a00, emissiveIntensity: 2.2 }));
+    const mouth = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.8), m.ember ||= new THREE.MeshStandardMaterial({ color: 0xff6a10, emissive: 0xff5a00, emissiveIntensity: 1.3 }));
     mouth.position.set(0, 0.8, 0.61); g.add(mouth);
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color: 0xff7a20, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.8 })); glow.position.set(0, 0.9, 0.9); glow.scale.set(2.6, 1.6, 1); g.add(glow);
     return { g, r: 0, glow: true };
@@ -174,7 +184,7 @@ const BUILD = {
   // 厨房: 壁の竈と吊るした肉、鍋
   hearth(m) {
     const g = merged(m, [['stone', 3.2, 2.6, 0.8, 0, 1.3, 0], ['stone', 3.6, 0.3, 1.0, 0, 2.7, 0.05]]);
-    const inside = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.2), m.ember ||= new THREE.MeshStandardMaterial({ color: 0xff6a10, emissive: 0xff5a00, emissiveIntensity: 2.2 }));
+    const inside = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.2), m.ember ||= new THREE.MeshStandardMaterial({ color: 0xff6a10, emissive: 0xff5a00, emissiveIntensity: 1.3 }));
     inside.position.set(0, 0.7, 0.41); g.add(inside);
     const pot = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 8), m.iron); pot.position.set(0, 0.8, 0.6); g.add(pot);
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowSprite(), color: 0xff8a30, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.7 })); glow.position.set(0, 0.8, 0.9); glow.scale.set(2.4, 1.4, 1); g.add(glow);
@@ -261,7 +271,7 @@ const BUILD = {
     return { g, r: 0.6 };
   },
   fountain(m) {
-    const water = m.water ||= new THREE.MeshStandardMaterial({ color: 0x2a6a8a, emissive: 0x103a5a, emissiveIntensity: 0.6, roughness: 0.1, transparent: true, opacity: 0.8 });
+    const water = m.water ||= new THREE.MeshStandardMaterial({ color: 0x12303a, emissive: 0x08242e, emissiveIntensity: 0.35, roughness: 0.06, metalness: 0.5, transparent: true, opacity: 0.82 });
     const g = new THREE.Group();
     const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 0.5, 20, 1, true), m.stone); basin.position.y = 0.25; basin.material.side = THREE.DoubleSide; g.add(basin);
     const w = new THREE.Mesh(new THREE.CircleGeometry(1.38, 20), water); w.rotation.x = -Math.PI / 2; w.position.y = 0.4; g.add(w);
@@ -271,7 +281,7 @@ const BUILD = {
     return { g, r: 1.5, glow: true };
   },
   pool(m) {
-    const water = m.water ||= new THREE.MeshStandardMaterial({ color: 0x2a6a8a, emissive: 0x103a5a, emissiveIntensity: 0.6, roughness: 0.1, transparent: true, opacity: 0.8 });
+    const water = m.water ||= new THREE.MeshStandardMaterial({ color: 0x12303a, emissive: 0x08242e, emissiveIntensity: 0.35, roughness: 0.06, metalness: 0.5, transparent: true, opacity: 0.82 });
     const g = new THREE.Group();
     const w = new THREE.Mesh(new THREE.PlaneGeometry(CELLW, CELLW), water); w.rotation.x = -Math.PI / 2; w.position.y = 0.08; g.add(w);
     return { g, r: 0 };
@@ -332,7 +342,8 @@ const BUILD = {
   },
   // 酒蔵: 横倒しの大樽の棚
   winerack(m) {
-    const g = merged(m, [['darkWood', CELLW - 0.2, 0.15, 1.0, 0, 0.3, 0], ['darkWood', CELLW - 0.2, 0.15, 1.0, 0, 1.55, 0]]);
+    const g = merged(m, [['darkWood', CELLW - 0.2, 0.15, 1.0, 0, 0.3, 0], ['darkWood', CELLW - 0.2, 0.15, 1.0, 0, 1.55, 0],
+      ['darkWood', 0.14, 2.7, 1.0, -(CELLW / 2 - 0.17), 1.35, 0], ['darkWood', 0.14, 2.7, 1.0, CELLW / 2 - 0.17, 1.35, 0], ['darkWood', 0.12, 0.3, 0.9, -0.63, 0.15, 0], ['darkWood', 0.12, 0.3, 0.9, 0.63, 0.15, 0]]);
     for (const y of [0.85, 2.1]) for (let k = 0; k < 3; k++) { const b = cyl(0.5, 0.5, 0.95, m.wood, -1.25 + k * 1.25, y, 0, 14); b.rotation.x = Math.PI / 2; g.add(b); const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.02, 6, 20), m.iron); ring.position.set(-1.25 + k * 1.25, y, 0.4); g.add(ring); }
     return { g, r: 0 };
   },
@@ -343,7 +354,7 @@ const BUILD = {
   minecart(m) {
     const g = merged(m, [['iron', 1.3, 0.7, 0.9, 0, 0.6, 0], ['wood', 1.2, 0.05, 0.8, 0, 0.92, 0]]);
     for (const x of [-0.45, 0.45]) for (const z of [-0.47, 0.47]) { const w = cyl(0.16, 0.16, 0.06, m.iron, x, 0.18, z, 10); w.rotation.x = Math.PI / 2; g.add(w); }
-    const ore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), m.oreM ||= new THREE.MeshStandardMaterial({ color: 0x5a6a8a, emissive: 0x2050c0, emissiveIntensity: 0.4, flatShading: true })); ore.position.y = 1.0; ore.scale.set(1.3, 0.6, 0.9); g.add(ore);
+    const ore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), m.oreM ||= new THREE.MeshStandardMaterial({ color: 0x3a4458, emissive: 0x183a80, emissiveIntensity: 0.22, flatShading: true })); ore.position.y = 1.0; ore.scale.set(1.3, 0.6, 0.9); g.add(ore);
     const rail = merged(m, [['iron', 0.06, 0.06, CELLW, -0.47, 0.03, 0], ['iron', 0.06, 0.06, CELLW, 0.47, 0.03, 0], ...[0, 1, 2, 3, 4].map(k => ['darkWood', 1.2, 0.05, 0.2, 0, 0.01, -CELLW / 2 + 0.4 + k * 0.8])]); g.add(rail);
     return { g, r: 0.8 };
   },
@@ -650,6 +661,81 @@ const BUILD = {
 };
 
 // 調度品を置き、ぶつかる物は dg.solids に円として登録する
+// ---- 手作りの調度品を、迷宮になじませる ----
+// 箱や円柱を組んだだけの調度品は、面がのっぺりした単色で、彫って焼いた模型や石壁の中で浮いて見える。
+//   1. 単色の材質には、染み・擦れ・むらの絵と、細かな凹凸を重ねる
+//   2. 床に近いほど煤けて暗く、角や面ごとに少しずつ色むらを付ける(頂点の色)
+let GRIME = null, BUMP = null;
+function grimeTex() {
+  if (GRIME) return;
+  GRIME = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#d6d0c6'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 60; i++) { const x = Math.random() * w, y = Math.random() * h, r = 10 + Math.random() * 46, gr = g.createRadialGradient(x, y, 0, x, y, r), d = Math.random() < 0.7; gr.addColorStop(0, d ? 'rgba(40,30,22,.22)' : 'rgba(255,250,240,.16)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2); }   // 染みと擦れ
+    for (let i = 0; i < 2600; i++) { const v = Math.random() * 90; g.fillStyle = `rgba(${v},${v * 0.9},${v * 0.8},.14)`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); }
+    g.strokeStyle = 'rgba(20,14,10,.2)'; for (let i = 0; i < 36; i++) { g.lineWidth = 0.5 + Math.random(); const x = Math.random() * w, y = Math.random() * h; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 60, y + (Math.random() - 0.5) * 60); g.stroke(); }   // 引っかき傷
+  });
+  GRIME.wrapS = GRIME.wrapT = THREE.RepeatWrapping; GRIME.userData.tile = true;
+  BUMP = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#808080'; g.fillRect(0, 0, w, h); for (let i = 0; i < 2200; i++) { const v = Math.random() * 255; g.fillStyle = `rgba(${v},${v},${v},.35)`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 3); } });
+  BUMP.wrapS = BUMP.wrapT = THREE.RepeatWrapping; BUMP.colorSpace = THREE.NoColorSpace;
+}
+const hash = (x, y, z) => { const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453; return s - Math.floor(s); };
+function weather(g) {
+  try { grimeTex(); } catch { return; }       // 描画の無い環境(試験)
+  g.updateMatrixWorld(true);
+  const inv = g.matrixWorld.clone().invert(), v = new THREE.Vector3(), mm = new THREE.Matrix4();
+  const box = new THREE.Box3(); g.traverse(o => { if (o.isMesh && !o.isSkinnedMesh && o.geometry?.attributes?.position) { o.geometry.computeBoundingBox(); box.union(o.geometry.boundingBox.clone().applyMatrix4(mm.multiplyMatrices(inv, o.matrixWorld))); } });
+  const grounded = !box.isEmpty() && box.min.y < 0.5;      // 床に置く物だけ、足元を煤けさせる
+  g.traverse(o => {
+    if (!o.isMesh || o.isSkinnedMesh || o.userData.forged) return;
+    for (const mat of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!mat || !mat.isMeshStandardMaterial) continue;
+      const glow = mat.emissiveIntensity > 1 && mat.emissive.getHex() !== 0, clear = mat.transparent && mat.opacity < 0.9;
+      if (!mat.userData.weathered) {
+        mat.userData.weathered = true;
+        if (!glow && !clear) {
+          if (!mat.map) { mat.map = GRIME; if (mat.metalness < 0.5) mat.color.multiplyScalar(0.9); }
+          if (!mat.bumpMap) { mat.bumpMap = BUMP; mat.bumpScale = mat.metalness > 0.5 ? 0.6 : 1.2; }
+          if (mat.metalness > 0.5) mat.roughness = Math.max(mat.roughness, 0.45);     // 磨き立ての金物は無い
+        }
+        mat.vertexColors = true; mat.needsUpdate = true;
+      }
+      const geo = o.geometry, pos = geo.attributes.position; if (!pos || geo.attributes.color) continue;
+      if (mat.map?.userData.tile && geo.attributes.normal && geo.attributes.uv) {
+        const nor = geo.attributes.normal, uv = geo.attributes.uv, nm = new THREE.Matrix3().getNormalMatrix(mm.multiplyMatrices(inv, o.matrixWorld)), n = new THREE.Vector3(), K = 0.55;
+        for (let i = 0; i < pos.count; i++) {
+          v.fromBufferAttribute(pos, i).applyMatrix4(mm); n.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize();
+          if (Math.abs(n.y) > 0.7) uv.setXY(i, v.x * K, v.z * K); else if (Math.abs(n.x) > Math.abs(n.z)) uv.setXY(i, v.z * K, v.y * K); else uv.setXY(i, v.x * K, v.y * K);
+        }
+        uv.needsUpdate = true;
+      }
+      const col = new Float32Array(pos.count * 3); mm.multiplyMatrices(inv, o.matrixWorld);
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(mm);
+        let k = glow || clear ? 1 : (grounded ? 0.55 + 0.45 * Math.min(1, Math.max(0, v.y) / 0.8) : 0.9) * (0.86 + 0.2 * hash(Math.round(v.x * 3), Math.round(v.y * 3), Math.round(v.z * 3)));
+        col[i * 3] = k; col[i * 3 + 1] = k * 0.985; col[i * 3 + 2] = k * 0.96;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    }
+  });
+}
+
+// 天井から吊る物・天井まで届く物は、高さ 6.4 の天井に合わせて作ってある。天井の高さは場所によって違うので、置く時に合わせ直す
+//   (低い天井では天井の上に隠れ、高い天井では宙に浮いて見えていた)
+const HUNG = { chandelier: 6.4, chains: 6.4, roots: 6.4 };      // 全体を上下にずらす物(作った時の天井の高さ)
+const REACH = { pillar: 6.4, minebeam: 5.75 };                    // 天井より高ければ、縮めて収める物(作った時の背丈)
+function fitCeiling(d, g, dg, m) {
+  let room; try { room = ceilingAt(d.pos.x, d.pos.z, dg) - d.pos.y; } catch { return; }
+  if (!(room > 1)) return;
+  if (HUNG[d.type]) g.position.y += room - HUNG[d.type];
+  else if (REACH[d.type] && room < REACH[d.type]) g.scale.y *= room / REACH[d.type];
+  else if (d.type === 'hangmeat') {
+    // 肉を吊った横木: 天井から鎖で下げる(横木だけが宙に浮いていた)
+    const len = room - 4.2; if (len > 0.05) for (const x of [-0.95, 0.95]) g.add(cyl(0.012, 0.012, len, m.iron, x, 4.2 + len / 2, 0, 4));
+  } else if (d.type === 'crack') {
+    // 天井のひび: ひびと垂れた石は天井に付ける(床の小石はそのまま)
+    for (const c of g.children) if (c.position.y > 3) c.position.y += room - 5.2;
+  }
+}
 export function buildDecor(dg, group) {
   const m = mats();
   dg.solids = [];
@@ -661,11 +747,13 @@ export function buildDecor(dg, group) {
     const forged = makeModel('decor-' + d.type);
     if (forged) {
       for (const c of [...b.g.children]) if (!c.isSprite && !c.isLight) b.g.remove(c);
-      forged.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      forged.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.userData.forged = true; } });
       b.g.add(forged);
       b.lid = b.lid ? forged.getObjectByName('lid') || null : null;
     }
     b.g.position.copy(d.pos); b.g.rotation.y = d.rot; b.g.scale.setScalar(d.s || 1);
+    fitCeiling(d, b.g, dg, m);
+    if (!forged) weather(b.g);
     group.add(b.g);
     d.obj = b.g; d.lid = b.lid || null; // 調べた時に蓋が開く
     if (b.g.userData.spin) (dg.spinners ||= []).push(b.g.userData.spin);

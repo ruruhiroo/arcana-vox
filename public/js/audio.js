@@ -1,5 +1,5 @@
 // WebAudio による手続き的効果音・環境音 (3D定位つき)
-let ctx = null, master = null, sfxBus = null, noiseBuf = null, listenerPos = { x: 0, z: 0 };
+let ctx = null, master = null, sfxBus = null, musicIn = null, noiseBuf = null, listenerPos = { x: 0, z: 0 };
 let sfxVol = 1, ambGain = null;
 // 効果音(魔法・魔物・足音)の音量 0〜1
 export function setSfxVolume(v) { sfxVol = v; if (sfxBus) sfxBus.gain.setTargetAtTime(v, ctx.currentTime, 0.05); }
@@ -8,6 +8,7 @@ export function setAmbienceVolume(v) { ambGain = v * 0.7; ambLevel = v > 0 ? 1 :
 
 export const getAudioCtx = () => ctx;
 export const getMaster = () => master;
+export const getMusicIn = () => musicIn;
 
 export function initAudio() {
   if (ctx) return;
@@ -23,6 +24,15 @@ export function initAudio() {
   conv.buffer = ir;
   const wet = ctx.createGain(); wet.gain.value = 0.28;
   master.connect(comp); master.connect(conv); conv.connect(wet); wet.connect(comp); comp.connect(ctx.destination);
+  // 音楽の出口: 全体の音量には従うが、効果音の圧縮は通さない
+  musicIn = ctx.createGain(); musicIn.gain.value = 0.7 * masterVol;
+  const mcomp = ctx.createDynamicsCompressor(); mcomp.threshold.value = -12; mcomp.knee.value = 18; mcomp.ratio.value = 2.5; mcomp.attack.value = 0.03; mcomp.release.value = 0.35;
+  const air = ctx.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = 2800; air.gain.value = 5;   // 高い側を少し持ち上げて、こもりを取る
+  const mud = ctx.createBiquadFilter(); mud.type = 'peaking'; mud.frequency.value = 260; mud.Q.value = 0.8; mud.gain.value = -5;   // 低い側の濁りを少し削る
+  const send = ctx.createGain(); send.gain.value = 0.16;
+  const rumble = ctx.createBiquadFilter(); rumble.type = 'highpass'; rumble.frequency.value = 42;   // 聞こえない超低音は、濁りと圧縮の元になるだけなので切る
+  musicIn.connect(rumble); rumble.connect(mud); mud.connect(air); air.connect(mcomp); mcomp.connect(ctx.destination);
+  air.connect(send); send.connect(conv);
   noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
   const nd = noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
   ambience();
@@ -75,6 +85,7 @@ let masterVol = 0.8;
 export function setMasterVolume(v) {
   masterVol = v;
   if (master) master.gain.setTargetAtTime(0.7 * v, ctx.currentTime, 0.05);
+  if (musicIn) musicIn.gain.setTargetAtTime(0.7 * v, ctx.currentTime, 0.05);
 }
 
 function ambience() {

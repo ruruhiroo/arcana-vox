@@ -178,30 +178,30 @@ export function spawnEnemy(id, type, pos, floor, summoner = null) {
 // ---------- 魔物 ----------
 export const ENEMY_TYPES = {
   dragon: { name: '詠灰竜ヴォルグ', hp: 230, speed: 2, dmg: 24, range: 24, cd: 8, radius: 1.8, h: 10.5, weak: [], resist: [], drops: ['crystal', 'iron', 'scroll'] },
-  skeleton: { name: '骸骨兵', hp: 70, speed: 2.7, dmg: 10, range: 1.7, cd: 1.3, radius: 0.4, undead: true, weak: ['holy', 'thunder'], resist: ['void', 'ice'], drops: ['bone', 'bone', 'iron'] },
-  slime:    { name: '粘獣', hp: 62, speed: 1.9, dmg: 8, range: 1.4, cd: 1.1, radius: 0.55, weak: ['fire'], resist: ['wind'], drops: ['herb', 'crystal'] },
-  wraith:   { name: '怨霊', hp: 64, speed: 2.3, dmg: 12, range: 13, cd: 2.6, radius: 0.45, undead: true, ranged: true, fly: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['crystal', 'crystal'] },
+  skeleton: { name: '骸骨兵', hp: 70, speed: 3.6, dmg: 10, range: 1.7, cd: 1.3, radius: 0.4, undead: true, weak: ['holy', 'thunder'], resist: ['void', 'ice'], drops: ['bone', 'bone', 'iron'] },
+  slime:    { name: '粘獣', hp: 62, speed: 2.8, dmg: 8, range: 1.4, cd: 1.1, radius: 0.55, weak: ['fire'], resist: ['wind'], drops: ['herb', 'crystal'] },
+  wraith:   { name: '怨霊', hp: 64, speed: 2.8, dmg: 12, range: 13, cd: 2.6, radius: 0.45, undead: true, ranged: true, fly: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['crystal', 'crystal'] },
   scribe:   { name: '堕ちた写本師', hp: 72, speed: 2.1, dmg: 8, range: 13, cd: 4.2, radius: 0.42, caster: true, weak: ['fire', 'thunder'], resist: ['void'], drops: ['scroll', 'crystal'] },
   // 追加の魔物 (層が深くなるほど出やすい)
-  ghoul:    { name: '屍食鬼', hp: 55, speed: 3.7, dmg: 9, range: 1.5, cd: 0.9, radius: 0.4, undead: true, weak: ['fire', 'holy'], resist: ['void'], drops: ['bone', 'herb'], h: 1.9 },
-  bat:      { name: '吸血大蝙蝠', hp: 32, speed: 4.4, dmg: 6, range: 1.5, cd: 1.0, radius: 0.35, fly: true, flyH: 1.5, swoop: true, drain: true, weak: ['wind', 'thunder'], resist: [], drops: ['herb'], h: 2.2 },
-  spider:   { name: '洞窟大蜘蛛', hp: 85, speed: 3.4, dmg: 11, range: 1.9, cd: 1.4, radius: 0.7, leap: true, web: true, weak: ['fire'], resist: ['ice'], drops: ['crystal', 'herb'], h: 1.4 },
-  imp:      { name: '炎小鬼', hp: 50, speed: 3.0, dmg: 10, range: 12, cd: 2.4, radius: 0.35, ranged: true, bolt: 'fire', weak: ['ice', 'holy'], resist: ['fire'], drops: ['crystal'], h: 1.5 },
-  knight:   { name: '亡霊騎士', hp: 180, speed: 2.3, dmg: 18, range: 2.1, cd: 1.6, radius: 0.5, undead: true, guard: true, weak: ['holy', 'thunder'], resist: ['ice', 'wind', 'void'], drops: ['iron', 'iron', 'crystal'], h: 2.4 },
-  ogre:     { name: '岩喰い鬼', hp: 320, speed: 1.9, dmg: 26, range: 2.7, cd: 2.4, radius: 0.9, slam: true, weak: ['ice', 'fire'], resist: ['wind'], drops: ['iron', 'herb', 'herb'], h: 3.1 },
+  ghoul:    { name: '屍食鬼', hp: 55, speed: 4.8, dmg: 9, range: 1.5, cd: 0.9, radius: 0.4, undead: true, weak: ['fire', 'holy'], resist: ['void'], drops: ['bone', 'herb'], h: 1.9 },
+  bat:      { name: '吸血大蝙蝠', hp: 32, speed: 5.2, dmg: 6, range: 1.5, cd: 1.0, radius: 0.35, fly: true, flyH: 1.5, swoop: true, drain: true, weak: ['wind', 'thunder'], resist: [], drops: ['herb'], h: 2.2 },
+  spider:   { name: '洞窟大蜘蛛', hp: 85, speed: 4.4, dmg: 11, range: 1.9, cd: 1.4, radius: 0.7, leap: true, web: true, weak: ['fire'], resist: ['ice'], drops: ['crystal', 'herb'], h: 1.4 },
+  imp:      { name: '炎小鬼', hp: 50, speed: 3.4, dmg: 10, range: 12, cd: 2.4, radius: 0.35, ranged: true, bolt: 'fire', weak: ['ice', 'holy'], resist: ['fire'], drops: ['crystal'], h: 1.5 },
+  knight:   { name: '亡霊騎士', hp: 180, speed: 3.2, dmg: 18, range: 2.1, cd: 1.6, radius: 0.5, undead: true, guard: true, weak: ['holy', 'thunder'], resist: ['ice', 'wind', 'void'], drops: ['iron', 'iron', 'crystal'], h: 2.4 },
+  ogre:     { name: '岩喰い鬼', hp: 320, speed: 2.8, dmg: 26, range: 2.7, cd: 2.4, radius: 0.9, slam: true, weak: ['ice', 'fire'], resist: ['wind'], drops: ['iron', 'herb', 'herb'], h: 3.1 },
   lich:     { name: '屍術師', hp: 160, speed: 1.8, dmg: 14, range: 14, cd: 3.2, radius: 0.5, undead: true, ranged: true, bolt: 'void', summon: true, weak: ['holy', 'fire'], resist: ['void', 'ice'], drops: ['scroll', 'crystal', 'crystal'], h: 2.6 },
-  golem:    { name: '石像兵', hp: 240, speed: 1.5, dmg: 22, range: 2.3, cd: 2.0, radius: 0.85, weak: ['thunder'], resist: ['fire', 'ice', 'wind'], drops: ['iron', 'iron', 'crystal', 'crystal'] },
+  golem:    { name: '石像兵', hp: 240, speed: 2.3, dmg: 22, range: 2.3, cd: 2.0, radius: 0.85, weak: ['thunder'], resist: ['fire', 'ice', 'wind'], drops: ['iron', 'iron', 'crystal', 'crystal'] },
 };
 
 // ---- 近接の振り方 ----
 // wind = 振りかぶってから武器が届くまでの秒 / rec = 振った後の硬直の秒 / dmg = 傷の倍率 / reach = 届く距離の足し前 / arc = 当たる向きの幅(正面から左右へ、ラジアン)
 // 傷は「振り始め」ではなく、武器が届いた瞬間(wind 秒後)に、その時まだ届く所にいる者だけが受ける。振りかぶりの終わり際は向きを変えられないので、横へ動けば避けられる
 export const SWINGS = {
-  light: { label: '小振り',     wind: 0.36, rec: 0.38, dmg: 0.7,  reach: 0.1,  arc: 0.95, track: 0.8,  w: 3, cd: 0.4,  pose: 'jab' },
-  heavy: { label: '大振り',     wind: 0.95, rec: 1.1,  dmg: 1.7,  reach: 0.3,  arc: 0.7,  track: 0.6,  w: 2, cd: 0.9,  pose: 'over', push: 7, shake: 0.28, thud: true, growl: true },
-  sweep: { label: '薙ぎ払い',   wind: 0.62, rec: 0.75, dmg: 1.0,  reach: 0.4,  arc: 1.5,  track: 0.7,  w: 2, cd: 0.8,  pose: 'sweep', all: true, push: 3.5 },
-  lunge: { label: '踏み込み突き', wind: 0.55, rec: 0.85, dmg: 1.25, reach: 0.55, arc: 0.45, track: 0.55, w: 2, cd: 0.85, pose: 'lunge', step: 11 },
-  slam:  { label: '叩きつけ',   wind: 0.85, rec: 1.2,  dmg: 1.0,  reach: 0,    arc: 9,    track: 1,    w: 3, cd: 1,    pose: 'over', radial: 3.2, push: 9, shake: 0.35, thud: true, growl: true },
+  light: { label: '小振り',     wind: 0.26, rec: 0.28, dmg: 0.7,  reach: 0.45, arc: 1.0,  track: 0.9,  w: 3, cd: 0.4,  pose: 'jab' },
+  heavy: { label: '大振り',     wind: 0.7,  rec: 0.8,  dmg: 1.7,  reach: 0.65, arc: 0.8,  track: 0.75, w: 2, cd: 0.9,  pose: 'over', push: 7, shake: 0.28, thud: true, growl: true },
+  sweep: { label: '薙ぎ払い',   wind: 0.45, rec: 0.55, dmg: 1.0,  reach: 0.75, arc: 1.5,  track: 0.85, w: 2, cd: 0.8,  pose: 'sweep', all: true, push: 3.5 },
+  lunge: { label: '踏み込み突き', wind: 0.4,  rec: 0.6,  dmg: 1.25, reach: 0.9,  arc: 0.55, track: 0.75, w: 2, cd: 0.85, pose: 'lunge', step: 17 },
+  slam:  { label: '叩きつけ',   wind: 0.65, rec: 0.9,  dmg: 1.0,  reach: 0,    arc: 9,    track: 1,    w: 3, cd: 1,    pose: 'over', radial: 3.6, push: 9, shake: 0.35, thud: true, growl: true },
 };
 // 種類ごとに使える振り方(無い種類は小振りと大振り)
 const SWING_SET = {
@@ -389,7 +389,7 @@ export class Enemy {
       const d = tp.distanceTo(this.pos);
       const los = lineOfSight(this.pos, tp);
       this.yaw = Math.atan2(-(tp.x - this.pos.x), -(tp.z - this.pos.z));
-      const inRange = d < T.range + this.target.radius && (los || !T.ranged);
+      const inRange = d < T.range + this.target.radius + (T.ranged || T.caster ? 0 : 1.1) && (los || !T.ranged);
       if (T.caster) {
         if (this.chant) {
           this.chant.t += dt;
@@ -522,12 +522,19 @@ export class Enemy {
   // 振りの途中(部屋の主): 終わり際まで相手を追って向きを変え、届いた瞬間に当たりを調べ、その後は硬直する
   runSwing(dt) {
     const s = this.swing, V = s.V, T = this.T, tg = this.target;
-    if (tg && tg.alive && s.t < V.wind * V.track) this.yaw = Math.atan2(-(tg.pos.x - this.pos.x), -(tg.pos.z - this.pos.z));
+    let chase = null;
+    if (tg && tg.alive && s.t < V.wind * V.track) {
+      // 相手が動いていれば、少し先を狙う
+      const lead = 0.22, ax = tg.pos.x + (tg.vel?.x || 0) * lead - this.pos.x, az = tg.pos.z + (tg.vel?.z || 0) * lead - this.pos.z, ad = Math.hypot(ax, az);
+      this.yaw = Math.atan2(-ax, -az);
+      if (ad > T.range * 0.55 && !this.status.bound) chase = { x: ax / ad, z: az / ad };       // 間合いの外なら、振りかぶりながら詰める
+    }
     if (V.step && !s.stepped && s.t >= V.wind * 0.62) { s.stepped = true; if (!this.status.bound) this.knock.add(new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)).multiplyScalar(V.step)); }
     if (!s.hit && s.t >= V.wind) { s.hit = true; this.strike(V); }
     if (s.t >= V.wind + V.rec) { this.swing = null; this.cd = T.cd * V.cd * rand(0.75, 1.15); }
     this.knock.multiplyScalar(Math.max(0, 1 - dt * 5));
-    const dx = this.knock.x * dt, dz = this.knock.z * dt;
+    const sp = chase ? T.speed * this.speedMul * (this.status.slow ? 0.5 : 1) * 0.9 : 0;
+    const dx = this.knock.x * dt + (chase ? chase.x * sp * dt : 0), dz = this.knock.z * dt + (chase ? chase.z * sp * dt : 0);
     moveWithCollision(this.pos, dx, dz, this.radius, this.team, CLIMB);
     this.vel.set(dx / dt, 0, dz / dt);
   }

@@ -51,6 +51,7 @@ import { preloadModels, loadProgress } from './glbmodels.js';
 import { showLoading, hideLoading } from './loading.js';
 import { askElement as pickElement } from './elpick.js';
 import { initUpdates } from './updates.js';
+import { initDevices, openDevicePanel, openMic, applyOutput } from './devices.js';
 import { initLook, myLookStr, openLookEditor, grantRandomWear, clearWardrobe } from './lookedit.js';
 import { initMp, openMp, closeMp, mpOpen, refreshMp, takeAuto, setNet, makeCode } from './mpanel.js';
 import { initFX, LightPool, clearLumens } from './spells.js';
@@ -249,7 +250,7 @@ async function startGame({ tutorial = false } = {}) {
   G.run = { keys: 0, done: false }; G.FINAL_FLOOR = FINAL_FLOOR;
   G.netReady = false; netWait.length = 0;
   G.stats = { moved: 0, looked: 0, read: 0, flips: 0, kills: 0, chests: 0, eloquent: 0 };
-  initAudio(); startMusic(); applySettings();
+  initAudio(); startMusic(); applySettings(); applyOutput(getAudioCtx());
   showLoading('迷宮へ降りている', () => loadProgress.total ? loadProgress.done / loadProgress.total : 0); // 模型の読み込みと迷宮づくりの間
   loadBook();
   G.noSave = tutorial;
@@ -263,7 +264,7 @@ async function startGame({ tutorial = false } = {}) {
   await Promise.all([preloadModels(), preloadItems()]).then(([, ok]) => { if (ok) VM.refreshItems(); }); // 手の模型は両方が届いてから付け直す // 魔物と道具のモデル(Blender 製)
   if (!window.desktop && navigator.mediaDevices?.getUserMedia && !G.micStream) {
     $('netNote').textContent = 'マイクの使用を許可してください(声の詠唱とボイスチャットに使います)';
-    try { G.micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); G.micOk = true; }
+    try { G.micStream = await openMic({ echoCancellation: true, noiseSuppression: true }); G.micOk = true; }
     catch (e) { G.micOk = false; G.micError = e?.name || 'error'; }
     $('netNote').textContent = '';
   }
@@ -957,7 +958,7 @@ function setupVoice() {
         const MSG = {
           'not-allowed': 'マイクがブロックされています。アドレスバー左の🔒(サイト情報)→「マイク」を許可して、ページを再読み込みしてください',
           'service-not-allowed': 'マイクがブロックされています。アドレスバー左の🔒→「マイク」を許可して再読み込みしてください',
-          'audio-capture': 'マイクが見つかりません。マイクの接続と、Windows の「マイクへのアクセス」設定を確認してください',
+          'audio-capture': 'マイクが見つかりません。Esc → 設定 → 音 の「マイクと音の出力先」で、使うマイクを選べます',
           'network': '音声認識サーバーにつながりません(Chrome の音声認識はネット接続が必要です)',
           'no-speech': '声が聞こえませんでした。もう一度 V を押しながら唱えてください',
         };
@@ -1719,7 +1720,7 @@ invEl.addEventListener('click', e => { if (e.target === invEl) closeInventory();
 // ---------- Esc メニューと設定 ----------
 const SETTINGS_KEY = 'arcana_vox_settings_v1';
 // 音量はどれも ％(0〜100)。musicVol = 音楽, sfxVol = 効果音, ambVol = 環境音, shake = 画面の揺れ
-const SETTING_DEFS = { volume: 0.8, musicVol: 0, sfxVol: 100, ambVol: 40, shake: 100, npcVoice: true };
+const SETTING_DEFS = { volume: 0.8, musicVol: 0, sfxVol: 100, ambVol: 80, shake: 100, npcVoice: true };
 const settings = { ...SETTING_DEFS, ambience: 1, music: 1, sens: 1 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch {}
 // 前の版の「OFF・小・中」を ％へ引き継ぐ
@@ -1727,6 +1728,7 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || 
   if (raw && raw.musicVol === undefined && raw.music !== undefined) settings.musicVol = [0, 45, 80][raw.music] ?? 45;
   if (raw && raw.ambVol === undefined && raw.ambience !== undefined) settings.ambVol = [0, 40, 100][raw.ambience] ?? 40;
   // 音楽は、いったん鳴らさない(設定の「音楽」を上げれば、また鳴る)。前の版で音量を決めていた人も、一度だけ 0 に戻す
+  if (!settings.ambUp1) { settings.ambVol = Math.max(settings.ambVol || 0, 80); if (!(settings.sfxVol > 0)) settings.sfxVol = 100; if (!(settings.volume > 0)) settings.volume = 0.8; settings.ambUp1 = true; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }   // 音楽を止めた分、迷宮の環境音と効果音はしっかり鳴らす
   if (!settings.bgmOff1) { settings.musicVol = 0; settings.bgmOff1 = true; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} } }
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
 function applySettings() {
@@ -1782,6 +1784,7 @@ const SET_ROWS = {
     { label: '音楽', type: 'pct', ...setS('musicVol'), desc: '探索・交戦・守護者戦・聖域で流れる音楽の大きさ。いまは最初から 0%(鳴らさない)にしてある。上げると鳴る。詠唱している間は、声の聞き取りを邪魔しないよう自動で小さくなる。' },
     { label: '効果音', type: 'pct', ...setS('sfxVol'), desc: '魔法・魔物・足音・宝箱などの音の大きさ。魔物の位置や守護者の構えは音でも分かるので、下げすぎに注意。' },
     { label: '環境音', type: 'pct', ...setS('ambVol'), desc: '迷宮の低いうなりや、遠くの水滴の音の大きさ。' },
+    { label: 'マイクと音の出力先', type: 'act', text: '選ぶ・試す', run: () => openDevicePanel(), desc: '声で詠唱するマイクと、音を出す先(スピーカー・ヘッドホン)を選ぶ。マイクの入り具合も確かめられる。' },
     { label: '魔物の詠唱を読み上げる', type: 'bool', ...setS('npcVoice'), desc: '敵の術者が唱える言葉を、合成の声で聞かせる。何の術が来るかを耳で読める。' },
   ],
   controls: [
@@ -2507,6 +2510,7 @@ function updatePlayer(dt) {
 
 // タイトル画面の背景(大書庫の景色)。ロビーが見えている間だけ動く
 startTitle();
+initDevices();
 initLook();
 initMp({ warp: id => warpToMate(id), close: () => closeMenu(), colorOf: id => { const m = G.mages?.find(x => x.id === 'p' + id); return m?.color; }, saveBefore: () => { try { if (!$('mSave').disabled) $('mSave').click(); } catch {} }, online: canOnline });
 // メニューの「仲間と潜る」で始め直した時: 選んだ入り方で、そのまま迷宮へ入る

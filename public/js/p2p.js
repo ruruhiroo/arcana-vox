@@ -1,3 +1,4 @@
+import { openMic } from './devices.js';
 import { makeVoiceFx } from './voicefx.js';
 // インターネット越しの P2P (アプリ同士で直接 WebRTC 接続)
 // 待ち合わせ(シグナリング)だけ公開の Nostr リレーを使い、ゲームのデータと声は相手と直接やりとりする。
@@ -125,7 +126,7 @@ export class P2PNet {
   async enableVoice(_players, audioCtx) {
     this.audioCtx = audioCtx;
     try {
-      this.stream = window.G?.micStream || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      this.stream = window.G?.micStream || await openMic({ echoCancellation: true, noiseSuppression: true });
     } catch (e) { console.warn('VC unavailable', e); return false; }
     this.room?.addStream(this.stream);
     return true;

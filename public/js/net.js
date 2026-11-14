@@ -1,3 +1,4 @@
+import { openMic } from './devices.js';
 import { makeVoiceFx } from './voicefx.js';
 // オンライン: WebSocket リレー + WebRTC 近接ボイスチャット(VC)
 // 他プレイヤーの詠唱は「声」としても届き、距離と方向で聞こえ方が変わる。
@@ -35,7 +36,7 @@ export class Net {
   async enableVoice(players, audioCtx, masterOut) {
     this.audioCtx = audioCtx; this.masterOut = masterOut;
     try {
-      this.stream = window.G?.micStream || await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      this.stream = window.G?.micStream || await openMic({ echoCancellation: true, noiseSuppression: true });
     } catch (e) { console.warn('VC unavailable', e); return false; }
     for (const p of players) if (p.id !== this.id) this.call(p.id);
     return true;

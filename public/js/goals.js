@@ -25,7 +25,8 @@ export function setupGoals(floor, hooks) {
 
 let lastKey = '';
 export function updateGoals() {
-  const gs = G.goals; if (!gs) return;
+  const gs = G.goals;
+  if (!gs) { if (lastKey !== 'none') { lastKey = 'none'; $('goals')?.classList.add('hidden'); } return; }   // 課題の無い所(迷宮の入口)では、前の層の課題を残さない
   const key = gs.list.map(g => Math.min(g.need, g.cur())).join(',') + '|' + (G.run?.keys || 0) + (G.run?.done ? 'd' : '') + '|' + (G.quest ? G.quest.cur + (G.quest.done ? 'd' : '') + G.quest.sid : '');
   if (key === lastKey) return;
   // 新しく達成した課題

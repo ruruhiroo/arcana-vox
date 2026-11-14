@@ -2,7 +2,7 @@
 //   炎 = 揺らめく炎 / 氷 = 氷の棘 / 雷 = 稲妻をまとう球 / 風 = 渦を巻く風 / 聖 = 光輪と十字 / 闇 = 紫の渦を吸う黒い球
 import * as THREE from 'three';
 import { G } from './state.js';
-import { glowSprite, textSprite } from './textures.js';
+import { glowSprite, textSprite, runeCircleTex } from './textures.js';
 
 const EL = {
   fire: { name: '紅蓮', sub: '炎', color: 0xff7a30 }, ice: { name: '氷獄', sub: '氷', color: 0x8fd8ff }, thunder: { name: '雷霆', sub: '雷', color: 0xc8b8ff },
@@ -130,6 +130,14 @@ const MAKE = {
   },
 };
 
+// 光の柱: 根元が明るく、上へ行くほど薄れる
+let beamTex = null;
+function beamFade() {
+  if (beamTex) return beamTex;
+  const c = document.createElement('canvas'); c.width = 4; c.height = 128; const x = c.getContext('2d');
+  const gr = x.createLinearGradient(0, 128, 0, 0); gr.addColorStop(0, '#fff'); gr.addColorStop(0.25, '#888'); gr.addColorStop(1, '#000'); x.fillStyle = gr; x.fillRect(0, 0, 4, 128);
+  return beamTex = new THREE.CanvasTexture(c);
+}
 export function buildShrines(d, scene) {
   clearShrines(scene);
   const stone = new THREE.MeshStandardMaterial({ color: 0x6a6258, roughness: 0.95 });
@@ -141,11 +149,23 @@ export function buildShrines(d, scene) {
     // 台座に刻まれた属性の色の帯(選んでいる祭壇は光る)
     const band = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.025, 6, 24), new THREE.MeshStandardMaterial({ color: info.color, emissive: info.color, emissiveIntensity: 0.2 }));
     band.rotation.x = Math.PI / 2; band.position.y = 1.0;
-    const label = textSprite(info.name, { size: 44, color: '#' + info.color.toString(16).padStart(6, '0') }); label.position.y = 2.75;
+    const label = textSprite(info.name, { size: 60, color: '#' + info.color.toString(16).padStart(6, '0') }); label.position.y = 2.75;
     for (const m of [base, post, cap]) { m.castShadow = true; m.receiveShadow = true; }
     g.add(base, post, cap, band, label);
+    // 床の魔法陣(属性の色で回る)・天へ昇る光の柱・後ろの大きな光
+    const glowM = (op, extra = {}) => new THREE.MeshBasicMaterial({ color: info.color, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, ...extra });
+    let ringTex = null, fadeTex = null; try { ringTex = runeCircleTex(); fadeTex = beamFade(); } catch { /* 描画の無い環境 */ }
+    const circle = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), glowM(0.35, ringTex ? { map: ringTex } : {})); circle.rotation.x = -Math.PI / 2; circle.position.y = 0.03;
+    const circle2 = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.1), glowM(0.25, ringTex ? { map: ringTex } : {})); circle2.rotation.x = -Math.PI / 2; circle2.position.y = 0.04;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.3, 7, 20, 1, true), glowM(0.1, fadeTex ? { map: fadeTex } : {})); pillar.position.y = TOP + 3.5;
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.05, 7, 8, 1, true), glowM(0.25, fadeTex ? { map: fadeTex } : {})); core.position.y = TOP + 3.5;
+    const back = sprite(info.color, 3.2, 0.16); back.position.y = TOP + 0.6;
+    const rings = [];
+    for (let i = 0; i < 2; i++) { const r = new THREE.Mesh(new THREE.TorusGeometry(0.62 + i * 0.16, 0.012, 5, 48), glowM(0.5)); r.position.y = TOP + 0.6; g.add(r); rings.push(r); }
+    g.add(circle, circle2, pillar, core, back);
+    g.scale.setScalar(1.3);
     g.position.copy(s.pos); scene.add(g);
-    shrines.push({ ...s, g, band, anim: MAKE[s.el](g) });
+    shrines.push({ ...s, g, band, anim: MAKE[s.el](g), fx: { circle, circle2, pillar, core, back, rings, color: info.color } });
   }
 }
 export function clearShrines(scene) { for (const s of shrines) scene.remove(s.g); shrines = []; }
@@ -154,6 +174,14 @@ export function updateShrines(dt) {
     const sel = G.affinity === s.el;
     s.band.material.emissiveIntensity = sel ? 1.2 : 0.2;
     s.anim(dt, G.time, sel);
+    // 近づくと魔法陣と光の柱が強まり、誓った祭壇はずっと輝く
+    const f = s.fx, t = G.time, near = G.player ? Math.max(0, 1 - Math.hypot(G.player.pos.x - s.pos.x, G.player.pos.z - s.pos.z) / 5) : 0, k = Math.max(sel ? 1 : 0, near);
+    f.circle.rotation.z += dt * (0.25 + k * 0.9); f.circle2.rotation.z -= dt * (0.5 + k * 1.4);
+    f.circle.material.opacity = 0.22 + k * 0.5 + Math.sin(t * 2) * 0.04; f.circle2.material.opacity = 0.16 + k * 0.45;
+    f.pillar.material.opacity = 0.05 + k * 0.2; f.core.material.opacity = 0.25 + k * 0.6; f.pillar.rotation.y += dt * 0.3;
+    f.back.material.opacity = 0.1 + k * 0.22 + Math.sin(t * 1.7 + s.pos.x) * 0.02;
+    f.rings.forEach((r, i) => { r.rotation.x = Math.PI / 2 + Math.sin(t * (0.7 + i * 0.3) + i) * 0.5; r.rotation.y += dt * (0.6 + i * 0.5 + k * 2); r.material.opacity = 0.25 + k * 0.5; });
+    if (Math.random() < dt * (3 + k * 14)) { const a = Math.random() * 6.28, r = 0.4 + Math.random() * 1.3; G.particles?.emit(new THREE.Vector3(s.pos.x + Math.cos(a) * r, (s.pos.y || 0) + 0.1, s.pos.z + Math.sin(a) * r), new THREE.Vector3(-Math.cos(a) * 0.25, 1 + Math.random() * 1.6, -Math.sin(a) * 0.25), f.color, 0.1 + Math.random() * 0.08, 1.6 + Math.random()); }
   }
 }
 export function shrineNear(pos) { for (const s of shrines) if (Math.hypot(s.pos.x - pos.x, s.pos.z - pos.z) < 2.0) return s; return null; }

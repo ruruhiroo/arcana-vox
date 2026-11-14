@@ -15,7 +15,6 @@ export function initAudio() {
   ctx = new (window.AudioContext || window.webkitAudioContext)();
   master = ctx.createGain(); master.gain.value = 0.7 * masterVol;
   sfxBus = ctx.createGain(); sfxBus.gain.value = sfxVol; sfxBus.connect(master);
-  sfxBus = ctx.createGain(); sfxBus.gain.value = sfxVol; sfxBus.connect(master);
   const comp = ctx.createDynamicsCompressor();
   // 石造りの残響
   const conv = ctx.createConvolver();
@@ -94,10 +93,10 @@ function ambience() {
   const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain();
   o1.frequency.value = 55; o2.frequency.value = 55.4; o1.type = o2.type = 'sine';
   const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 120;
-  g.gain.value = 0.04; o1.connect(f); o2.connect(f); f.connect(g); g.connect(ambBus); o1.start(); o2.start();
+  g.gain.value = 0.1; o1.connect(f); o2.connect(f); f.connect(g); g.connect(ambBus); o1.start(); o2.start();
   const wind = ctx.createBufferSource(); wind.buffer = noiseBuf; wind.loop = true;
   const wf = ctx.createBiquadFilter(); wf.type = 'bandpass'; wf.frequency.value = 400; wf.Q.value = 0.6;
-  const wg = ctx.createGain(); wg.gain.value = 0.03; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
+  const wg = ctx.createGain(); wg.gain.value = 0.085; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
   setInterval(() => {
     if (!ambLevel || Math.random() > 0.35) return;
     tone(1800 + Math.random() * 900, 0.25, { gain: 0.02 * (ambGain ?? AMB_LEVELS[ambLevel]), to: 600, pos: { x: listenerPos.x + (Math.random() - 0.5) * 30, z: listenerPos.z + (Math.random() - 0.5) * 30, y: 3 } });

@@ -7,6 +7,7 @@ import { WORDS, CALL_WORDS } from './lexicon.js';
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const IS_APP = !!window.desktop?.isApp;
+import { openMic } from './devices.js';
 export const voiceSupported = !!navigator.mediaDevices?.getUserMedia || !!SR;
 // ブラウザ版: Chrome/Edge の音声認識(長い文も聞き取れる)を使う。アプリ版: オフラインの Vosk
 // Brave などは音声認識の窓口だけあって実際には使えない。その場合や Firefox では、アプリと同じ認識(Vosk → AI)を使う
@@ -126,7 +127,7 @@ async function ensureMic() {
   await loadVoskModel();
   if (!vosk.model) return false;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+    const stream = await openMic({ echoCancellation: true, noiseSuppression: true, channelCount: 1 });
     const ctx = vosk.ctx = new AudioContext();
     const words = new Set(PARTICLES);
     for (const w of WORDS) for (const a of w.alias) if (!/[a-z0-9]/i.test(a)) words.add(a);
@@ -246,7 +247,7 @@ function whisperDown(why) {
 async function wMic() {
   if (W.ctx) return true;
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+    const stream = await openMic({ echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 });
     const ctx = W.ctx = new AudioContext();
     const src = ctx.createMediaStreamSource(stream);
     const node = ctx.createScriptProcessor(4096, 1, 1);

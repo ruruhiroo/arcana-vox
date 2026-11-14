@@ -93,14 +93,27 @@ function ambience() {
   const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain();
   o1.frequency.value = 55; o2.frequency.value = 55.4; o1.type = o2.type = 'sine';
   const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 120;
-  g.gain.value = 0.1; o1.connect(f); o2.connect(f); f.connect(g); g.connect(ambBus); o1.start(); o2.start();
+  g.gain.value = 0.07; o1.connect(f); o2.connect(f); f.connect(g); g.connect(ambBus); o1.start(); o2.start();
   const wind = ctx.createBufferSource(); wind.buffer = noiseBuf; wind.loop = true;
   const wf = ctx.createBiquadFilter(); wf.type = 'bandpass'; wf.frequency.value = 400; wf.Q.value = 0.6;
-  const wg = ctx.createGain(); wg.gain.value = 0.085; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
+  const wg = ctx.createGain(); wg.gain.value = 0.01; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
   setInterval(() => {
     if (!ambLevel || Math.random() > 0.35) return;
     tone(1800 + Math.random() * 900, 0.25, { gain: 0.02 * (ambGain ?? AMB_LEVELS[ambLevel]), to: 600, pos: { x: listenerPos.x + (Math.random() - 0.5) * 30, z: listenerPos.z + (Math.random() - 0.5) * 30, y: 3 } });
   }, 3000);
+  // 炎のはぜる音: 近くの松明・かがり火から、ぱちぱちと聞こえる(ザーという風の代わり)
+  const crackle = () => {
+    setTimeout(crackle, 50 + Math.random() * 260);
+    const lv = ambGain ?? AMB_LEVELS[ambLevel]; if (!lv || ctx.state !== 'running') return;
+    const d = globalThis.G?.dungeon; if (!d) return;
+    let best = null, bd = 14 * 14;
+    for (const list of [d.torches, d.braziers]) for (const s of list || []) { const p = s.pos || s, q = (p.x - listenerPos.x) ** 2 + (p.z - listenerPos.z) ** 2; if (q < bd) { bd = q; best = p; } }
+    if (!best) return;
+    const pos = { x: best.x, y: 2, z: best.z }, big = Math.random() < 0.15;
+    noise(big ? 0.07 : 0.025, { freq: big ? 900 + Math.random() * 600 : 2200 + Math.random() * 2600, type: 'bandpass', q: 1.5, gain: (big ? 0.5 : 0.28) * lv * (0.5 + Math.random() * 0.5), attack: 0.002, pos });
+    if (big) tone(110 + Math.random() * 50, 0.09, { gain: 0.1 * lv, to: 55, pos });
+  };
+  crackle();
 }
 
 const ELEM_SND = {

@@ -111,6 +111,11 @@ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadow
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x030202);
+// 描画が止まった時(PC のメモリやグラフィックが足りなくなると、画面が真っ白・真っ黒になる): 戻るのを待ち、戻らなければ知らせる
+{ let lostT = 0;
+  renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); try { UI.log('描画が止まった(PC のメモリかグラフィックの不足)。戻るのを待っている…', '#ff9a8a'); } catch {}
+    clearTimeout(lostT); lostT = setTimeout(() => { try { UI.banner('描画が戻らない', '他の重いアプリを閉じて、ゲームを起動し直してください(聖域や層の始めの記録から続けられる)', 12); } catch {} }, 6000); });
+  renderer.domElement.addEventListener('webglcontextrestored', () => { clearTimeout(lostT); try { UI.log('描画が戻った', '#d6e5bb'); } catch {} }); }
 scene.fog = new THREE.FogExp2(0x060403, 0.042);
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 120);
 G.camera = camera;

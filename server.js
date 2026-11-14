@@ -89,7 +89,7 @@ function onMessage(client, msg) {
     client.name = String(m.name || '名無しの魔導師').slice(0, 16);
     client.room = room; client.roomCode = code;
     room.clients.add(client);
-    send(client, { t: 'welcome', id: client.id, hostId: room.hostId, mode: room.mode, seed: room.seed, floor: room.floor || 1, players: roster(room) });
+    send(client, { t: 'welcome', id: client.id, hostId: room.hostId, mode: room.mode, seed: room.seed, floor: room.floor ?? 0, players: roster(room) });
     broadcast(room, { t: 'roster', players: roster(room), hostId: room.hostId, joined: client.id }, client);
     return;
   }

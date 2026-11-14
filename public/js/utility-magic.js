@@ -55,7 +55,7 @@ export function castUtility(caster,spell,aim,local,fx) {
         const yaw=caster.yaw||0,pitch=caster.pitch||0,d=caster===G.player?new THREE.Vector3(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)):dir;
         const from=caster.pos.clone().add(new THREE.Vector3(0,1.25,0)).addScaledVector(d,caster===G.player?1.9:0.8);from.y-=caster===G.player?0.25:0;
         for(let i=0;i<4;i++){const v=d.clone().multiplyScalar(9+Math.random()*5).add(new THREE.Vector3((Math.random()-.5)*2.6,(Math.random()-.5)*2+0.6,(Math.random()-.5)*2.6));G.particles?.emit(from,v,i%3===0?0xc89040:i%3===1?0xd05a10:0xb03008,0.3+Math.random()*0.35,0.45+Math.random()*0.25);}
-        if(tick<=0){tick=0.2;const f2=new THREE.Vector3(d.x,0,d.z).normalize();for(const e of foes()){const v=e.pos.clone().sub(caster.pos);v.y=0;const dd=v.length();if(dd>7+e.radius||dd<0.01)continue;if(v.dot(f2)/dd<0.86&&dd>1.5)continue;hit(e,4*pw,['fire'],{dir:f2.toArray()});}}
+        if(tick<=0){tick=0.2;const f2=new THREE.Vector3(d.x,0,d.z).normalize();for(const e of foes()){const v=e.pos.clone().sub(caster.pos);v.y=0;const dd=v.length();if(dd>7+e.radius||dd<0.01)continue;if(v.dot(f2)/dd<0.86&&dd>1.5)continue;hit(e,4*pw,['fire'],{dir:f2.toArray(),echo:true});if(G.isHost!==false)e.status.burn={t:3,dps:5*pw,src:caster};}}
         return t<2.4;}});
       G.ui?.log('火炎放射 — 向いている先へ炎を吹く','#ff9a50');
     } else if(kind==='frostwave'){

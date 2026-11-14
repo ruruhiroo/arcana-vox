@@ -16,12 +16,13 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { G, rand, clamp, seeded } from './state.js';
 import { initReading, toReading } from './reading.js';
-import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, canonicalize, expandChant, chantGaps, chantCoverage, eloquence, correctChant as fixChant, callTail, endsWithCall, applyCustomCalls, fixCallName, callName, SWORN_ART } from './lexicon.js';
+import { WORDS, WORD_BY_ID, CAT, compile, formula, tokenize, canonicalize, expandChant, chantGaps, chantCoverage, eloquence, correctChant as fixChant, callTail, endsWithCall, applyCustomCalls, fixCallName, snapCallToBook, chantSim, WORD_PRIORITY, BIG_COST, callName, SWORN_ART } from './lexicon.js';
 // 声の聞き取り結果を言霊の正式表記に寄せる(似た音は言霊とみなす)。何も拾えなければ原文のまま
 // 聞き違いを直し、魔導書で自分が名付けた魔法の名(結句)を正式な名に読み替える
 function correctChant(t) {
   const customs = BOOK.spells.filter(sp => sp.call).map(sp => ({ call: sp.call, std: callName(compile(sp.text, null)) }));
-  const r = fixCallName(applyCustomCalls(fixChant(t), customs));
+  const mine = BOOK.spells.map(sp => callName(compile(sp.text, null))).filter(Boolean);     // 魔導書にある呪文の名
+  const r = fixCallName(snapCallToBook(applyCustomCalls(fixChant(t), customs), mine));
   return nameCast(r) || r;
 }
 // 熟練した属性の術は、魔法の名だけを唱えれば、魔導書に書いた詠唱を唱えたことになる
@@ -50,6 +51,7 @@ import { preloadModels, loadProgress } from './glbmodels.js';
 import { showLoading, hideLoading } from './loading.js';
 import { askElement as pickElement } from './elpick.js';
 import { initUpdates } from './updates.js';
+import { initLook, myLookStr, openLookEditor, grantRandomWear, clearWardrobe } from './lookedit.js';
 import { initMp, openMp, closeMp, mpOpen, refreshMp, takeAuto, setNet, makeCode } from './mpanel.js';
 import { initFX, LightPool, clearLumens } from './spells.js';
 import { BotBrain } from './ai.js';
@@ -86,7 +88,7 @@ import { rebuildStructure, breakable, FINAL_FLOOR, heightAt, STEP } from './dung
 import { pickSanctuaryRoom, buildSanctuary, inSanctuary, updateSanctuary } from './sanctuary.js';
 G.inSanctuary = inSanctuary;
 import { ENEMY_TYPES, ENEMY_RIM } from './entities.js';
-import { SLOTS, RARITY, rollItem, statLines, totals, tuneEquipment } from './equipment.js';
+import { SLOTS, RARITY, rollItem, statLines, totals, tuneEquipment, rollUnique, uniquesOf } from './equipment.js';
 import { itemIcon, gearIcon, slotGhost, STAT_ICON } from './icons.js';
 import { warmIcons, preloadItems } from './icons3d.js';
 import { ACTIONS, OPTION_DEFS, binds, opts, actionOf, rebind, resetControls, saveControls, keyName, keyOf } from './controls.js';
@@ -245,6 +247,7 @@ const keys = {};
 
 async function startGame({ tutorial = false } = {}) {
   G.run = { keys: 0, done: false }; G.FINAL_FLOOR = FINAL_FLOOR;
+  G.netReady = false; netWait.length = 0;
   G.stats = { moved: 0, looked: 0, read: 0, flips: 0, kills: 0, chests: 0, eloquent: 0 };
   initAudio(); startMusic(); applySettings();
   showLoading('迷宮へ降りている', () => loadProgress.total ? loadProgress.done / loadProgress.total : 0); // 模型の読み込みと迷宮づくりの間
@@ -267,14 +270,14 @@ async function startGame({ tutorial = false } = {}) {
   const name = $('nameIn').value.trim() || '漆黒の詠唱者';
   try { localStorage.setItem('arcana_name', name); } catch {}
   G.mode = chosenMode;
-  if (tutorial) chosenMode = 'coop';
+  if (tutorial) { chosenMode = 'coop'; G.known.add('lance'); }
   const netMode = canOnline && !tutorial ? $('netSel').value : 'solo';
   let seed = (Math.random() * 1e9) | 0, floor = 1;
   if (netMode !== 'solo') {
     const handlers = {
       message: onNet,
       close: () => UI.log('接続が切れた', '#ff8080'),
-      roomState: () => ({ seed: G.dungeon?.seed, floor: G.floor }),
+      roomState: () => (G.netReady && G.dungeon ? { seed: G.dungeon.seed, floor: G.floor } : {}),   // 迷宮を作り終えるまでは、部屋を開いた時の値を使わせる
     };
     const p2p = netMode !== 'lan';
     const net = p2p ? new P2PNet(handlers) : new Net(handlers);
@@ -286,7 +289,8 @@ async function startGame({ tutorial = false } = {}) {
       const w = p2p ? await net.connect(code, name, chosenMode, netMode === 'host') : await net.connect(code, name, chosenMode, $('hostIn').value.trim());
       G.net = net; G.netId = w.id; G.hostId = w.hostId; G.isHost = w.id === w.hostId; G.mode = w.mode || chosenMode;
       G.roomCode = p2p ? code : '';
-      seed = w.seed; floor = w.floor || 1;
+      seed = w.seed; floor = w.floor ?? 0;
+      G.resumeFloor = 0;                       // 仲間との旅は、ひとり旅の記録の続きからは始めない
       net.enableVoice(w.players, getAudioCtx()).then(ok => UI.log(ok ? 'VC接続: 近くの魔導師の声が聞こえる' : 'VCは利用できない(マイク未許可)', '#b0d0ff'));
     } catch (e) {
       hideLoading(0);
@@ -311,12 +315,14 @@ async function startGame({ tutorial = false } = {}) {
   setupVoice();
   // マルチプレイは迷宮の入口(祭壇で属性に誓う所)を通らず第1層から始まるので、ここで属性を選ばせる。
   // すでに誓いを立てている旅なら聞かない
-  if (G.net && !tutorial && !BOOK.affinityChosen) { hideLoading(0); const el = await askElement(); showLoading('迷宮へ降りている'); BOOK.affinityChosen = el; chosenEl = el; try { localStorage.setItem('arcana_el', el); } catch {} saveBook(); }
+  if (G.net && !tutorial && !BOOK.affinityChosen && floor > 0) { hideLoading(0); const el = await askElement(); showLoading('迷宮へ降りている'); BOOK.affinityChosen = el; chosenEl = el; try { localStorage.setItem('arcana_el', el); } catch {} saveBook(); }
   setupStarter(tutorial ? 'fire' : BOOK.affinityChosen || chosenEl);
   for(const it of [...Object.values(BOOK.equip||{}),...(BOOK.bag||[])])tuneEquipment(it);
   warmIcons([...Object.values(BOOK.equip || {}), ...(BOOK.bag || [])]);
   G.restoring=!!checkpoint&&!G.net;G.pendingCheckpoint=G.restoring?checkpoint:null;
   setupFloor(G.restoring?checkpoint.seed:seed,tutorial?floor:G.net?floor:G.restoring?checkpoint.floor:0,true);
+  // 迷宮を作り終えた: 待たせていた仲間からの知らせを、届いた順に処理する
+  G.netReady = true; for (const m of netWait.splice(0)) { try { onNet(m); } catch (e) { console.warn('net', m?.t, e); } }
   hideLoading(700);
   if(run&&!G.restoring&&!G.net)G.run.keys=run.keys||0;
   if (run?.inv) { G.inv = { ...run.inv }; delete G.inv.potion; }
@@ -549,7 +555,7 @@ function finishFloorChange(seed, floor, reset) {
 function wipeProgress() {
   if (G.noSave) return;
   G.achieve('WIPE');
-  G.wiping = false; wipeBook(); clearRun();
+  G.wiping = false; wipeBook(); clearRun(); clearWardrobe();
   G.resumeFloor = 0; G.run = { keys: 0, done: false };
   G.affinity = null; setupStarter(chosenEl);
   BOOK.equip ||= {}; BOOK.bag ||= []; applyEquip();
@@ -603,7 +609,7 @@ function pickUp(k, fromNet = false) {
     G.pickups.splice(i, 1);
   } else { scene.remove(k.mesh); G.pickups.splice(i, 1); }
   if (fromNet) return;
-  if (k.kind !== 'scroll') G.net?.send({ t: 'pick', id: k.id });
+  if (k.kind !== 'scroll' && k.kind !== 'chest') G.net?.send({ t: 'pick', id: k.id });
   sfx.pickup();
   const add = (m, n) => { const got = grantItem(m,n,k.pos); if (got) UI.log(`${itemName(m)} ×${got}`, m.startsWith('tome') ? '#ffd76a' : '#cfe8ff'); UI.renderHotbar(); };
   if (k.kind === 'scroll') {
@@ -618,6 +624,8 @@ function pickUp(k, fromNet = false) {
   else if (k.kind === 'mushroom') { const p = G.player; p.mp = Math.min(p.maxMp, p.mp + 18); UI.log('灯り茸を摘んだ — 魔力が少し戻った', '#9fe4ff'); if (Math.random() < 0.15) add('ether', 1); }
   else if (k.kind === 'chest') {
     G.stats.chests++; if (G.floorStats) G.floorStats.chests++;
+    if (!G.tutorial && Math.random() < (k.data?.rich ? 0.5 : 0.14)) findWear(3200);
+    if (!G.tutorial && Math.random() < (k.data?.rich ? 0.12 : 0.02)) findUnique(k.pos.clone(), 5200);
     const curses = WORDS.filter(w => w.cursed && !G.known.has(w.id));
     if (curses.length && Math.random() < 0.15 && !G.tutorial) {
       const w = curses[Math.floor(Math.random() * curses.length)]; G.known.add(w.id); saveBook();
@@ -797,7 +805,12 @@ const SHADOW_ARTS = ['blink', 'survey'];   // 影の術(転移・探知)
 function pickUnknownWord(exclude = []) {
   const unknown = WORDS.filter(w => !G.known.has(w.id) && !w.cursed && !w.sworn && !exclude.includes(w.id));
   if (!unknown.length) return null;
-  const weight = w => (w.attack ? 3 : ({ element: 0.12, form: 3, effect: 2, mod: 1.5, target: 1, trigger: 1 })[w.cat]) * (G.affinity && AFFINITY_SECOND[G.affinity]?.includes(w.id) ? 3 : 1) * (G.affinity === 'void' && SHADOW_ARTS.includes(w.id) ? 5 : 1);
+  // 出やすさ = 覚えてほしい順(WORD_PRIORITY) × 得意属性との相性 × 仲間とかぶらない方が出やすい
+  //   仲間の誰かが既に持っている言霊は出にくく、仲間の全員が持っている言霊は(他に候補があるかぎり)出さない
+  const mates = G.mages.filter(m => m !== G.player && m.knownWords);
+  const share = w => { if (!mates.length) return 1; const n = mates.filter(m => m.knownWords.has(w.id)).length; return n === mates.length ? 0 : n ? 0.4 : 1; };
+  const weight = w => (WORD_PRIORITY[w.id] ?? 1) * (G.affinity && AFFINITY_SECOND[G.affinity]?.includes(w.id) ? 3 : 1) * (G.affinity === 'void' && SHADOW_ARTS.includes(w.id) ? 5 : 1) * share(w);
+  if (!unknown.some(w => weight(w) > 0)) { const any = unknown[Math.floor(Math.random() * unknown.length)]; return any; }      // 仲間が全部持っている物しか残っていない時
   let r = Math.random() * unknown.reduce((s, w) => s + weight(w), 0), pick = unknown[0];
   for (const w of unknown) { r -= weight(w); if (r <= 0) { pick = w; break; } }
   return pick;
@@ -819,6 +832,15 @@ function learnWord(pick) {
 }
 
 // fromNet = 部屋の主から「倒れた」と知らされた時(客の側)。記録・討伐数・鍵頁・踏破は全員で数え、戦利品は部屋の主だけが落とす
+// 着る物(精霊の子の衣)を一つ拾う。他の装備と同じく、その旅の間だけの持ち物(全滅すると失う)
+function findWear(delay = 0) {
+  const w = grantRandomWear(); if (!w) return;
+  setTimeout(() => {
+    sfx.learn?.();
+    UI.banner(`衣を拾った — ${w.name}`, `${w.slot}に着けられる。Esc →「姿を変える」で身に着ける`, 5);
+    UI.log(`精霊の子の衣『${w.name}』(${w.slot})を見つけた`, '#e8c8ff');
+  }, delay);
+}
 G.onEnemyKilled = (e, fromNet = false) => {
   { // 魔物の記録: 初めて討った魔物の由来を魔導書に記す
     const key = e.type === 'dragon' ? 'g_' + (e.dragon?.element || 'fire') : e.type;
@@ -828,6 +850,13 @@ G.onEnemyKilled = (e, fromNet = false) => {
   if (G.stats) G.stats.kills++;
   if (G.floorStats) { G.floorStats.kills++; if (e.boss) G.floorStats.boss = true; }
   if (e.boss) G.achieve('BOSS');
+  if (e.boss && !G.noSave) findWear(4200);
+  if (e.boss && !G.noSave && Math.random() < 0.34) findUnique(e.pos.clone(), 6400);
+  // ユニークな効果: 自分が倒した敵が爆発する / 倒すたびに生命が戻る
+  if (e.lastSrc === G.player && !e.boss) {
+    if (G.uq?.has('boom')) { G.fx.bigImpact(e.pos.clone().setY((e.pos.y || 0) + 1), 0xff6a20, 1.2, ['fire']); for (const o of G.enemies) if (o !== e && o.alive && o.pos.distanceTo(e.pos) < 4) G.fx.damage(o, 40, [], G.player, { echo: true }); }
+    if (G.uq?.has('leech')) G.fx.heal(G.player, 10, G.player);
+  }
   if (e.lastSrc === G.player && G.player.lastSpell) { questEvent('kill', { spell: G.player.lastSpell }); profUps(gainProf(G.player.lastSpell.elements, e.boss ? 20 : 5)); saveBook(); }
   // 大目標: 第3・6・9層の主は「封印の鍵頁」を落とし、第10層の番人を倒すと迷宮踏破
   if (e.boss && G.run && !G.run.done) {
@@ -987,7 +1016,21 @@ function fizzle(msg) {
 
 G.debugNextFloor = () => nextFloor(); // 確かめる用: 次の層へ
 G.debugChant = t => finishChant(t, t); // 確かめる用: 文字で術を放つ
-function finishChant(text, raw = text) {
+// 聞き違いの救い: 術にならなかった時、魔導書の呪文の中から、聞こえた言葉にいちばん近いものを探す。
+//   言霊が半分以上合っているか、音が十分似ていて、他の呪文とはっきり差がある時だけ、その呪文として放つ(威力は1割減)
+function rescueChant(raw, text) {
+  const heard = new Set(tokenize(text || raw || '', G.known).filter(t => t.known).map(t => t.id));
+  let best = null, second = 0;
+  for (const sp of BOOK.spells || []) {
+    const c = compile(sp.text, G.known); if (!c.valid || !c.words.length) continue;
+    const need = [...new Set(c.words)], hit = need.filter(id => heard.has(id)).length;
+    const score = Math.max(hit / need.length, chantSim(raw, sp.text) * 0.95, sp.call ? chantSim(raw, sp.call) * 0.9 : 0);
+    if (!best || score > best.score) { second = best ? best.score : second; best = { score, text: sp.text, name: sp.name, hit }; } else second = Math.max(second, score);
+  }
+  if (!best || best.score < 0.5 || best.score - second < 0.08) return null;
+  return best;
+}
+function finishChant(text, raw = text, rescued = null) {
   if (!canCast()) { clearChant(); return; }
   if (G.player.status.drinking) { clearChant(); fizzle('薬を飲んでいる最中だ'); return; }
   const p = G.player;
@@ -998,8 +1041,14 @@ function finishChant(text, raw = text) {
   setTimeout(() => { if (!p.chanting) UI.setChantDisplay(''); }, 1600);
   clearChantSoft();
   if (!p.alive || p.downed) return;
-  if (interrupted) { p.mp = Math.max(0, p.mp - spell.cost * 0.3); fizzle('詠唱が乱され、術が霧散した'); return; }
-  if (!spell.valid) { fizzle(spell.error || '術にならなかった'); sulkCheck(spell); return; }
+  if (interrupted) { p.mp = Math.max(0, p.mp - spell.cost * 0.1); fizzle('詠唱が乱され、術が霧散した'); return; }
+  if (!spell.valid) {
+    const r = rescueChant(raw, text);
+    if (r) return finishChant(r.text, r.text, r);
+    fizzle((spell.error || '術にならなかった') + (raw && raw.trim() ? ` — 聞こえた言葉:「${raw.trim().slice(0, 24)}」` : ''));
+    questEvent('miss'); return;                // 聞き違いで精霊が拗ねる(力が弱まる)罰は、やめた
+  }
+  if (rescued) { spell.power *= 0.9; UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.45, 0)), `聞き取りが乱れた —『${rescued.name}』として放つ`, '#b8c4d8'); }
   if (spell.elements.length && inSanctuary(p.pos)) { fizzle('聖域の中では攻撃の術は放てない'); return; }
   equipSpell(spell);
   // 名詠: 文章として成立していれば威力が上がる
@@ -1024,7 +1073,13 @@ function finishChant(text, raw = text) {
     spell.power *= m;
     UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.3, 0)), `短縮魔術 威力${Math.round(m * 100)}%`, '#b8c4d8');
   }
-  if (p.mp < spell.cost) { fizzle(`魔力が足りない (必要${spell.cost})`); return; }
+  if (p.maxMp < spell.cost) { fizzle(`魔力の器が足りない — この術には上限 ${spell.cost} が要る(今 ${Math.round(p.maxMp)}。装備で広げられる)`); return; }
+  if (G.uq?.has('dice') && spell.elements.length) {
+    const roll = [0.5, 0.5, 0.75, 1, 1, 1.5, 2, 3][Math.floor(Math.random() * 8)]; spell.power *= roll;
+    UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.75, 0)), roll >= 2 ? `大当たり ×${roll}!` : roll < 1 ? `はずれ ×${roll}` : `×${roll}`, roll >= 2 ? '#ffd76a' : roll < 1 ? '#a8a090' : '#e8dcc0');
+    if (roll >= 3) { G.shake = Math.max(G.shake || 0, 0.5); sfx.meiei?.(); }
+  }
+  if (p.mp < spell.cost) { fizzle(`魔力が足りない (必要${spell.cost}。あと${Math.ceil((spell.cost - p.mp) / 3)}秒ほど)`); return; }
   if (spell.title) UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.9, 0)), spell.title + (p.status.might && spell.elements.length ? ' (覇気×1.3)' : ''), p.status.might && spell.elements.length ? '#ffc070' : '#ffe8b0');
   spell.breakPower = spell.power; // 壁を砕く力は弱められない
   BOOK.bonds ||= {};
@@ -1047,6 +1102,7 @@ function finishChant(text, raw = text) {
   p.lastChorus = !!chorus;
   if (castSpell(p, spell, playerAim(spell))) {
     p.lastSpell = spell;
+    if (G.uq?.has('echo') && Math.random() < 0.25) setTimeout(() => { if (!p.alive || p.downed) return; const mp = p.mp; if (castSpell(p, spell, playerAim(spell))) { p.mp = mp; UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.75, 0)), '二度咲き!', '#ffb0e0'); } }, 420);
     if (spell.blood) { const cost = p.maxHp * 0.12; p.hp = Math.max(1, p.hp - cost); UI.floatText(p.pos, '-' + Math.round(cost) + ' 血誓', '#ff4040'); UI.hurt?.(cost); }
     questEvent('cast', { spell, tier: el.tier });
     onPlayerCast(spell);
@@ -1507,10 +1563,31 @@ function updateTargetInfo() {
 // ---------- 装備 ----------
 function applyEquip() {
   const t = G.eqT = totals(BOOK.equip);
+  G.uq = uniquesOf(BOOK.equip);                        // 身に着けているユニークな効果
   const p = G.player; if (!p) return;
-  p.maxMp = 100 + t.maxMp; p.maxHp = 100 + t.maxHp;
+  p.maxMp = Math.max(30, 100 + t.maxMp); p.maxHp = 100 + t.maxHp;
   p.mp = Math.min(p.mp, p.maxMp); p.hp = Math.min(p.hp, p.maxHp);
-  p.regenMul = 1 + t.regen;
+  p.regenMul = Math.max(0.25, 1 + t.regen);
+}
+// ユニークな品を一つ手に入れる
+function findUnique(pos, delay = 0) {
+  const have = [...Object.values(BOOK.equip || {}), ...(BOOK.bag || [])].filter(it => it?.uq).map(it => it.uq);
+  const it = rollUnique(have);
+  setTimeout(() => {
+    grantGear(it, pos); saveBook(); sfx.learn?.(); G.shake = Math.max(G.shake || 0, 0.3);
+    UI.banner(`ユニーク — ${it.name}`, `${statLines(it)[0]}  (数字キーで持ち、左クリックで装備)`, 7);
+    UI.log(`ユニークな品を得た: ${it.name} — ${statLines(it)[0]}`, '#ff9a6a');
+    if (pos) G.fx.burst(pos.clone().setY((pos.y || 0) + 1), 0xff7a4a, 140, { speed: 6, up: 3 });
+  }, delay);
+}
+// ユニークな効果のうち、時間で起きるもの(雷雲の外套)
+let stormT = 5;
+function updateUniques(dt) {
+  const p = G.player; if (!G.uq?.has('storm') || !p?.alive || p.downed) return;
+  stormT -= dt; if (stormT > 0) return; stormT = 5;
+  const e = G.enemies.filter(o => o.alive && o.pos.distanceTo(p.pos) < 12).sort((a, b) => a.pos.distanceTo(p.pos) - b.pos.distanceTo(p.pos))[0];
+  if (!e) { stormT = 1; return; }
+  G.fx.bigImpact(e.pos.clone().setY((e.pos.y || 0) + 1), 0xb48cff, 0.9, ['thunder']); G.fx.damage(e, 35, [], p, { echo: true });
 }
 // 自分の術に装備の効果を乗せる
 function equipSpell(spell) {
@@ -1650,13 +1727,15 @@ invEl.addEventListener('click', e => { if (e.target === invEl) closeInventory();
 // ---------- Esc メニューと設定 ----------
 const SETTINGS_KEY = 'arcana_vox_settings_v1';
 // 音量はどれも ％(0〜100)。musicVol = 音楽, sfxVol = 効果音, ambVol = 環境音, shake = 画面の揺れ
-const SETTING_DEFS = { volume: 0.8, musicVol: 45, sfxVol: 100, ambVol: 40, shake: 100, npcVoice: true };
+const SETTING_DEFS = { volume: 0.8, musicVol: 0, sfxVol: 100, ambVol: 40, shake: 100, npcVoice: true };
 const settings = { ...SETTING_DEFS, ambience: 1, music: 1, sens: 1 };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}); } catch {}
 // 前の版の「OFF・小・中」を ％へ引き継ぐ
 { let raw = null; try { raw = JSON.parse(localStorage.getItem(SETTINGS_KEY)); } catch {}
   if (raw && raw.musicVol === undefined && raw.music !== undefined) settings.musicVol = [0, 45, 80][raw.music] ?? 45;
-  if (raw && raw.ambVol === undefined && raw.ambience !== undefined) settings.ambVol = [0, 40, 100][raw.ambience] ?? 40; }
+  if (raw && raw.ambVol === undefined && raw.ambience !== undefined) settings.ambVol = [0, 40, 100][raw.ambience] ?? 40;
+  // 音楽は、いったん鳴らさない(設定の「音楽」を上げれば、また鳴る)。前の版で音量を決めていた人も、一度だけ 0 に戻す
+  if (!settings.bgmOff1) { settings.musicVol = 0; settings.bgmOff1 = true; try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} } }
 function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch {} }
 function applySettings() {
   setMasterVolume(settings.volume);
@@ -1708,7 +1787,7 @@ const SET_TABS = [['audio', '音'], ['controls', '操作'], ['keys', 'キー割�
 const SET_ROWS = {
   audio: [
     { label: '全体の音量', type: 'pct', get: () => Math.round(settings.volume * 100), set: v => { settings.volume = v / 100; applySettings(); saveSettings(); }, def: 80, desc: 'すべての音の大きさ。下の三つは、この音量に対する割合になる。' },
-    { label: '音楽', type: 'pct', ...setS('musicVol'), desc: '探索・交戦・守護者戦・聖域で流れる音楽の大きさ。0% で鳴らさない。詠唱している間は、声の聞き取りを邪魔しないよう自動で小さくなる。' },
+    { label: '音楽', type: 'pct', ...setS('musicVol'), desc: '探索・交戦・守護者戦・聖域で流れる音楽の大きさ。いまは最初から 0%(鳴らさない)にしてある。上げると鳴る。詠唱している間は、声の聞き取りを邪魔しないよう自動で小さくなる。' },
     { label: '効果音', type: 'pct', ...setS('sfxVol'), desc: '魔法・魔物・足音・宝箱などの音の大きさ。魔物の位置や守護者の構えは音でも分かるので、下げすぎに注意。' },
     { label: '環境音', type: 'pct', ...setS('ambVol'), desc: '迷宮の低いうなりや、遠くの水滴の音の大きさ。' },
     { label: '魔物の詠唱を読み上げる', type: 'bool', ...setS('npcVoice'), desc: '敵の術者が唱える言葉を、合成の声で聞かせる。何の術が来るかを耳で読める。' },
@@ -1757,6 +1836,7 @@ function renderSettings() {
 }
 $('mSettings').onclick = () => showSettings(true);
 $('mMulti').onclick = () => openMp();
+$('mLook').onclick = () => openLookEditor();
 $('setBack').onclick = () => showSettings(false);
 $('setReset').onclick = () => {
   if (setTab === 'keys') { resetControls(); applyControls(); UI.renderHotbar(); }
@@ -1789,6 +1869,44 @@ document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement !== canvas && G.player && !G.uiOpen && !G.typing && !freeLook) openMenu();
 });
 
+// そばに倒れている仲間
+const fallenNear = p => G.mode === 'coop' ? G.mages.find(m => m !== p && m.alive && m.downed && m.team === p.team && m.pos.distanceTo(p.pos) < 2.8) : null;
+// 仲間のそばへ跳ぶ(はぐれた時のため)。主との戦いの最中と、跳んだ直後は使えない
+function warpToMate(netId) {
+  const p = G.player, m = G.mages.find(x => x.netId === netId);
+  if (!p || !m || !p.alive || p.downed) return '今は跳べない';
+  if (!m.alive) return `${m.name}は倒れている`;
+  if (G.dungeon?.arena?.phase === 'active') return '主との戦いの最中は跳べない';
+  if ((G.warpUntil || 0) > G.time) return `まだ跳べない(あと${Math.ceil(G.warpUntil - G.time)}秒)`;
+  const at = findFreePosition(m.pos.clone(), p.radius || 0.4, { maxDistance: 6, occupied: G.mages.filter(x => x !== p && x.alive) });
+  if (!at) return 'そばに立てる場所が無い';
+  G.fx.burst(p.pos.clone().setY(p.pos.y + 1), 0xb89aff, 40, { speed: 3 });
+  p.pos.copy(at); p.vel?.set(0, 0, 0); p.vy = 0; G.warpUntil = G.time + 20;
+  G.fx.burst(at.clone().setY(at.y + 1), 0xb89aff, 40, { speed: 3, up: 1 }); sfx.portal?.();
+  UI.log(`${m.name}のそばへ跳んだ`, '#b89aff');
+  return null;
+}
+// 待機所(迷宮の入口。仲間と潜る時): 部屋コードと、集まった仲間を画面に出す
+let waitKey = '';
+function updateWaitHall() {
+  let el = $('waitHall');
+  const on = !!G.net && G.floor === 0 && !!G.player;
+  if (!on) { if (el) el.classList.add('hidden'); waitKey = ''; return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'waitHall';
+    const st = document.createElement('style');
+    st.textContent = '#waitHall{position:absolute;left:50%;top:14px;transform:translateX(-50%);min-width:340px;max-width:min(560px,70vw);padding:12px 20px 12px;text-align:center;pointer-events:none;background:linear-gradient(180deg,rgba(14,9,20,.86),rgba(8,5,12,.7));border:1px solid rgba(216,180,106,.4)}#waitHall.hidden{display:none}#waitHall .wt{font-size:13px;letter-spacing:.5em;text-indent:.5em;color:#a89a7a}#waitHall .wc{font-family:Cinzel,Consolas,monospace;font-size:34px;letter-spacing:.3em;text-indent:.3em;color:#fff2cc;text-shadow:0 0 18px rgba(216,180,106,.5);margin:2px 0 4px}#waitHall .wm{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;font-size:15px;margin:6px 0 6px}#waitHall .wm span{color:#8a7e66}#waitHall .wm span.ok{color:#bfe8b0}#waitHall .wn{font-size:13.5px;color:#cfc4a8;line-height:1.7}';
+    document.head.appendChild(st); ($('hud') || document.body).appendChild(el);
+  }
+  el.classList.remove('hidden');
+  const people = G.mages.filter(m => m.kind !== 'bot'), at = m => portal && m.pos.distanceTo(portal.position) < 7;
+  const here = people.filter(at).length;
+  const key = (G.roomCode || '') + '|' + people.map(m => m.name + (at(m) ? 1 : 0)).join(',');
+  if (key === waitKey) return; waitKey = key;
+  el.innerHTML = `<div class="wt">待 機 所</div>${G.roomCode ? `<div class="wc">${G.roomCode}</div>` : ''}
+    <div class="wm">${people.map(m => `<span class="${at(m) ? 'ok' : ''}">${at(m) ? '◆' : '◇'} ${String(m.name).replace(/[<>&]/g, '')}</span>`).join('')}</div>
+    <div class="wn">${G.roomCode ? '上の部屋コードを仲間に伝える(Esc →「仲間と潜る」でコピー)。' : ''}祭壇で属性に誓い、全員が北の門の前に集まったら、誰かが ${keyOf('interact')} で降りる。<br>門の前 ${here} / ${people.length} 人</div>`;
+}
 function interact() {
   const p = G.player;
   if (!p.alive || p.downed) return;
@@ -1807,6 +1925,10 @@ function interact() {
       if (here < people.length) { UI.log(`仲間を待っている — 門の前に ${here}/${people.length} 人。全員がそろうと降りられる`, '#ffe08a'); return; }
     }
   }
+  { const dn = fallenNear(p);
+    if (dn) {
+      if (p.mp < BIG_COST) { UI.log(`${dn.name}を起こすには魔力が${BIG_COST}要る(今 ${Math.floor(p.mp)})`, '#ff9a8a'); sfx.fizzle?.(p.pos); return; }
+      p.mp -= BIG_COST; G.fx.heal(dn, 30, p, false, true); sfx.heal?.(dn.pos); UI.log(`${dn.name}を起こした(魔力 −${BIG_COST})`, '#8dffb0'); return; } }
   if (coopInteract(p)) return;
   if (roomInteract(p)) return;
   if (gimmickInteract(p)) return;
@@ -2065,7 +2187,9 @@ G.onFriendlyFire = (caster, t, spell, pl) => {
 const findMage = id => G.mages.find(m => m.id === id);
 const findAny = id => findMage(id) || G.enemies.find(e => e.id === id);
 const REMOTE_COLORS = [0x6a2a2a, 0x2a4a6a, 0x4a6a2a, 0x6a4a2a, 0x5a2a6a, 0x2a6a5a];
+const netWait = [];
 function onNet(m) {
+  if (!G.netReady) { netWait.push(m); return; }
   switch (m.t) {
     case 'roster': { setTimeout(refreshMp, 0);
       G.hostId = m.hostId; const wasHost = G.isHost; G.isHost = G.net.isHost;
@@ -2080,6 +2204,7 @@ function onNet(m) {
         r = new Mage({ id: m.id, name: m.name, kind: 'remote', team: G.mode === 'coop' ? 'hero' : 'T' + m.from, color: REMOTE_COLORS[m.from % REMOTE_COLORS.length], pos: new THREE.Vector3(m.x, 0, m.z) });
         r.netId = m.from; r.netPos = new THREE.Vector3(m.x, m.y || 0, m.z); G.mages.push(r);
       }
+      if (m.lk) r.setLook(m.lk);
       r.netPos.set(m.x, m.y || 0, m.z); r.yaw = m.yaw; r.hp = m.hp; r.shield = m.sh; r.downed = m.downed; r.alive = m.alive; r.kills = m.kills;
       if (m.chant !== r.chantText) r.setChant(m.chant, m.n);
       break;
@@ -2090,10 +2215,11 @@ function onNet(m) {
       // 守護者の固有技の追加の効き目(鈍る・燃える)は、受けた本人の側で掛ける
       if (m.opts?.fx === 'slow') G.player.status.slow = { t: 3 }; else if (m.opts?.fx === 'burn') G.player.status.burn = { t: 3, dps: 4, src: findAny(m.src) };
       break;
-    case 'heal': G.fx.heal(G.player, m.amount, findAny(m.src)); break;
+    case 'heal': G.fx.heal(G.player, m.amount, findAny(m.src), false, !!m.revive); break;
     case 'shield': G.fx.shield(G.player, m.amount, m.dur, m.thorns); break;
-    case 'edmg': { const e = G.enemies.find(x => x.id === m.eid); if (e && G.isHost) G.fx.damage(e, m.amount, m.elements, findAny(m.src), { dir: m.dir, power: m.power, tier: m.tier, atk: m.atk, hitPoint: m.hitPoint }); break; }
+    case 'edmg': { const e = G.enemies.find(x => x.id === m.eid); if (e && G.isHost) G.fx.damage(e, m.amount, m.elements, findAny(m.src), { dir: m.dir, power: m.power, tier: m.tier, atk: m.atk, hitPoint: m.hitPoint, echo: m.echo }); break; }
     case 'chat': { const who=findMage('p'+m.from);if(who&&typeof m.text==='string')UI.log(who.name+'：'+m.text.slice(0,280),'#cfdae5');break;}
+    case 'kn': { const r = findMage('p' + m.from); if (r && Array.isArray(m.ids)) r.knownWords = new Set(m.ids); break; }
     case 'eatk': { if (G.isHost) break; const e = G.enemies.find(o => o.id === m.id); if (e && e.alive) { if (m.v) e.startSwing(m.v); else e.attackAnim = 1; } break; }
     case 'es': {
       if (G.isHost) break;
@@ -2121,9 +2247,9 @@ function onNet(m) {
     case 'hz': triggerHazard(m.i, false, hazardHooks(null), {}, m.mode); break;
     case 'ecast': { const e = G.enemies.find(x => x.id === m.eid || x.id === m.id); if (e) G.fx.cast(e, G.fx.spellFromIds(m.words), m.aim); break; }
     case 'floor': if (m.sync && m.floor === G.floor && m.seed === G.dungeon.seed) break;
-      showLoading(m.reset ? '迷宮の入口へ戻される' : `第${m.floor}層へ降りている`); setTimeout(() => hideLoading(600), 0);
+      showLoading(m.reset ? '迷宮の入口へ戻される' : m.floor === 0 ? '迷宮の入口へ' : `第${m.floor}層へ降りている`); setTimeout(() => hideLoading(600), 0);
       if (m.reset) wipeProgress(); setupFloor(m.seed, m.floor, !!m.reset); sfx.portal();
-      if (m.reset && !G.noSave) UI.banner('全滅', '魔導書は白紙に戻った — 覚えた言霊も、書いた呪文も、装備も、すべて失った', 5); else UI.banner(`第${m.floor}層`, '迷宮は形を変えた', 3); break;
+      if (m.reset && !G.noSave) UI.banner('全滅', '魔導書は白紙に戻った — 覚えた言霊も、書いた呪文も、装備も、すべて失った', 5); else if (m.floor > 0) UI.banner(`第${m.floor}層`, '迷宮は形を変えた', 3); break;
     case 'arenaOpen': {const who=findMage('p'+m.from);if(G.isHost&&who?.alive&&arenaDoorNear(who.pos)&&(G.floorStats?.kills||0)>=sealNeed())openArenaDoor();break;}
     case 'portalReq': if (G.isHost) nextFloor(); break;
     case 'flash': if (G.isHost) for (const e of G.enemies) if (e.alive && Math.hypot(e.pos.x - m.x, e.pos.z - m.z) < 10) e.stun = 2.5; break;
@@ -2131,14 +2257,15 @@ function onNet(m) {
   }
 }
 
-let netT = 0, esT = 0;
+let netT = 0, esT = 0, knT = 0;
 function netTick(dt) {
   if (!G.net) return;
-  netT -= dt; esT -= dt;
+  netT -= dt; esT -= dt; knT -= dt;
+  if (knT <= 0) { knT = 5; G.net.send({ t: 'kn', ids: [...G.known] }); }
   const p = G.player;
   if (netT <= 0) {
     netT = 1 / 12;
-    G.net.send({ t: 'st', id: p.id, name: p.name, x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +p.yaw.toFixed(3), hp: Math.round(p.hp), sh: Math.round(p.shield), chant: p.chantText, n: p.chantWords || 0, downed: p.downed, alive: p.alive, kills: p.kills });
+    G.net.send({ t: 'st', id: p.id, name: p.name, lk: myLookStr(), x: +p.pos.x.toFixed(2), y: +p.pos.y.toFixed(2), z: +p.pos.z.toFixed(2), yaw: +p.yaw.toFixed(3), hp: Math.round(p.hp), sh: Math.round(p.shield), chant: p.chantText, n: p.chantWords || 0, downed: p.downed, alive: p.alive, kills: p.kills });
   }
   if (G.isHost && esT <= 0) {
     esT = 0.1;
@@ -2206,8 +2333,11 @@ function frame(now) {
 
   // 操作ヒント
   let hint = '';
+  updateWaitHall(); updateUniques(dt);
   showElCard(G.floor === 0 ? shrineNear(p.pos)?.el : null); // 祭壇の前では属性の札を出す
-  if(arenaDoorNear(p.pos)){const left=sealNeed()-(G.floorStats?.kills||0);hint=left>0?`封印の大扉 — 封印が固い(魔物をあと ${left} 体鎮めよ)`:`${keyOf('interact')}: 封印の大扉を開ける — 入場後は討伐まで退路が閉ざされる`;}
+  const fallen = fallenNear(p);
+  if (fallen) hint = `${keyOf('interact')}: ${fallen.name}を起こす(魔力${BIG_COST}${p.mp < BIG_COST ? ' — 足りない' : ''})`;
+  else if(arenaDoorNear(p.pos)){const left=sealNeed()-(G.floorStats?.kills||0);hint=left>0?`封印の大扉 — 封印が固い(魔物をあと ${left} 体鎮めよ)`:`${keyOf('interact')}: 封印の大扉を開ける — 入場後は討伐まで退路が閉ざされる`;}
   else if (G.sanctuary && p.pos.distanceTo(G.sanctuary.lecternPos) < 2.2) hint = `${keyOf('interact')}: 聖域に記録する（次回ここから再開）`;
   else if (G.floor === 0 && shrineNear(p.pos)) { const s = shrineNear(p.pos); hint = BOOK.affinityChosen ? (BOOK.affinityChosen === s.el ? `${EL_INFO[s.el].name}(${EL_INFO[s.el].sub}) — 誓いを立てた得意属性` : `${EL_INFO[s.el].name} — すでに${EL_INFO[BOOK.affinityChosen].name}に誓いを立てている`) : `${keyOf('interact')}: ${EL_INFO[s.el].name}(${EL_INFO[s.el].sub})に誓いを立てる(一度選ぶと変えられない)`; }
   else if (portal && p.pos.distanceTo(portal.position) < 2.4) hint = G.floor === 0 ? `${keyOf('interact')}: 迷宮の門をくぐる${G.resumeFloor > 0 ? `(記録の続き 第${G.resumeFloor}層へ)` : ''}(全員がそろってから)` : guardianAlive() ? '転移陣は門番に守られている — 門番を倒せ' : `${keyOf('interact')}: 転移陣に触れて次の層へ`;
@@ -2385,7 +2515,8 @@ function updatePlayer(dt) {
 
 // タイトル画面の背景(大書庫の景色)。ロビーが見えている間だけ動く
 startTitle();
-initMp({ colorOf: id => { const m = G.mages?.find(x => x.id === 'p' + id); return m?.color; }, saveBefore: () => { try { if (!$('mSave').disabled) $('mSave').click(); } catch {} }, online: canOnline });
+initLook();
+initMp({ warp: id => warpToMate(id), close: () => closeMenu(), colorOf: id => { const m = G.mages?.find(x => x.id === 'p' + id); return m?.color; }, saveBefore: () => { try { if (!$('mSave').disabled) $('mSave').click(); } catch {} }, online: canOnline });
 // メニューの「仲間と潜る」で始め直した時: 選んだ入り方で、そのまま迷宮へ入る
 const autoNet = takeAuto();
 if (autoNet && canOnline && (autoNet.mode === 'host' || autoNet.mode === 'join')) {

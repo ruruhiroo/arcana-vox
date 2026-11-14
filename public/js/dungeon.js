@@ -231,8 +231,8 @@ export function generate(seed, floor) {
     }
     if (i !== 0 && rm !== sanctRoom && rm !== portalRoom) {
       const room = rm.kind === 'room';
-      // 1部屋あたりの平均: 1層 約0.8体 → 5層 約1.9体 → 10層 約3.3体
-      const n = room ? Math.floor(0.5 + floor * 0.28 + (rm.cells.length > 30 ? 0.35 : 0) + r()) : (r() < 0.1 + floor * 0.05 ? 1 : 0);
+      // 1部屋あたりの平均: 1層 約1.7体 → 5層 約2.9体 → 10層 約4.4体。1階層に30分ほどかける想定
+      const n = room ? Math.floor(1.5 + floor * 0.28 + (rm.cells.length > 30 ? 0.5 : 0) + r() * 1.3) : (r() < 0.25 + floor * 0.05 ? 1 : 0);
       for (let k = 0; k < n; k++) {
         const type = pickEnemy(r, floor);
         const pack = (type === 'ghoul' || type === 'bat') && room && floor >= 2 ? ri(1, Math.min(2, floor - 1)) : 0; // 群れ(2層から)
@@ -267,13 +267,13 @@ export function generate(seed, floor) {
     }
   });
   // 魔物の数の上限 (重くなりすぎないように)。部屋の主は残す
-  const cap = 8 + floor * 4;
+  const cap = 20 + floor * 3;     // 1層 23体 〜 10層 50体
   while (spawns.filter(x => !x.boss).length > cap) { const i = spawns.findIndex((x, k) => !x.boss && r() < 0.15); if (i >= 0) spawns.splice(i, 1); }
   for (const pl of plats) if (r() < 0.65) { const c = pick(pl.cells); chests.push(cellPos(c[0], c[1], 0.4)); }
   // 古文書(言霊の手掛かり): 毎階2〜3。書庫に置かれやすい
   // 知の部屋(書庫・写本室・天文室・錬金工房…)から先に選び、書見台や机の上、無ければ本の山や像のそばに置く
   const LORE = { library: 3, scriptorium: 3, observatory: 2, alchemy: 2, warroom: 1, shrine: 1, ritual: 1 };
-  const scrollRooms = realRooms.slice(1).filter(rm => rm !== sanctRoom).map(rm => [rm, (LORE[rm.theme] || 0) + r()]).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, ri(2, 3));
+  const scrollRooms = realRooms.slice(1).filter(rm => rm !== sanctRoom).map(rm => [rm, (LORE[rm.theme] || 0) + r()]).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, Math.max(2, Math.round((realRooms.length - 1) / 3)));   // 3部屋に一つほど
   for (const rm of scrollRooms) {
     const tops = decorIn(rm, Object.keys(TOP));
     scrolls.push(tops.length ? onTop(pick(tops)) : near(rm, ['bookpile', 'scrollrack', 'statue', 'maptable', 'obelisk', 'orrery'], 0.9, () => byWall(rm)));

@@ -682,41 +682,73 @@ def bat():
 # 迷宮で唯一「声を持つ」者。だから口元だけは頭巾から出ている(詠唱のため)。
 # 左手に開いた魔導書、右手に結晶の杖。衣は持ち主の色に染まる(材質 tint)。
 def mage():
-    """灯し子: 歩く溶けかけの蝋燭。愛らしくはないが、どこか気になる何か。寸胴の蝋の体に、とぼけた丸い目が二つ。口は無い。
-    頭から垂れる色蝋と、芯の先の火が持ち主の色。大きな魔導書を抱えている。他の者から見た魔導師の姿"""
+    """名の無い者: 何にも似ていない、ただの「かたち」。小さな黒い粒の目が二つあるだけで、口も耳も無い。
+    持ち主の色は、体のどこか一か所の光(材質 crystal。詠唱すると強く光る)と色の付いた部分(材質 tint)に出る。大きな魔導書を抱えている。
+    環境変数 MAGE_VARIANT で形を選ぶ: ring = 輪の体 / stack = 積み重ねた板 / split = 上下に割れた塊"""
+    variant = os.environ.get('MAGE_VARIANT', 'ring')
     r = Rig('mage')
     H = 1.3
     humanoid(r, H=H, rad=1.2, w=1.05, leg=0.6, arm=0.62, neck=0.5, muscle=0, fingers=False)
     r.bump = 0.0012
     r.surface = 'skin'
     r.detail = 0.02
-    r.mottle = (0.96, 1.04)
-    r.mat('skin', rough=0.5)
-    r.mat('tint', rough=0.45)
+    r.mottle = (0.95, 1.05)
+    r.mat('skin', rough=0.6)
+    r.mat('tint', rough=0.55)
     crystal = r.mat('crystal', 0xffffff, emit=2.5)
     leather = r.mat('leather', rough=0.7)
     gold = r.mat('gold', rough=0.4, metal=0.8)
     paper = r.mat('cloth', rough=0.9)
-    wick = r.mat('wick', 0x1a1410, rough=0.9)
+    eye = r.mat('eye', 0xffffff, rough=0.5, emit=0.3)
+    pupil = r.mat('pupil', 0x0a0806, rough=0.3)
     for S, sx in (('_L', -1), ('_R', 1)):                # 腕は体から離して下げる
         for nm, dx, dz in (('uarm', 0.15, 0.0), ('farm', 0.25, 0.04), ('hand', 0.29, 0.06)):
             pj = r.joints[nm + S]['pos']
             pj.x += sx * dx
             pj.z += dz
     hips, ch, nk = J(r, 'hips'), J(r, 'chest'), J(r, 'neck')
-    Z0, Z1 = hips.z - 0.14, nk.z + 0.26                  # 蝋の胴の下端と上端
-    RB, RT = 0.27, 0.245
-    hc = V((0, 0, Z1 - 0.17))                             # 目のある高さ
-    # --- 蝋の胴: 寸胴の柱。少し傾き、上の縁は溶けて盛り上がっている ---
-    clay(r, frust((0, 0, Z0), (0.015, 0, Z1), RB, RT, 32))
-    clay(r, ell((0.015, 0, Z1 - 0.01), V((RT + 0.012, RT + 0.012, 0.13))))                # 丸く溶けた頭
-    clay(r, ell((0, 0, Z0 + 0.02), V((RB + 0.012, RB + 0.012, 0.04))))                    # 丸めた下の縁
-    DRIPS = [(0.3, 0.2, 0.055), (2.84, 0.26, 0.06), (3.9, 0.16, 0.05), (5.0, 0.22, 0.055)]
-    for a, ln, w in DRIPS:                               # 縁から垂れた蝋(角度, 長さ, 太さ)
-        x, y = math.cos(a) * (RT + 0.012) + 0.015, math.sin(a) * (RT + 0.012)
-        k = 1 + (RB - RT) / RT * ln / (Z1 - Z0)
-        clay(r, cap((x, y, Z1 + 0.01), (x * k, y * k, Z1 - ln), w, w * 0.75))
-        clay(r, ell((x * k, y * k, Z1 - ln - w * 0.3), w * 1.05))                           # 垂れた先の玉
+    tint_z = 99.0            # これより上は持ち主の色
+    eyes = []                # (x, y, z)
+    front = 0.25             # 体の前面の位置(本を持つ所)
+    if variant == 'ring':
+        # 輪の体: 立てた太い輪。真ん中の空いた所に、光の玉が浮かぶ
+        c, RR, TT = V((0, 0, 0.8)), 0.25, 0.125
+        pts = [c + V((math.sin(a) * RR, 0, math.cos(a) * RR)) for a in [i / 20 * TAU for i in range(21)]]
+        clay(r, chain(pts, [TT] * 21, 18))
+        for sx in (-1, 1):
+            a = sx * 0.34
+            eyes.append((math.sin(a) * RR, TT - 0.012, c.z + math.cos(a) * RR))
+        r.part(sphere(0.085, tuple(c), seg=16, rings=10), 'chest', crystal, 0xffffff)
+        front = TT
+        legs_top = c.z - RR
+    elif variant == 'stack':
+        # 積み重ねた板: 大きさの違う丸い板が、少しずつずれて四枚重なっている。一番上だけ色が付く
+        z, plates = 0.3, []
+        for rad, th, ox in ((0.28, 0.1, 0.0), (0.215, 0.085, 0.035), (0.255, 0.09, -0.03), (0.18, 0.075, 0.02)):
+            z += th * 0.82
+            clay(r, ell((ox, 0, z), V((rad, rad * 0.92, th))))
+            plates.append((rad, th, ox, z))
+            z += th * 0.82
+        rad, th, ox, pz = plates[2]
+        for sx in (-1, 1):
+            ex = ox + sx * 0.075
+            eyes.append((ex, rad * 0.92 * math.sqrt(1 - ((ex - ox) / rad) ** 2) - 0.012, pz))
+        tint_z = plates[3][3] - plates[3][1] * 0.75
+        r.part(sphere(0.045, (plates[3][2], 0, plates[3][3] + plates[3][1] + 0.05), seg=12, rings=8), 'head', crystal, 0xffffff)
+        front = 0.26
+        legs_top = 0.3
+    else:
+        # 上下に割れた塊: 丸い塊が横に割れ、上の半分が少し浮いている。隙間から光が漏れる
+        lo, up = V((0, 0, 0.52)), V((0.02, 0, 0.95))
+        clay(r, ell(lo, V((0.25, 0.21, 0.2))))
+        clay(r, ell(up, V((0.26, 0.22, 0.17))))
+        for sx in (-1, 1):
+            ex = up.x + sx * 0.08
+            eyes.append((ex, 0.22 * math.sqrt(1 - (0.08 / 0.26) ** 2) - 0.012, up.z + 0.01))
+        tint_z = up.z - 0.2
+        r.part(sphere(0.16, (0.01, 0, (lo.z + 0.2 + up.z - 0.17) / 2), seg=16, rings=8, scale=(1, 0.85, 0.3)), 'chest', crystal, 0xffffff)
+        front = 0.22
+        legs_top = lo.z - 0.18
     for S, sx in (('_L', -1), ('_R', 1)):
         sh, el, wr, hd = J(r, 'clav' + S), J(r, 'uarm' + S), J(r, 'farm' + S), J(r, 'hand' + S)
         clay(r, frust(sh, el, 0.04, 0.034, 14))                                          # 細い腕
@@ -724,46 +756,27 @@ def mage():
         clay(r, ell(el, 0.036))
         clay(r, ell(hd + V((0, 0.01, -0.01)), V((0.05, 0.054, 0.054))))                  # 指の無い手
         th, shn = J(r, 'thigh' + S), J(r, 'shin' + S)
-        clay(r, cap(J(r, 'pelvis' + S), th, 0.058, 0.05))
+        clay(r, cap(V((th.x, 0, legs_top + 0.03)), th, 0.055, 0.05))
         clay(r, cap(th, shn, 0.05, 0.044))
         clay(r, ell(V((shn.x, 0.04, 0.05)), V((0.068, 0.11, 0.05))))                     # 平たい足
-    # 目: 蝋に指で突いたような二つの穴。大きさも高さも揃っていない
-    EYES = [(-0.078, 0.0, 0.026, (0, 0)), (0.078, 0.0, 0.026, (0, 0))]
-
-    def drip_d(p):
-        best = 9.0
-        for a, ln, w in DRIPS:
-            x, y = math.cos(a) * (RT + 0.012) + 0.015, math.sin(a) * (RT + 0.012)
-            k = 1 + (RB - RT) / RT * ln / (Z1 - Z0)
-            best = min(best, R.seg_dist(p, V((x, y, Z1 + 0.01)), V((x * k, y * k, Z1 - ln - w * 0.3))) - w * 1.05)
-        return best
 
     def is_tint(p, nb=None):
-        return 1.0 if (p.z > Z1 + 0.015 or (p.z > Z0 + 0.2 and drip_d(p) < 0.004)) else 0.0      # 頭に流した色蝋と、その垂れ
-    region(r, 'cloth', is_tint, lambda p, n: tuple(0.78 + 0.14 * n for _ in range(3)), 0.45)
+        return 1.0 if (p.z > tint_z and abs(p.x) < 0.3) else 0.0
+    region(r, 'cloth', is_tint, lambda p, n: tuple(0.8 + 0.12 * n for _ in range(3)), 0.55)
     r.slot_fn = lambda p, nb: 'tint' if is_tint(p) > 0.5 else None
 
     def col(p, near, n):
-        c = mix((0.9, 0.86, 0.76), (0.62, 0.56, 0.47), max(0, -n) * 0.8)                  # 古びた蝋の色
-        if p.z < Z0 + 0.12:
-            c = mix(c, (0.3, 0.26, 0.22), sm(Z0 + 0.12 - p.z, 0, 0.12) * 0.7)             # 足元は煤けている
-        if p.z < Z0 - 0.03 or (abs(p.x) > RB + 0.06 and p.z < Z1 - 0.1):
-            c = mix((0.5, 0.46, 0.4), (0.2, 0.17, 0.14), max(0, -n))                      # 手足は少し暗い蝋
+        c = mix((0.6, 0.58, 0.55), (0.3, 0.28, 0.27), max(0, -n) * 0.9)                  # 乾いた粘土のような灰色
+        if p.z < legs_top - 0.02 or abs(p.x) > 0.34:
+            c = mix((0.32, 0.3, 0.29), (0.14, 0.13, 0.13), max(0, -n))                    # 手足は濃い灰色
         return c
     r.color_fn = col
-    eye = r.mat('eye', 0xffffff, rough=0.5, emit=0.3)
-    pupil = r.mat('pupil', 0x0a0806, rough=0.3)
-    for ex, ez, rad, look in EYES:
-        ey = math.sqrt(max(0.0, (RT + 0.014) ** 2 - ex ** 2))
-        r.part(sphere(rad, (ex, ey, hc.z + ez), seg=16, rings=10, scale=(1, 0.55, 1.12)), 'head', pupil, 0x0a0806)
-        r.part(sphere(rad * 0.28, (ex - 0.008, ey + rad * 0.5, hc.z + ez + 0.01), seg=8, rings=6, scale=(1, 0.5, 1)), 'head', eye, 0xffffff)   # 小さな光
-    # 芯と、その先の火(持ち主の色。詠唱すると強く光る)
-    wz = Z1 + 0.06
-    r.part(cone(0.012, 0.009, 0.12, (0.03, -0.01, wz + 0.05), rot=(0.12, 0.1, 0), seg=6), 'head', wick, 0x1a1410)
-    r.part(sphere(0.05, (0.036, -0.016, wz + 0.17), seg=8, rings=6, scale=(0.75, 0.75, 1.5)), 'head', crystal, 0xffffff)
+    for ex, ey, ez in eyes:                              # 目: 小さな黒い粒が二つ
+        r.part(sphere(0.024, (ex, ey, ez), seg=16, rings=10, scale=(1, 0.55, 1.12)), 'head' if variant != 'ring' else 'chest', pupil, 0x0a0806)
+        r.part(sphere(0.007, (ex - 0.007, ey + 0.012, ez + 0.009), seg=8, rings=6, scale=(1, 0.5, 1)), 'head' if variant != 'ring' else 'chest', eye, 0xffffff)
     # 大きな魔導書を、胸の前に開いて抱える(胸の骨に付け、両手を添える)
     TH = -1.0
-    bc = V((0, RB + 0.12, ch.z - 0.06))
+    bc = V((0, front + 0.14, ch.z - 0.1))
     off = lambda x, y: bc + V((x, y * math.cos(TH), y * math.sin(TH)))
     for sx in (-1, 1):
         r.part(box((0.2, 0.014, 0.27), tuple(off(sx * 0.102, -0.011)), rot=(TH, 0, 0)), 'chest', paper, 0xe8dcbc, smooth=False)

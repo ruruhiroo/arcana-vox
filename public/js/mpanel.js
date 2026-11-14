@@ -38,6 +38,7 @@ const CSS = `
 #mpPanel .list { margin: 18px 0 4px; display: grid; gap: 6px; }
 #mpPanel .who { display: flex; align-items: center; gap: 12px; padding: 9px 14px; background: rgba(0,0,0,.3); border-left: 3px solid var(--c, #d8b46a); font-size: 16.5px; }
 #mpPanel .who i { width: 11px; height: 11px; border-radius: 50%; background: var(--c, #d8b46a); box-shadow: 0 0 10px var(--c, #d8b46a); }
+#mpPanel .who .warp { margin-left: 12px; padding: 4px 10px; font-size: 13px; letter-spacing: .1em; }
 #mpPanel .who span { margin-left: auto; font-size: 12.5px; letter-spacing: .2em; color: #a89a7a; }
 #mpPanel .foot { margin-top: 22px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 #mpPanel .note { font-size: 13px; color: #8a7e66; line-height: 1.7; }
@@ -76,19 +77,21 @@ function restart(mode, code) {
 function render() {
   const box = panel.querySelector('.box');
   if (G.net) {
-    const players = [...(G.net.players?.values?.() || [])];
+    // 仲間の一覧: ネット越しの部屋は名簿から、LAN の部屋は画面にいる仲間から作る
+    const players = G.net.players?.values ? [...G.net.players.values()] : [{ id: G.netId, name: G.player?.name }, ...(G.mages || []).filter(m => m.netId != null).map(m => ({ id: m.netId, name: m.name }))];
     const code = G.roomCode || '';
     box.innerHTML = `<h2>仲 間 と 潜 る</h2>
       <p class="lead">${code ? 'この部屋コードを仲間に伝えると、仲間はタイトル画面かこの窓から入れる。' : '同じネットワークの部屋につながっている。'}</p>
       ${code ? `<div class="codebox"><small>部 屋 コ ー ド</small><div class="code">${esc(code)}</div><button class="go" id="mpCopy" type="button">コードをコピー</button></div>` : ''}
-      <div class="list">${players.map(p => `<div class="who" style="--c:${p.id === G.netId ? '#ffb060' : colorOf(p.id)}"><i></i>${esc(p.name || '魔導師')}<span>${p.id === G.hostId ? '部屋の主' : ''}${p.id === G.netId ? (p.id === G.hostId ? ' ・ ' : '') + 'あなた' : ''}</span></div>`).join('')}</div>
+      <div class="list">${players.map(p => `<div class="who" style="--c:${p.id === G.netId ? '#ffb060' : colorOf(p.id)}"><i></i>${esc(p.name || '魔導師')}<span>${p.id === G.hostId ? '部屋の主' : ''}${p.id === G.netId ? (p.id === G.hostId ? ' ・ ' : '') + 'あなた' : ''}</span>${p.id !== G.netId && deps?.warp ? `<button class="ghost warp" type="button" data-id="${p.id}">そばへ跳ぶ</button>` : ''}</div>`).join('')}</div><div class="err" id="mpErr"></div>
       <div class="foot"><button class="ghost danger" id="mpLeave" type="button">部屋を抜ける</button><button class="ghost" id="mpClose" type="button">閉じる</button></div>`;
     const cp = box.querySelector('#mpCopy');
     if (cp) cp.onclick = () => copy(code, cp);
+    box.querySelectorAll('.warp').forEach(b => { b.onclick = () => { const err = deps.warp(+b.dataset.id); if (err) box.querySelector('#mpErr').textContent = err; else { closeMp(); deps.close?.(); } }; });
     box.querySelector('#mpLeave').onclick = () => { try { sessionStorage.removeItem(AUTO); } catch {} location.reload(); };
   } else {
     box.innerHTML = `<h2>仲 間 と 潜 る</h2>
-      <p class="lead">仲間との旅は、第1層から新しく始まる。ひとり旅の記録はそのまま残る。</p>
+      <p class="lead">仲間との旅は、迷宮の入口から新しく始まる(祭壇で属性に誓ってから、門をくぐる)。ひとり旅の記録はそのまま残る。</p>
       <div class="two">
         <div class="card"><h3>部屋を開く</h3><p>あなたが部屋の主になる。始まったら、この窓に出る部屋コードを仲間に伝える。</p><button class="go" id="mpHost" type="button">部屋を開く</button></div>
         <div class="card"><h3>部屋に入る</h3><p>仲間から聞いた部屋コードを入れる。</p><div class="row"><input id="mpCode" maxlength="12" autocomplete="off" spellcheck="false" placeholder="コード"><button class="ghost" id="mpPaste" type="button">貼る</button></div><button class="go" id="mpJoin" type="button" disabled>部屋に入る</button></div>

@@ -58,9 +58,9 @@ export class P2PNet {
     });
 
     return new Promise((resolve, reject) => {
-      const welcome = extra => ({ id: this.id, hostId: this.hostId, mode: this.mode, seed: extra.seed, floor: extra.floor || 1, players: [...this.players.values()].map(p => ({ id: p.id, name: p.name })) });
+      const welcome = extra => ({ id: this.id, hostId: this.hostId, mode: this.mode, seed: extra.seed, floor: extra.floor ?? 0, players: [...this.players.values()].map(p => ({ id: p.id, name: p.name })) });
       if (asHost) {
-        this.seed = (Math.random() * 1e9) | 0; this.floor = 1;
+        this.seed = (Math.random() * 1e9) | 0; this.floor = 0;
         resolve(welcome({ seed: this.seed, floor: 1 }));
       }
       const timer = asHost ? null : setTimeout(() => { this.leave(); reject(new Error('部屋が見つからない')); }, timeout);

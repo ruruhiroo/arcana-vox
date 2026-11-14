@@ -30,20 +30,20 @@ export const WORDS = [
   {id:'recall',text:'帰還',ruby:'きかん',cat:'effect',val:'recall',cost:35,alias:['帰還','きかん'],hint:'「帰るべき灯へ、この身を導け」',meaning:'その層の入口へ戻る。14m以内に敵がいる時とボス戦中は使えない。'},
   { id: 'fire', text: '紅蓮', ruby: 'ぐれん', cat: 'element', val: 'fire', cost: 8,
     alias: ['紅蓮', 'ぐれん', 'グレン', '焔', '炎', 'ほむら', 'ほのお', '火炎'],
-    hint: '「赤き蓮は咲き、触れしものを灰へと還す」', meaning: '火属性。継続して焼く。粘獣に強い。' },
+    hint: '「赤き蓮は咲き、触れしものを灰へと還す」', meaning: '火属性。当たると爆ぜて、周りの敵も巻き込む。粘獣に強い。' },
   { id: 'ice', text: '氷獄', ruby: 'ひょうごく', cat: 'element', val: 'ice', cost: 8,
     alias: ['氷獄', 'ひょうごく', 'コキュートス', 'こきゅーとす', 'コキュートス', '氷結', '氷'],
-    hint: '「最果ての地獄は燃えていない。凍てついている」', meaning: '氷属性。命中した者の動きを鈍らせる。' },
+    hint: '「最果ての地獄は燃えていない。凍てついている」', meaning: '氷属性。4回に1回、敵を氷漬けにする。凍った敵は次の一撃で砕ける(傷が2倍)。' },
   { id: 'thunder', text: '雷霆', ruby: 'らいてい', cat: 'element', val: 'thunder', cost: 9,
     alias: ['雷霆', 'らいてい', 'ライテイ', '雷電', '雷鳴', '稲妻', 'いかずち', '雷'],
-    hint: '「天の怒りは一つに留まらず、隣へ跳ねる」', meaning: '雷属性。威力が高く近くの敵へ連鎖する。石像に強い。' },
+    hint: '「天の怒りは一つに留まらず、隣へ跳ねる」', meaning: '雷属性。当たると、近くの敵2体へ稲妻が飛ぶ。石像に強い。' },
   { id: 'holy', text: '聖光', ruby: 'せいこう', cat: 'element', val: 'holy', cost: 8,
     alias: ['聖光', 'せいこう', 'セイクリッド', 'せいくりっど', 'せいくりーど', '神聖', '聖なる', '聖',
       /* 音声認識の同音語 */ '成功', '精巧', '性交', '製鋼', '精工', '聖公', '生光', '清らなる', 'きよらなる', '清らかなる', 'きよらかなる'],
     hint: '「死してなお歩む者は、この光を最も恐れる」', meaning: '聖属性。不死者に2倍。癒・守護と合わせると効果1.5倍。' },
   { id: 'void', text: '深淵', ruby: 'しんえん', cat: 'element', val: 'void', cost: 12,
     alias: ['深淵', 'しんえん', 'アビス', 'あびす', '奈落', '闇'],
-    hint: '「覗き込む者は、全てを呑まれる」', meaning: '闇属性。六属性で最も威力が高い。体力が半分を切った敵には傷が1.5倍(断滅)。そのぶん魔力を多く喰う。' },
+    hint: '「覗き込む者は、全てを呑まれる」', meaning: '闇属性。六属性で最も威力が高い。10回に1回、主以外の敵を即死させる。そのぶん魔力を多く喰う。' },
   { id: 'wind', text: '颶風', ruby: 'ぐふう', cat: 'element', val: 'wind', cost: 7,
     alias: ['颶風', 'ぐふう', 'テンペスト', 'てんぺすと', '暴風', '嵐', '風'],
     hint: '「風そのものは傷つけぬ。ただ、遠くへ運ぶ」', meaning: '風属性。威力は控えめだが大きく吹き飛ばす。速い。' },
@@ -69,7 +69,7 @@ export const WORDS = [
 
   { id: 'heal', text: '癒息', ruby: 'いやし', cat: 'effect', val: 'heal', cost: 10,
     alias: ['癒息', 'ゆそく', 'ヒール', 'ひーる', '癒やし', '癒し', 'いやし', '息吹', '癒'],
-    hint: '「傷は閉じ、倒れた友は再び立つ」', meaning: '効果:回復。倒れた仲間を蘇生できる。' },
+    hint: '「傷は閉じ、倒れた友は再び立つ」', meaning: '効果:回復。倒れた仲間に掛けると蘇生できる(その時は魔力を100使う)。' },
   { id: 'ward', text: '守護', ruby: 'しゅご', cat: 'effect', val: 'ward', cost: 10,
     alias: ['守護', 'しゅご', 'ガード', 'がーど', '護れ', 'まもれ', '護り', '守り'],
     hint: '「見えざる殻は、詠唱を乱す一撃をも受け止める」', meaning: '効果:守護。ダメージを吸収する障壁。詠唱妨害を防ぐ。属性を込めると反撃する。' },
@@ -115,7 +115,7 @@ export const WORDS = [
     hint: '「二度唱えるより、一度で二つ」', meaning: '修飾:×2。術が二つ発現する。消費も2倍。' },
   { id: 'max', text: '極大', ruby: 'きょくだい', cat: 'mod', val: 'max', cost: 4,
     alias: ['極大', 'きょくだい', 'マキシマ', 'まきしま'],
-    hint: '「器を超えて注げ。代償は倍」', meaning: '修飾:威力×1.8。消費×2。' },
+    hint: '「器を超えて注げ。代償は倍」', meaning: '修飾:大技。威力×3。魔力を100使う(満ちた魔力をまるごと注ぐ)。' },
   { id: 'eternal', text: '永劫', ruby: 'えいごう', cat: 'mod', val: 'eternal', cost: 4,
     alias: ['永劫', 'えいごう', 'エターナル', 'えたーなる', '永遠'],
     hint: '「終わりを遠ざける言葉」', meaning: '修飾:持続時間・範囲×1.6。' },
@@ -307,7 +307,19 @@ export function eloquence(rawText, known, lenient = false) {
 export const UTILITY_WORDS = ['blink', 'levitate', 'survey', 'cleanse', 'recall', 'flamejet', 'frostwave', 'sparkstep', 'gust', 'sanctum'];
 // 属性ごとの誓いの術
 export const SWORN_ART = { fire: 'flamejet', ice: 'frostwave', thunder: 'sparkstep', wind: 'gust', holy: 'sanctum', void: 'blink' };
-export const STARTER_WORDS = ['heal', 'ward', 'light', 'might', 'lance', 'enemy', 'self', 'ally']; // 締めは魔法の名で(「放て」は使わない)
+// 蘇生と大技に使う魔力(魔力の上限の初期値と同じ = 満ちた魔力をまるごと)
+export const BIG_COST = 100;
+export const STARTER_WORDS = ['heal', 'ward', 'light', 'might', 'enemy', 'self', 'ally'];
+// 古文書から出る言霊の、出やすさ(覚えてほしい順)。数が大きいほど先に出やすい。ここに無い言霊は 1
+//   まず「出し方」(穿槍が最優先)、次に術を強くする修飾と攻めの効果、探索の術は後回し。二つ目の属性はめったに出ない
+export const WORD_PRIORITY = {
+  lance: 150,
+  nova: 9, rain: 9, wall: 6, orbit: 6, enchant: 6,
+  max: 6, dual: 5, homing: 5, chain: 5, split: 4, swift: 4, eternal: 3, rune: 3, spite: 2,
+  impact: 5, freeze: 5, bind: 4, poison: 4, water: 3,
+  haste: 5, cleanse: 3, levitate: 2, recall: 2, blink: 2, survey: 2,
+  fire: 0.4, ice: 0.4, thunder: 0.4, wind: 0.4, holy: 0.4, void: 0.4,
+}; // 締めは魔法の名で(「放て」は使わない)
 
 // ---- 正規化: カタカナ→ひらがな、空白・記号除去 ----
 export function normalize(s) {
@@ -567,7 +579,7 @@ export function applyCustomCalls(raw, customs) {
       for (let tail = 0; tail <= 1; tail++) {
         const end = s.length - tail, i = end - L; if (i < 0) continue;
         const sim = similarity(s.slice(i, end), n);
-        if (sim >= (n.length <= 3 ? 1 : 0.7) && (!best || sim > best.sim)) best = { i, end, sim, std: c.std };
+        if (sim >= (n.length <= 3 ? 1 : n.length >= 5 ? 0.58 : 0.7) && (!best || sim > best.sim)) best = { i, end, sim, std: c.std };
       }
     }
   }
@@ -595,6 +607,28 @@ export function fixCallName(raw) {
   if (!best || (best.sim === 1 && endsWithCall(raw))) return raw; // 正しく言えている
   return (raw.slice(0, at[best.i]) + ' ' + best.c).trim();
 }
+// 魔導書に書いてある呪文の名へ寄せる: 文末が、自分の持つ呪文の名のどれかに近ければ、その名とみなす。
+//   (「ヒーリング」が「ヒーディング」と聞き取られた時など。候補が自分の呪文だけなので、決まった名の表よりも緩く寄せてよい)
+//   names = 魔導書の呪文の正式な名(「ヒーリング」「ファイアランス」など)
+export function snapCallToBook(raw, names) {
+  if (!raw || !names?.length || endsWithCall(raw)) return raw;
+  const { s, at } = normIndex(raw);
+  let best = null, second = 0;
+  for (const c of new Set(names)) {
+    const n = normalize(c); if (n.length < 3) continue;
+    let top = 0, topI = -1;
+    for (let L = Math.max(3, n.length - 2); L <= n.length + 2; L++) {
+      const i = s.length - L; if (i < 0) continue;
+      const sim = similarity(s.slice(i), n);
+      if (sim > top) { top = sim; topI = i; }
+    }
+    if (top >= (n.length >= 5 ? 0.55 : 0.66)) { if (!best || top > best.sim) { second = best ? best.sim : second; best = { i: topI, sim: top, c }; } else second = Math.max(second, top); }
+  }
+  if (!best || best.sim - second < 0.08) return raw;      // どの名か決めきれない時は直さない
+  return (raw.slice(0, at[best.i]) + ' ' + best.c).trim();
+}
+// 二つの詠唱文が、音としてどれだけ似ているか(0〜1)
+export const chantSim = (a, b) => similarity(normalize(a || ''), normalize(b || ''));
 export const CALL_WORDS = [...Object.values(CALL_EL), ...Object.values(CALL_FORM), ...Object.values(CALL_EFF)].flat();
 
 // ---- 呪文コンパイラ ----
@@ -623,7 +657,7 @@ export function compile(text, known) {
   const utility=spell.effects.some(e=>UTILITY_WORDS.includes(e));
   if(utility&&(spell.elements.length||spell.effects.length>1||spell.form||spell.rune||spell.target==='enemy'||spell.target==='ally')){spell.error='探索の術は「我に」と効果一つで唱えよ';return spell;}
   let p = 1;
-  if (spell.max) p *= 1.8;
+  if (spell.max) p *= 3;
   if (spell.blood) p *= 2;
   if (spell.ruin) p *= 1.3;
   if (spell.swift) p *= 0.8;
@@ -643,10 +677,11 @@ export function compile(text, known) {
   spell.title = spell.school ? `${spell.tierName}${spell.school}魔術` : '';
   spell.power = p;
   let mult = [0.8, 1, 1.25][spell.tier];
-  if (spell.max) mult *= 2;
-  if (spell.ruin) mult *= 1.5;
-  if (spell.dual) mult *= 2;
   spell.cost = Math.round(spell.cost * mult * 1.6); // 魔力は貴重: 撃ち放題にはならない
+  if (spell.max) spell.cost = Math.max(spell.cost, BIG_COST);   // 大技(極大)は、魔力をまるごと使う
+  // 大技に崩壊や二重を重ねると、初めの魔力の上限(100)を超える。装備で器を広げた者だけが撃てる
+  if (spell.ruin) spell.cost = Math.round(spell.cost * 1.5);
+  if (spell.dual) spell.cost *= 2;
 
   if (spell.rune && !spell.form) spell.form = 'nova';
   spell.callName = callName(spell);
@@ -671,7 +706,7 @@ export function formula(spell) {
   const formName = { lance: '投射', nova: '環', rain: '雨', wall: '壁' };
   const mods = [];
   if (spell.dual) mods.push('×2');
-  if (spell.max) mods.push('×1.8');
+  if (spell.max) mods.push('大技×3');
   if (spell.eternal) mods.push('持続↑');
   if (spell.swift) mods.push('迅');
   if (spell.spite) mods.push('逆境');

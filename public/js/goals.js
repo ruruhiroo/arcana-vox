@@ -5,16 +5,16 @@ import { SPIRITS } from './spirits.js';
 const $ = id => document.getElementById(id);
 const DEPTH_GOALS = [3, 5, 8, 10, 15, 20];
 
-// 封印の大扉を開くのに要る討伐数: その層の魔物の半分(上限18)。声を失ったものを鎮めるほど、封印は弱まる。
-// クリアまでの目安(約2時間)は、主にこの数と守護者の体力で決まる
-export const sealNeed = () => G.noSave ? 0 : Math.min(18, Math.ceil(0.5 * (G.dungeon?.spawns || []).filter(s => !s.boss).length));
+// 封印の大扉を開くのに要る討伐数: その層の魔物の7割(上限45)。声を失ったものを鎮めるほど、封印は弱まる。
+// 1階層の長さ(30分ほどを想定)は、主にこの数と魔物の数で決まる。層をほぼ回り切るので、主に挑む前に言霊や装備が揃う
+export const sealNeed = () => G.noSave ? 0 : Math.min(45, Math.ceil(0.7 * (G.dungeon?.spawns || []).filter(s => !s.boss).length));
 export function setupGoals(floor, hooks) {
   const fs = G.floorStats = { scrolls: 0, chests: 0, kills: 0, boss: false };
   const d = G.dungeon;
   const killNeed = Math.max(1, sealNeed());
   const list = [];
-  if (d.scrolls.length) list.push({ id: 'scroll', text: '古文書を読み、言霊を得る', need: 1, cur: () => fs.scrolls });
-  if (d.chests.length) list.push({ id: 'chest', text: '宝箱を開ける', need: 1, cur: () => fs.chests });
+  if (d.scrolls.length) list.push({ id: 'scroll', text: '古文書を読み、言霊を得る', need: Math.min(3, d.scrolls.length), cur: () => fs.scrolls });
+  if (d.chests.length) list.push({ id: 'chest', text: '宝箱を開ける', need: Math.min(3, d.chests.length), cur: () => fs.chests });
   list.push({ id: 'kill', text: '魔物を鎮め、大扉の封印を弱める', need: killNeed, cur: () => fs.kills });
   if (G.enemies.some(e => e.boss)) list.push({ id: 'boss', text: 'この層の主を討つ', need: 1, cur: () => (fs.boss ? 1 : 0) });
   // 聖域は降り立った部屋にあるので、探す課題は無し

@@ -7,3 +7,4 @@ node_modules/
 
 # 紹介映像の動画は重いので入れない(静止画は入れる)
 /trailer/*.mp4
+/shots/

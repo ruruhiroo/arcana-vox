@@ -6,7 +6,7 @@ import { insideArena } from './arena-room.js';
 import * as THREE from 'three';
 import { spellMult, takenMult } from './roomgimmick.js';
 import { G, rand, clamp } from './state.js';
-import { ELEMENTS, compile, WORD_BY_ID, ATTACK_FX } from './lexicon.js';
+import { ELEMENTS, compile, WORD_BY_ID, ATTACK_FX, BIG_COST } from './lexicon.js';
 import { isWallAt, raycastGrid, CELL, heightAt, ceilingAt } from './dungeon.js';
 import { intersectsDragon } from './dragon-model.js';
 import { glowSprite, runeCircleTex } from './textures.js';
@@ -380,9 +380,10 @@ export const FX = {
       this.damage(t, amount, elements, src, { ...opts, enchantHit: true });
       return this.damage(t, 10 * en.power, en.elements, src, { enchantHit: true, power: en.power, tier: 0 });
     }
+    if (src === G.player && G.uq?.has('giant') && !t.isMage && (t.boss || t.guardian || t.type === 'dragon') && !opts.uqDone) { amount *= 1.5; opts = { ...opts, uqDone: true }; }
     if (t.isMage && t.kind === 'remote') { G.net?.send({ t: 'dmg', to: t.netId, amount, elements, src: src?.id, opts: { melee: opts.melee, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, silent: opts.silent, fx: opts.fx } }); return; }
     if (t === G.player && src && !src.isMage && amount > 0 && !opts.silent) G.onEnemyHit?.(src); // 魔物の技(声を狂わせる など)
-    if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, atk: opts.atk, hitPoint: opts.hitPoint }); return; }
+    if (!t.isMage && !G.isHost) { G.net?.send({ t: 'edmg', to: G.hostId, eid: t.id, amount, elements, src: src?.id, dir: opts.dir?.toArray?.(), power: opts.power, tier: opts.tier, atk: opts.atk, hitPoint: opts.hitPoint, echo: opts.echo }); return; }
     let a = amount, mouthStagger = false;
     if (t.type === 'dragon' && t.dragon && src?.team === 'hero' && amount > 0) {
       if (!t.body.visible && !opts.silent) return;
@@ -432,13 +433,29 @@ export const FX = {
     const wet = t.status.wet || (opts.atk || []).includes('water');
     if (wet && elements.includes('thunder')) { a *= 1.3; tag('感電', '#a0c8ff'); }
     if (wet && elements.includes('ice') && !t.isMage) { const d = 1.6 + 0.4 * tier; t.stun = Math.max(t.stun || 0, d); t.status.frozen = { t: d }; delete t.status.wet; tag('氷結', '#cfefff'); }
-    for (const e of elements) {
-      if (e === 'fire') { if (!t.status.burn) tag('燃焼', '#ff9a50'); t.status.burn = { t: 4, dps: (5 + 3 * tier) * pw, src }; }
-      if (e === 'ice') { t.status.slow = { t: 3 * pw }; if (tier >= 1 && !t.isMage) { t.stun = Math.max(t.stun || 0, 0.8 + 0.5 * tier); t.status.frozen = { t: 0.8 + 0.5 * tier }; tag('凍結', '#9fe4ff'); } else tag('鈍足', '#9fe4ff'); }
-      if (e === 'thunder' && !t.isMage) { t.stun = Math.max(t.stun || 0, 0.5 + 0.2 * tier); tag('麻痺', '#d8c8ff'); }
-      if (e === 'holy') { if (!t.status.stigma) tag('聖痕', '#fff0b0'); t.status.stigma = { t: 4 + tier }; }
-      if (e === 'void' && !opts.silent && t.maxHp && t.hp < t.maxHp * 0.5) { a *= 1.5; tag('断滅', '#c080ff'); } // 弱った者ほど深く抉る
-      if (e === 'wind' && opts.dir) { const k = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar((13 + 4 * tier) * pw); if (t.knock) t.knock.add(k); else if (t.vel) t.pushV = k; tag('吹き飛ばし', '#9effc8'); }
+    // 氷漬けの者は、次の一撃で砕ける(傷が2倍)
+    if (!t.isMage && t.status.frozen && a > 0 && !opts.echo && !opts.silent) { a *= 2; delete t.status.frozen; t.stun = Math.min(t.stun || 0, 0.2); tag('粉砕!', '#dff4ff'); bigImpact(t.pos.clone().setY((t.pos.y || 0) + 1), 0x9fe4ff, 0.8, ['ice']); }
+    // 属性ごとの効果は一つずつ。炎 = 爆発 / 氷 = 氷漬け / 雷 = 連鎖 / 風 = 大吹き飛ばし / 聖 = 当てるたび回復 / 闇 = 即死
+    //   (爆発や連鎖で広がった傷 = opts.echo には、効果は乗らない)
+    const foe = !t.isMage, big = t.boss || t.guardian || t.type === 'dragon';
+    if (!opts.echo) for (const e of elements) {
+      if (e === 'fire') {
+        if (foe && !opts.silent) { bigImpact(t.pos.clone().setY((t.pos.y || 0) + 1), 0xff6a20, 0.7 + 0.2 * tier, ['fire']); tag('爆発', '#ff9a50'); for (const o of G.enemies) if (o !== t && o.alive && o.pos.distanceTo(t.pos) < 2.8 + 0.4 * tier) this.damage(o, amount * 0.5, [], src, { echo: true, power: pw }); }
+        else if (!foe) t.status.burn = { t: 3, dps: 4 * pw, src };
+      }
+      if (e === 'ice') {
+        if (foe && !big && Math.random() < 0.25 + 0.1 * tier) { const d = 3 + 0.5 * tier; t.stun = Math.max(t.stun || 0, d); t.status.frozen = { t: d }; tag('氷漬け', '#9fe4ff'); }
+        else if (foe && big) { t.status.slow = { t: 3 }; tag('鈍足', '#9fe4ff'); }
+        else if (!foe) t.status.slow = { t: 2.5 };
+      }
+      if (e === 'thunder' && foe && !opts.silent) {
+        const near = G.enemies.filter(o => o !== t && o.alive && o.pos.distanceTo(t.pos) < 7).sort((x, y) => x.pos.distanceTo(t.pos) - y.pos.distanceTo(t.pos)).slice(0, 2 + tier);
+        for (const o of near) { lightning(t.pos.clone().setY((t.pos.y || 0) + 1.1), o.pos.clone().setY((o.pos.y || 0) + 1.1), 0xd8b0ff); this.damage(o, amount * 0.6, [], src, { echo: true, power: pw }); }
+        if (near.length) tag('連鎖', '#d8c8ff');
+      }
+      if (e === 'holy' && foe && src?.isMage && a > 0 && !opts.silent) { this.heal(src, 3 + tier, src, true); tag('吸光', '#fff0b0'); }
+      if (e === 'void' && foe && !big && !opts.silent && Math.random() < 0.1) { a = Math.max(a, (t.hp || 0) + 999); tag('即死!', '#c080ff'); bigImpact(t.pos.clone().setY((t.pos.y || 0) + 1), 0x9a5cff, 1.3, ['void']); }
+      if (e === 'wind' && opts.dir) { const k = new THREE.Vector3(...(Array.isArray(opts.dir) ? opts.dir : opts.dir.toArray())).multiplyScalar((24 + 6 * tier) * pw); if (t.knock) { t.knock.add(k); if (!big) t.stun = Math.max(t.stun || 0, 0.7); } else if (t.vel) t.pushV = k.multiplyScalar(0.5); tag('吹き飛ばし', '#9effc8'); }
     }
     // 攻撃の種類: 凍結・束縛・衝撃・蝕毒
     for (const k of opts.atk || []) {
@@ -473,10 +490,17 @@ export const FX = {
     else if (t.isMage && t.kind === 'player') G.net?.send({ t: 'hp', hp: t.hp });
   },
 
-  heal(t, amount, src, silent) {
+  // revive = 蘇生の代価(魔力100)を払い済みか。払っていない癒しは、倒れた者に掛けた時にここで残りを払う
+  heal(t, amount, src, silent, revive = false) {
     if (!t || !t.alive || !t.isMage) return;
-    if (t.kind === 'remote') { G.net?.send({ t: 'heal', to: t.netId, amount, src: src?.id }); return; }
+    if (t.downed && !revive && src === G.player) {
+      const extra = Math.max(0, BIG_COST - (src.lastSpell?.cost || 0));
+      if (src.mp < extra) { G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 1.2, 0)), `蘇生には魔力が${BIG_COST}要る`, '#ff9a8a'); G.ui?.log(`蘇生には魔力が${BIG_COST}要る(足りない)`, '#ff9a8a'); return; }
+      src.mp -= extra; revive = true;
+    }
+    if (t.kind === 'remote') { G.net?.send({ t: 'heal', to: t.netId, amount, src: src?.id, revive }); return; }
     if (t.downed) {
+      if (!revive) return;
       t.downed = false; t.hp = Math.max(25, amount); G.ui?.floatText(t.pos, '蘇生!', '#8dffb0');
       G.ui?.log(`${src?.name || '何者か'}が${t.name}を蘇生した`);
     } else t.hp = Math.min(t.maxHp, t.hp + amount);
@@ -491,8 +515,14 @@ export const FX = {
   },
 
   kill(t, src) {
+    if (t === G.player && G.uq?.has('guard') && G.uqGuardFloor !== G.floor) {
+      G.uqGuardFloor = G.floor; t.hp = Math.round(t.maxHp * 0.5); t.alive = true;
+      G.ui?.banner('影武者', '影が身代わりになった — この層では、もう耐えられない', 4); G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), '身代わり!', '#c8b0ff');
+      bigImpact(t.pos.clone().setY((t.pos.y || 0) + 1), 0x9a5cff, 1.2, ['void']); G.net?.send({ t: 'hp', hp: t.hp });
+      return;
+    }
     if (t.isMage) {
-      if (G.mode === 'coop') { t.downed = true; t.hp = 0; t.downT = 45; t.setChant(''); G.ui?.log(`${t.name}が倒れた — 癒息で蘇生できる`); }
+      if (G.mode === 'coop') { t.downed = true; t.hp = 0; t.downT = 45; t.setChant(''); G.ui?.log(`${t.name}が倒れた — そばで調べるか癒息で起こせる(魔力100)`); }
       else { t.alive = false; t.hp = 0; t.respawnT = 6; t.setChant(''); if (src && src.isMage) src.kills++; G.ui?.log(`${src?.name || '迷宮'}が${t.name}を討ち取った`); }
       if (t.kind === 'player') G.net?.send({ t: 'down', by: src?.id, pvp: G.mode === 'pvp' });
       return;

@@ -1,7 +1,7 @@
 {
   "name": "arcana-vox",
   "productName": "詠唱迷宮 ARCANA VOX",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "声で呪文を唱えるダンジョン探索ゲーム",
   "main": "electron/main.js",
   "private": true,

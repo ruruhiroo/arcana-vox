@@ -32,7 +32,7 @@ export const BOOK = {
     { name: '初級強化魔術', text: '我に 覇気 放て', memo: '20秒間、自分の術の威力を1.3倍にする。戦いの前に。' },
     { name: '初級治癒魔術', text: '我に 癒息 放て', memo: '' },
     { name: '初級守護魔術', text: '我に 守護 放て', memo: '強打を受けても詠唱が乱れなくなる。' },
-    { name: '初級治癒魔術(同胞)', text: '同胞に 癒息 放て', memo: '倒れた仲間を蘇生できる。' },
+    { name: '初級治癒魔術(同胞)', text: '同胞に 癒息 放て', memo: '倒れた仲間を蘇生できる(その時は魔力を100使う)。' },
     { name: '灯火', text: '我に 灯火 放て', memo: '肩越しに光の玉が付き従い、暗い迷宮を照らす。「穿槍」を加えると照準地点に灯る。' },
   ],
   slots: [0, 1, 2, 3],
@@ -135,6 +135,8 @@ export function loadBook() {
     }
     BOOK.chantVer = 11;
   }
+  // 白紙の魔導書は、穿槍を持たずに始まる(古文書から覚える)。上の古い直し(穿槍を最初から持たせていた頃のもの)が足した分を外す
+  if (fresh) { BOOK.known = BOOK.known.filter(id => id !== 'lance'); BOOK.understood = (BOOK.understood || []).filter(id => id !== 'lance'); }
   BOOK.mastery ||= {};
   ensureUtilityBook();
   G.known = new Set(BOOK.known);
@@ -238,7 +240,7 @@ export const UI = {
       return `<div class="pm${st ? ' down' : ''}" style="--c:${c}"><div class="nm"><span style="color:${c}">${esc(m.name)}</span><small>${st}</small></div><div class="bar"><div style="width:${clamp(m.hp / m.maxHp * 100, 0, 100)}%;background:${hostile ? '#c44' : c}"></div></div></div>`;
     }).join('');
     const dn = $('downed');
-    if (p.downed) { dn.classList.remove('hidden'); dn.innerHTML = `倒れた…<br><small>仲間の「癒息」を待て (${Math.ceil(p.downT)})</small>`; }
+    if (p.downed) { dn.classList.remove('hidden'); dn.innerHTML = `倒れた…<br><small>仲間が起こしに来るのを待て (${Math.ceil(p.downT)})</small>`; }
     else if (!p.alive) { dn.classList.remove('hidden'); dn.innerHTML = `討たれた<br><small>${Math.ceil(p.respawnT || 0)}秒後に再臨</small>`; }
     else dn.classList.add('hidden');
   },
@@ -472,7 +474,7 @@ function renderBook() {
       <p>■ <b>詠唱妨害</b> — 詠唱中に強打(12以上)を受けると術が霧散する。「守護」で防げる。仲間が長い呪文を唱えている間は守ってやれ。</p>
       <p>■ <b>読み合い</b> — 敵の魔導師の詠唱は頭上に表示され、声も聞こえる。「穿槍」が聞こえたら「城壁」で阻め。「天雨」なら足元の魔法陣から離れろ。</p>
       <p>■ <b>属性と相性</b> — 骸骨兵・怨霊は聖光に弱い。粘獣は紅蓮、石像兵は雷霆に弱い。複数の属性を混ぜると効果が融合する。</p>
-      <p>■ <b>蘇生</b> — 協力探索では倒れても「癒息」を受ければ立ち上がる。</p>
+      <p>■ <b>蘇生</b> — 協力探索では倒れても、仲間がそばで調べるか「癒息」を掛ければ立ち上がる(起こす側は魔力を100使う)。</p>
       <p>■ <b>転移陣</b> — 最も遠い部屋にある紫の転移陣から次の層へ。3層ごとに主が待つ。</p>
       <p class="muted">音声認識は Chrome / Edge で動作します。VC(近接ボイス)はオンライン時、マイク許可後に自動で繋がります。</p></div>`;
   }

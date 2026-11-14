@@ -50,7 +50,9 @@ test('five utility chants compile, reject harmful mixtures, and apply only on th
 test('complete chants reward accuracy without making abbreviated casts free; equipment upgrades are idempotent',()=>{
  const base=expandChant('汝に 紅蓮 穿槍'),full=base+' '+callName(compile(base,null)),s=compile(full,null);s.power*=1+eloquence(full,null).bonus;
  assert.ok(payload(s).dmg>70);assert.equal(s.cost,22);const short=compile('汝に 紅蓮 穿槍 ファイアランス',null);short.power*=.5+.5*chantCoverage(short.text,short.words);assert.ok(payload(short).dmg<payload(s).dmg);assert.equal(short.cost,s.cost);
- const gear=tuneEquipment({stats:{power:.1,maxHp:24,regen:.2}}),before=JSON.stringify(gear);tuneEquipment(gear);assert.equal(JSON.stringify(gear),before);assert.equal(totals({gear}).maxHp,36);assert.equal(totals({gear}).power,.17);
+ // 装備は一つの品に一つの効果: 以前の版の品(効果がいくつも付いていた)は、素体と希少度から一つの効果に直る。直すのは一度きり
+ const gear=tuneEquipment({slot:'cloak',bid:'drake',rarity:1,stats:{maxHp:24,elem:'fire',elemPow:.05}}),before=JSON.stringify(gear);tuneEquipment(gear);assert.equal(JSON.stringify(gear),before);assert.deepEqual(gear.stats,{maxHp:30});assert.equal(totals({gear}).maxHp,30);
+ const fang={slot:'necklace',bid:'fang',rarity:3,stats:{power:.6},balanceVersion:3};assert.equal(totals({a:fang,b:fang,c:fang,d:fang}).power,1.5);
 });
 test('checkpoint is JSON-only and keeps the actual sanctuary, seed, loot and enemy state',()=>{
  const d=flat();d.seed=7919;G.floor=3;G.player={pos:new THREE.Vector3(50,0,50),hp:76,mp:42,yaw:.4,pitch:0};G.enemies=[{id:'e3_0',type:'skeleton',alive:true,hp:21,maxHp:90,pos:new THREE.Vector3(60,0,60)}];G.pickups=[{id:'drop',kind:'loot',pos:new THREE.Vector3(51,0,50),data:{mat:'ether'}}];

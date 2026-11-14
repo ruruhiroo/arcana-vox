@@ -8,6 +8,7 @@ import { buildEnemyModel, animateEnemy } from './enemymodels.js';
 import { buildGuardian, animateGuardian } from './guardian-model.js';
 import { dragonElement, DRAGON_PROFILES } from './dragon-profiles.js';
 import { makeModel, animateGlb, dieGlb, playGlb } from './glbmodels.js';
+import { makeCompanion, parseLook, lookColor } from './companion.js';
 import { compile, withCallName } from './lexicon.js';
 // 写本師が唱える呪文 (プレイヤーと同じ言霊)
 import { WORD_BY_ID } from './lexicon.js';
@@ -17,7 +18,9 @@ const SCRIBE_SPELLS = ['汝に 紅蓮 穿槍', '汝に 氷獄 天雨', '汝に �
 let RUNE_TEX = null, GLOW_TEX = null;
 
 // ---------- 魔導師 ----------
-function mageMesh(color) {
+function mageMesh(color, look = null) {
+  // 他の魔導師の姿は、単純な形を組んで作る(companion.js)。look = 持ち主が選んだ姿。描画の無い環境(試験)では下の作り方へ落ちる
+  try { return makeCompanion(look || color); } catch { /* 下へ */ }
   // Blender で彫った魔導師(models/mage.glb)があればそれを使い、衣と杖の結晶を持ち主の色に染める
   const forged = makeModel('mage');
   if (forged) {
@@ -62,6 +65,15 @@ function mageMesh(color) {
 }
 
 export class Mage {
+  // 持ち主が選んだ姿(文字列)に作り替える。同じ姿なら何もしない
+  setLook(str) {
+    if (!this.model || !str || str === this.lookStr) return;
+    const look = parseLook(str); if (!look) return;
+    this.lookStr = str; this.color = lookColor(look).getHex();
+    const old = this.model; this.root.remove(old); old.traverse(o => { o.geometry?.dispose?.(); o.material?.map?.dispose?.(); o.material?.dispose?.(); });
+    this.model = mageMesh(this.color, look); this.root.add(this.model);
+    this.circle?.material.color.set(this.color);
+  }
   constructor({ id, name, kind, team, color = 0x2a3a6a, pos }) {
     Object.assign(this, { id, name, kind, team, color });
     this.pos = pos.clone(); this.vel = new THREE.Vector3();
@@ -102,7 +114,7 @@ export class Mage {
     if (this.shieldT > 0) { this.shieldT -= dt; if (this.shieldT <= 0) { this.shield = 0; this.thorns = null; } }
     this.shieldMesh.material.opacity = this.shield > 0 ? 0.12 + 0.05 * Math.sin(G.time * 6) : 0;
     this.shieldMesh.visible = this.shield > 0 && this.kind !== 'player';
-    if (!this.chanting && this.alive && !this.downed) this.mp = Math.min(this.maxMp, this.mp + dt * (this.kind === 'player' ? 2.5 : 6) * (this.regenMul || 1));
+    if (this.alive && !this.downed) this.mp = Math.min(this.maxMp, this.mp + dt * (this.kind === 'player' ? 3 : 6) * (this.regenMul || 1));   // 毎秒3。満ちるまで約33秒
     if (this.status.manaflow && this.alive) this.mp = Math.min(this.maxMp, this.mp + dt * this.status.manaflow.rate); // 魔力薬
     this.castLock = Math.max(0, this.castLock - dt);
     // 詠唱中は足元に魔法陣
@@ -116,7 +128,11 @@ export class Mage {
       this.model.rotation.y = this.yaw; // 顔(-Z)を視線の向きへ
       const ud = this.model.userData;
       if (ud.crystal) ud.crystal.material.emissiveIntensity = this.chanting ? 4 + Math.sin(G.time * 12) * 1.5 : 2;
-      if (ud.forged) {
+      if (ud.companion) {
+        const cast = this.castLock > 0 && !this.chanting;
+        ud.tick(dt, { speed: this.vel.length(), chanting: this.chanting, cast: cast && !ud.wasCast, downed: this.downed }); ud.wasCast = cast;
+        if (this.downed) { this.model.rotation.x = -1.35; this.model.position.y = 0.3; } else { this.model.rotation.x = 0; this.model.position.y = 0; }
+      } else if (ud.forged) {
         // 倒れる / 詠唱の構え / 術を放つ / 歩く / 立つ
         const cast = this.castLock > 0 && !this.chanting;
         if (cast && !ud.wasCast && ud.actions.attack) { ud.cur = null; ud.atkT = ud.actions.attack.getClip().duration * 0.9; }

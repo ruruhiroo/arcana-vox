@@ -78,7 +78,7 @@ const SECRET_VARIANTS = SECRET_MODS.flatMap(m => [0, 1].map(k => rotate(m, k)));
 export function buildLayout(r, floor, W, H) {
   const ri = (a, b) => a + Math.floor(r() * (b - a + 1));
   const pick = arr => arr[Math.floor(r() * arr.length)];
-  const want = Math.min(26, 13 + floor);   // 区画の数 (深いほど広い)
+  const want = Math.min(34, 21 + floor);   // 区画の数 (深いほど広い)。1階層に30分ほどかける広さ
   for (let attempt = 0; attempt < 40; attempt++) {
     const owner = new Int16Array(W * H).fill(-1);
     const grid = new Uint8Array(W * H), hgt = new Float32Array(W * H);

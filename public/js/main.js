@@ -303,15 +303,7 @@ async function startGame({ tutorial = false } = {}) {
   const team = G.mode === 'coop' ? 'hero' : 'T' + (G.netId || 'you');
   G.player = new Mage({ id: G.net ? 'p' + G.netId : 'you', name, kind: 'player', team, color: 0xffb060, pos: new THREE.Vector3() });
   G.mages = [G.player];
-  if (!G.net && !tutorial) {
-    const defs = G.mode === 'coop'
-      ? [] // 協力探索をひとりで遊ぶときは仲間のNPCを付けない
-      : [{ id: 'b1', name: 'ヴァルグ', color: 0x6a1a1a }, { id: 'b2', name: 'セレネ', color: 0x1a3a6a }];
-    for (const d of defs) {
-      const m = new Mage({ ...d, kind: 'bot', team: G.mode === 'coop' ? 'hero' : 'T' + d.id, pos: new THREE.Vector3() });
-      G.mages.push(m); G.bots.push({ mage: m, brain: new BotBrain(m, G.mode === 'coop' ? 'ally' : 'rival') });
-    }
-  }
+  // ひとりで遊ぶ時も、NPC の魔導師は付けない(協力探索でも探索PvPでも)。他の魔導師は、つながった人だけ
   setupVoice();
   // マルチプレイは迷宮の入口(祭壇で属性に誓う所)を通らず第1層から始まるので、ここで属性を選ばせる。
   // すでに誓いを立てている旅なら聞かない

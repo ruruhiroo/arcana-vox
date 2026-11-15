@@ -647,7 +647,7 @@ function pickUp(k, fromNet = false) {
       const els = ['fire', 'ice', 'thunder', 'wind', 'holy', 'void'];
       const el = G.affinity && Math.random() < 0.5 ? G.affinity : els[Math.floor(Math.random() * els.length)];
       add('tome_' + el, 1);
-      setTimeout(() => UI.banner(itemName('tome_' + el), `読むとその属性の術の威力が +15% (全三巻)。数字キーで持ち、左クリックで読む`, 5), 900);
+      setTimeout(() => UI.banner(itemName('tome_' + el), `読むとその属性の術の威力が +15 (全三巻)。数字キーで持ち、左クリックで読む`, 5), 900);
     }
     if (Math.random() < 0.25) learnRandomWord();
    } else if (k.kind === 'loot') {
@@ -707,7 +707,7 @@ function vowCeremony(el) {
   G.fx.burst(at, info.color, 160, { speed: 6, up: 3 });
   vowPillar(G.player.pos.clone(), info.color);
   setTimeout(() => G.fx.burst(at, 0xfff2c0, 80, { speed: 9, up: 1 }), 400);
-  UI.log(`${info.name}(${info.sub})に誓いを立てた — ${info.sub}の術の威力 +20%、得手の術(${SECOND_TEXT[el].split(' — ')[0]})の威力 +30%。魔導書の最初の頁に初級の攻撃呪文が記された。この旅の間、誓いは解けない`, col);
+  UI.log(`${info.name}(${info.sub})に誓いを立てた — ${info.sub}の術の威力 +20、得手の術(${SECOND_TEXT[el].split(' — ')[0]})の威力 +30。魔導書の最初の頁に初級の攻撃呪文が記された。この旅の間、誓いは解けない`, col);
   $('elCard').classList.add('sworn'); elCardKey = null;
 }
 // 誓いの光: 足元から属性の色の輪が次々に昇り、粒が渦を巻いて舞い上がる
@@ -746,7 +746,7 @@ function showElCard(el) {
     <dl><dt>威力</dt><dd class="pw"><i style="width:${Math.round(lore.power * 1.4)}px"></i>${lore.power}</dd>
     <dt>撃てば</dt><dd>${lore.onHit}</dd>
     <dt>性質</dt><dd>${lore.trait}</dd>
-    <dt>得手の術</dt><dd>${SECOND_TEXT[el]}(威力 +30%)</dd>
+    <dt>得手の術</dt><dd>${SECOND_TEXT[el]}(威力 +30)</dd>
     <dt>弱き者</dt><dd>${weak.join('・') || '—'}</dd>
     <dt>効かぬ者</dt><dd>${resist.join('・') || '—'}</dd>
     <dt>宿る精霊</dt><dd>${sp ? `${sp.name} — ${sp.lore}` : '—'}</dd></dl>
@@ -1053,8 +1053,8 @@ function finishChant(text, raw = text, rescued = null) {
   const el = G.nameCastHit ? { bonus: 0 } : eloquence(raw, G.known, lenientChant()); // 名だけの詠唱は名詠にならない
   if (el.bonus) {
     spell.power *= 1 + el.bonus;
-    UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.6, 0)), `${el.tier}! 威力+${Math.round(el.bonus * 100)}%`, el.tier === '名詠' ? '#ffd76a' : '#cfe0ff');
-    UI.log(`${el.tier} — ${el.marks.join('・')} が揃った(威力+${Math.round(el.bonus * 100)}%)`, el.tier === '名詠' ? '#ffd76a' : '#cfe0ff');
+    UI.floatText(p.pos.clone().add(new THREE.Vector3(0, 0.6, 0)), `${el.tier}! 威力+${Math.round(el.bonus * 100)}`, el.tier === '名詠' ? '#ffd76a' : '#cfe0ff');
+    UI.log(`${el.tier} — ${el.marks.join('・')} が揃った(威力+${Math.round(el.bonus * 100)})`, el.tier === '名詠' ? '#ffd76a' : '#cfe0ff');
     G.stats.eloquent = (G.stats.eloquent || 0) + (el.tier === '名詠' ? 1 : 0);
     if (el.tier === '名詠') { // 名詠が決まった瞬間: 一瞬時が緩み、画面が揺れ、金の閃光
       G.slowmo = 0.35; G.shake = 0.5; sfx.meiei();
@@ -1638,7 +1638,7 @@ function readItem(k) {
     const lv = BOOK.mastery[el] || 0;
     if (lv >= 3) { UI.log(`${EL_NAME[el]}の秘伝はもう極めている`, '#a8a090'); return; }
     G.inv[k]--; BOOK.mastery[el] = lv + 1; saveBook();
-    UI.banner(`${EL_NAME[el]}の秘伝 ${TOME_VOL[lv]}を修めた`, `${EL_NAME[el]}を込めた術の威力 +${15 * (lv + 1)}%${lv + 1 >= 3 ? ' ・ 秘伝を極めた' : ''}`, 4); sfx.learn?.();
+    UI.banner(`${EL_NAME[el]}の秘伝 ${TOME_VOL[lv]}を修めた`, `${EL_NAME[el]}を込めた術の威力 +${15 * (lv + 1)}${lv + 1 >= 3 ? ' ・ 秘伝を極めた' : ''}`, 4); sfx.learn?.();
   }
   UI.renderHotbar();
 }
@@ -1663,7 +1663,7 @@ function tipHtml(o) {
       return `<b style="color:#ffe08a">${itemName(o.k)}</b><div>${w ? `${CAT[w.cat]}の言霊「${w.text}」` : ''}</div><div class="muted">${w?.hint || ''}</div><div class="hint">左: 読んで覚える ・ 右: 落とす(仲間が拾える) ・ 1〜6: 道具枠へ</div>`;
     }
     const tome = o.k.startsWith('tome_');
-    const desc = tome ? `読むと${EL_NAME[o.k.slice(5)]}の術の威力 +15%(${(BOOK.mastery || {})[o.k.slice(5)] ? TOME_VOL[(BOOK.mastery || {})[o.k.slice(5)] - 1] + 'まで修めた' : 'まだ一巻も修めていない'})` : ITEM_INFO[o.k]?.[1] || '';
+    const desc = tome ? `読むと${EL_NAME[o.k.slice(5)]}の術の威力 +15(${(BOOK.mastery || {})[o.k.slice(5)] ? TOME_VOL[(BOOK.mastery || {})[o.k.slice(5)] - 1] + 'まで修めた' : 'まだ一巻も修めていない'})` : ITEM_INFO[o.k]?.[1] || '';
     const act = USABLE.includes(o.k) ? '使う' : (tome || o.k === 'scroll') ? '読む' : '';
     return `<b style="color:${tome ? '#ffd76a' : '#fff'}">${itemName(o.k)}</b><div>${desc}</div><div class="hint">${act ? '左: ' + act + ' ・ ' : ''}右: 落とす(仲間が拾える) ・ 1〜6: 道具枠へ</div>`;
   }
@@ -1680,7 +1680,7 @@ function renderInventory() {
   }).join('');
   // 能力
   const t = G.eqT || totals(BOOK.equip);
-  $('invTotals').innerHTML = [['hp', 100 + t.maxHp, '生命の上限'], ['mp', 100 + t.maxMp, '魔力の上限'], ['power', '+' + Math.round(t.power * 100) + '%', '術の威力'], ['regen', '+' + Math.round(t.regen * 100) + '%', '魔力の回復'], ['cost', Math.round(t.costMul * 100) + '%', '魔力の消費']]
+  $('invTotals').innerHTML = [['hp', 100 + t.maxHp, '生命の上限'], ['mp', 100 + t.maxMp, '魔力の上限'], ['power', 100 + Math.round(t.power * 100), '術の威力(基本 100)'], ['regen', '毎秒' + Math.round(3 * Math.max(0.25, 1 + t.regen) * 10) / 10, '魔力が戻る速さ(基本 毎秒3)'], ['cost', 100 + Math.round(t.costMul * 100), '術に使う魔力(基本 100)']]
     .map(([k, v, n]) => `<span title="${n}">${STAT_ICON[k]}${v}</span>`).join('')
     + (profSummary().length ? `<div class="profrow">${profSummary().map(s => `<span title="${rankName(s.lv)} ・ 熟練 ${s.xp}${s.next ? ' / 次の階梯まで ' + (s.next - s.xp) : ' (極めた)'}"><b>${profTitle(s.el, s.lv)}</b><i style="--p:${s.next ? Math.round((s.xp / s.next) * 100) : 100}%"></i></span>`).join('')}</div>` : '');
   // 操作

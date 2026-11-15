@@ -595,8 +595,18 @@ export function moveWithCollision(pos, dx, dz, r, team, step = STEP) {
     // 既にめり込んでいる(落ちた先の段の縁・柱や家具の中)時は、体の幅を見ると一歩も動けなくなる。中心だけで判定して抜け出させる
     const inSolid=collides(pos.x,pos.z,r,team), onLedge=tooHigh(pos.x,pos.z,r,feet,step);
     const hit=(x,z)=>inSolid?isWallAt(x,z):collides(x,z,r,team), high=(x,z)=>tooHigh(x,z,onLedge?0:r,feet,step);
-    if(!arenaBlocksMove(pos,{x:pos.x+dx/n,z:pos.z},r,team)&&!hit(pos.x+dx/n,pos.z)&&!high(pos.x+dx/n,pos.z))pos.x+=dx/n;
-    if(!arenaBlocksMove(pos,{x:pos.x,z:pos.z+dz/n},r,team)&&!hit(pos.x,pos.z+dz/n)&&!high(pos.x,pos.z+dz/n))pos.z+=dz/n;
+    const free=(x,z)=>!arenaBlocksMove(pos,{x,z},r,team)&&!hit(x,z)&&!high(x,z);
+    const x0=pos.x,z0=pos.z;
+    if(free(pos.x+dx/n,pos.z))pos.x+=dx/n;
+    if(free(pos.x,pos.z+dz/n))pos.z+=dz/n;
+    // 物の角に斜めから当たると、縦も横も塞がれて止まってしまう。進む向きを少しずつ左右へ振って、角を滑って回り込めるようにする
+    if(pos.x===x0&&pos.z===z0&&(dx||dz)){
+      const sx=dx/n,sz=dz/n;
+      for(const a of [.5,-.5,1,-1,1.4,-1.4]){
+        const c=Math.cos(a),s=Math.sin(a),k=Math.cos(a)*.9+.1,nx=(sx*c-sz*s)*k,nz=(sx*s+sz*c)*k;
+        if(free(pos.x+nx,pos.z+nz)){pos.x+=nx;pos.z+=nz;break;}
+      }
+    }
   }
 }
 // 地面に沿わせる: 段差は上がり、高い所からは落ちる

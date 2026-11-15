@@ -35,7 +35,7 @@ export const UNIQUES = [
 // まだ持っていないユニークな品を一つ作る(全部持っていれば、どれかをもう一度)
 export function rollUnique(have = [], rng = Math.random) {
   const rest = UNIQUES.filter(u => !have.includes(u.uq)), list = rest.length ? rest : UNIQUES, u = list[Math.floor(rng() * list.length)];
-  return { uid: 'u' + (uid++), slot: u.slot, bid: u.bid, name: u.name, rarity: 4, uq: u.uq, stats: { ...(u.stats || {}) }, balanceVersion: 3 };
+  return { uid: 'u' + (uid++), slot: u.slot, bid: u.bid, name: u.name, rarity: 4, uq: u.uq, stats: { ...(u.stats || {}) }, balanceVersion: 4 };
 }
 // 身に着けているユニークな効果の名の集まり
 export const uniquesOf = equip => new Set(Object.values(equip || {}).filter(it => it?.uq).map(it => it.uq));
@@ -44,7 +44,7 @@ export const uniquesOf = equip => new Set(Object.values(equip || {}).filter(it =
 //   生命 = 生命の上限 / 魔力 = 魔力の上限 / 威力 = すべての術 / 属性 = その属性の術 / 節約 = 術に使う魔力 / 回復 = 魔力が戻る速さ / 守り = 守護の障壁 / 速さ = 足の速さ
 const VALUE = {
   maxHp: [20, 30, 45, 70], maxMp: [20, 30, 45, 70], power: [0.15, 0.25, 0.4, 0.6], elemPow: [0.25, 0.4, 0.6, 1],
-  costMul: [-0.1, -0.15, -0.25, -0.35], regen: [0.25, 0.4, 0.6, 1], ward: [0.25, 0.4, 0.6, 1], speed: [0.1, 0.15, 0.2, 0.3],
+  costMul: [-0.1, -0.15, -0.25, -0.35], regen: [1 / 3, 2 / 3, 1, 5 / 3], ward: [0.25, 0.4, 0.6, 1], speed: [0.1, 0.15, 0.2, 0.3],
 };
 const B = (id, name, stat, elem) => ({ id, name, stat, elem });
 const BASES = {
@@ -86,14 +86,15 @@ export function rollItem(floor = 1, rng = Math.random) {
   // 深い層ほど希少なものが出やすい
   const r = rng() * (1 + floor * 0.12);
   const rar = r > 1.25 ? 3 : r > 0.95 ? 2 : r > 0.6 ? 1 : 0;
-  return tuneEquipment({ uid: 'e' + (uid++), slot, bid: base.id, name: (PREFIX[rar] ? PREFIX[rar] + ' ' : '') + base.name, rarity: rar, stats: statsOf(base, rar), balanceVersion: 3 });
+  return tuneEquipment({ uid: 'e' + (uid++), slot, bid: base.id, name: (PREFIX[rar] ? PREFIX[rar] + ' ' : '') + base.name, rarity: rar, stats: statsOf(base, rar), balanceVersion: 4 });
 }
 // 以前の版の品(効果がいくつも付いていた)は、今の「一つの品に一つの効果」に直す
 export function tuneEquipment(it) {
-  if (!it || it.balanceVersion >= 3) return it;
+  if (!it || it.balanceVersion >= 4) return it;
+  if (it.uq) { it.balanceVersion = 4; return it; }
   const bid = baseId(it), base = (BASES[it.slot] || []).find(b => b.id === bid);
   if (base) it.stats = statsOf(base, Math.max(0, Math.min(3, it.rarity | 0)));
-  it.balanceVersion = 3; return it;
+  it.balanceVersion = 4; return it;
 }
 
 // 装備の見た目の鍵(以前の版の品は名前から探す)
@@ -109,12 +110,12 @@ export function statLines(it) {
   const s = it.stats, out = [], pc = v => Math.round(Math.abs(v) * 100);
   if (s.maxHp) out.push(`生命の上限 +${s.maxHp}`);
   if (s.maxMp) out.push(`魔力の上限 +${s.maxMp}`);
-  if (s.power) out.push(`すべての術の威力 +${pc(s.power)}%`);
-  if (s.elemPow) out.push(`${ELEMENTS[s.elem].name}の術の威力 +${pc(s.elemPow)}%`);
-  if (s.costMul) out.push(`術に使う魔力 −${pc(s.costMul)}%`);
-  if (s.regen) out.push(`魔力が戻る速さ +${pc(s.regen)}%`);
-  if (s.ward) out.push(`守護の障壁の強さ +${pc(s.ward)}%`);
-  if (s.speed) out.push(`足の速さ +${pc(s.speed)}%`);
+  if (s.power) out.push(`すべての術の威力 +${pc(s.power)}`);
+  if (s.elemPow) out.push(`${ELEMENTS[s.elem].name}の術の威力 +${pc(s.elemPow)}`);
+  if (s.costMul) out.push(`術に使う魔力 −${pc(s.costMul)}`);
+  if (s.regen) out.push(`魔力が戻る速さ 毎秒 ${s.regen < 0 ? '−' : '+'}${Math.round(Math.abs(s.regen) * 3 * 10) / 10}`);
+  if (s.ward) out.push(`守護の障壁の強さ +${pc(s.ward)}`);
+  if (s.speed) out.push(`足の速さ +${pc(s.speed)}`);
   return out;
 }
 

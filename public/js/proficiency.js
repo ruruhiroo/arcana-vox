@@ -49,7 +49,7 @@ export function gainProf(els, amount) {
     const before = profLevel(el);
     BOOK.prof[el] = profXp(el) + amount;
     const after = profLevel(el);
-    for (let lv = before + 1; lv <= after; lv++) ups.push({ el, lv, title: `「${profTitle(el, lv)}」`, text: `${rankName(lv)}に至った ・ ${PERKS[lv] ? PERKS[lv] + ' ・ ' : ''}${EL_POET[el]}の術の威力 +${3 * (lv - 1)}%` });
+    for (let lv = before + 1; lv <= after; lv++) ups.push({ el, lv, title: `「${profTitle(el, lv)}」`, text: `${rankName(lv)}に至った ・ ${PERKS[lv] ? PERKS[lv] + ' ・ ' : ''}${EL_POET[el]}の術の威力 +${3 * (lv - 1)}` });
   }
   return ups;
 }

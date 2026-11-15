@@ -431,7 +431,7 @@ function renderBook() {
     for (const w of unknownOf('element'))
       scribe.push({ id: 'scroll', name: `秘奥の写本『${w.core}』`, need: { shard: 6, crystal: 4, iron: 2 }, desc: `属性「${EL_JP[w.id] || w.core}」そのものを覚える古文書。迷宮ではまず見つからない。望んだ属性を選んで綴れるが、素材は重い。`, make: () => 'scroll_' + w.id, rare: true });
     for (const el of Object.keys(EL_JP)) if (G.known.has(el) && ((BOOK.mastery || {})[el] || 0) + (G.inv['tome_' + el] || 0) < 3)
-      scribe.push({ id: 'tome_' + el, name: `秘伝書『${EL_JP[el]}』`, need: { shard: 3, crystal: 3, bone: 2 }, desc: `読むと${EL_JP[el]}の術の威力が +15%(全三巻。いま ${((BOOK.mastery || {})[el] || 0)} 巻)。`, make: () => 'tome_' + el });
+      scribe.push({ id: 'tome_' + el, name: `秘伝書『${EL_JP[el]}』`, need: { shard: 3, crystal: 3, bone: 2 }, desc: `読むと${EL_JP[el]}の術の威力が +15(全三巻。いま ${((BOOK.mastery || {})[el] || 0)} 巻)。`, make: () => 'tome_' + el });
     pg.innerHTML = `<h3>調合</h3>
       <div class="inv">${Object.entries(names).map(([k, n]) => `<span>${n} <b>${G.inv[k] || 0}</b></span>`).join('')}</div>
       <div class="recipes">${RECIPES.map((r, i) => {
@@ -466,7 +466,7 @@ function renderBook() {
   } else {
     pg.innerHTML = `<h3>魔導師の心得</h3><div style="line-height:2;font-size:15px">
       <p>■ <b>詠唱</b> — <b>V</b>を押しながら呪文を声に出す(離すと発動)。<b>C</b>で常時詠唱(ハンズフリー)。<b>Enter</b>は仲間とのチャット。チャットでは術は発動しない。詠唱中は足が鈍る。</p>
-      <p>■ <b>魔法の名</b> — 最後に魔法の名(ファイア・ヒーリング など)を唱えて締めると完全詠唱。無いと略式(威力70%)。</p>
+      <p>■ <b>魔法の名</b> — 最後に魔法の名(ファイア・ヒーリング など)を唱えて締めると完全詠唱。無いと略式(威力70)。</p>
       <p>■ <b>詠唱妨害</b> — 詠唱中に強打(12以上)を受けると術が霧散する。「守護」で防げる。仲間が長い呪文を唱えている間は守ってやれ。</p>
       <p>■ <b>読み合い</b> — 敵の魔導師の詠唱は頭上に表示され、声も聞こえる。「穿槍」が聞こえたら「城壁」で阻め。「天雨」なら足元の魔法陣から離れろ。</p>
       <p>■ <b>属性と相性</b> — 骸骨兵・怨霊は聖光に弱い。粘獣は紅蓮、石像兵は雷霆に弱い。複数の属性を混ぜると効果が融合する。</p>

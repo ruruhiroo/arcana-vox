@@ -227,7 +227,7 @@ export const FX = {
       if (!local) return;
       if (hostile(caster, t)) { // 敵へ: 呪い
         t.status.cursed = { t: 10 * dur };
-        G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.6, 0)), '呪印 — 受ける傷+25%', '#d0a0ff');
+        G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.6, 0)), '呪印 — 受ける傷 1.25倍', '#d0a0ff');
         if (pl.dmg) FX.damage(t, pl.dmg * 0.3, spell.elements, caster, { power: spell.power, tier: spell.tier || 0 });
       } else { // 自分・味方へ: 属性を宿す
         if (spell.elements.length) { t.status.enchant = { t: 20 * dur, elements: spell.elements, power: spell.power }; if (t.isLocal?.()) G.ui?.floatText(t.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), '付与 — 術に追撃が乗る', '#ffe0a0'); }

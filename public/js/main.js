@@ -85,7 +85,7 @@ G.onEnemyHit = src => foeHit(src, G.player); // 魔物の技で声がおかし�
 import { initRoomEvents, buildRoomEvents, clearRoomEvents, updateRoomEvents, roomImpact, roomCast, roomHint, roomInteract, roomNet } from './roomevents.js';
 import { initCoop, buildCoop, clearCoop, updateCoop, coopImpact, coopCast, coopHint, coopInteract, coopNet, partySize } from './coop.js';
 import { buildSecrets, clearSecrets, updateSecrets, crackedAt, sealFor, onDig as secretDig } from './secrets.js';
-import { rebuildStructure, breakable, FINAL_FLOOR, heightAt, STEP } from './dungeon.js';
+import { rebuildStructure, breakable, FINAL_FLOOR, heightAt, STEP, CLIMB } from './dungeon.js';
 import { pickSanctuaryRoom, buildSanctuary, inSanctuary, updateSanctuary } from './sanctuary.js';
 G.inSanctuary = inSanctuary;
 import { ENEMY_TYPES, ENEMY_RIM } from './entities.js';

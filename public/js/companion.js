@@ -176,7 +176,7 @@ export function makeCompanion(lookOrColor) {
   const link = (m, a, b) => { vb.subVectors(b, a); const len = vb.length() || 0.001; m.position.copy(a).addScaledVector(vb, 0.5); m.quaternion.setFromUnitVectors(UP, vb.normalize()); m.scale.set(1, len, 1); };
   for (const sx of [-1, 1]) {
     const glove = look.hands === 1;
-    const h = new THREE.Group(); h.position.set(sx * 0.285, BY - 0.03, bz + 0.02); rig.add(h); hands.push(h);
+    const h = new THREE.Group(); h.position.set(sx * 0.235, BY - 0.012, bz + 0.005); rig.add(h); hands.push(h);
     h.add(M(new THREE.SphereGeometry(glove ? 0.074 : 0.058, 12, 8), glove ? cloth2M : darkM));
     if (glove) { const cuff = M(new THREE.TorusGeometry(0.058, 0.018, 6, 16), clothM, sx * 0.03, 0.02, 0.05); cuff.rotation.set(0.5, sx * 0.6, 0); h.add(cuff); }
     if (look.hands === 2) { const ring = M(new THREE.TorusGeometry(0.05, 0.013, 6, 16), goldM, sx * 0.035, 0.03, 0.06); ring.rotation.set(0.5, sx * 0.6, 0); h.add(ring); }
@@ -269,7 +269,7 @@ export function makeCompanion(lookOrColor) {
       // 本と手と腕: 詠唱中は高く掲げる。腕は体の脇から手へ伸びる
       const by = BY + chantK * 0.16 + Math.sin(t * 2.1) * 0.012 + castK * 0.05;
       book.position.y = by; book.rotation.x = 0.55 - chantK * 0.25;
-      hands.forEach((h, i) => { h.position.y = by - 0.03 + Math.sin(t * 2.1 + i) * 0.008; });
+      hands.forEach((h, i) => { h.position.y = by - 0.012; });
       for (const a of arms) link(a.arm, a.shoulder, hands[a.sx < 0 ? 0 : 1].position);
       if (wings) for (const w of wings) w.rotation.y = w.userData.sx * (0.5 + Math.sin(t * (3 + chantK * 6)) * 0.35);
       // 腰の光と、漂う粒

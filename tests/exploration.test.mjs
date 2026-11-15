@@ -58,6 +58,6 @@ test('checkpoint is JSON-only and keeps the actual sanctuary, seed, loot and ene
  const d=flat();d.seed=7919;G.floor=3;G.player={pos:new THREE.Vector3(50,0,50),hp:76,mp:42,yaw:.4,pitch:0};G.enemies=[{id:'e3_0',type:'skeleton',alive:true,hp:21,maxHp:90,pos:new THREE.Vector3(60,0,60)}];G.pickups=[{id:'drop',kind:'loot',pos:new THREE.Vector3(51,0,50),data:{mat:'ether'}}];
  const c=JSON.parse(JSON.stringify(captureCheckpoint(G,{known:['heal']},{})));assert.ok(validCheckpoint(c));assert.equal(c.seed,7919);assert.equal(c.enemies[0].hp,21);assert.equal(c.pickups[0].data.mat,'ether');assert.deepEqual(c.position,[50,0,50]);assert.equal(validCheckpoint({...c,position:[NaN,0,0]}),false);
 });
-test('each held item gets an opposing thumb, four fingers and a stable prop-relative grip',()=>{
- for(const key of ['ether','herb','crystal','bone','iron','scroll_fire','tome_ice','gear_ring']){const profile=itemGripProfile(key,new THREE.Vector3(.09,.16,.06)),hand=makeItemGrip(profile);assert.ok(hand.getObjectByName('opposing_thumb'));for(let i=0;i<4;i++)assert.ok(hand.getObjectByName('finger_'+i));assert.ok(new THREE.Box3().setFromObject(hand).getSize(new THREE.Vector3()).length()<.5);}
+test('each held item gets a spirit hand and a stable prop-relative grip',()=>{
+ for(const key of ['ether','herb','crystal','bone','iron','scroll_fire','tome_ice','gear_ring']){const profile=itemGripProfile(key,new THREE.Vector3(.09,.16,.06)),hand=makeItemGrip(profile);assert.ok(hand.getObjectByName('fp_hand'));assert.ok(new THREE.Box3().setFromObject(hand).getSize(new THREE.Vector3()).length()<.6);}
 });

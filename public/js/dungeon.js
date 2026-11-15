@@ -606,6 +606,13 @@ export function moveWithCollision(pos, dx, dz, r, team, step = STEP) {
         const c=Math.cos(a),s=Math.sin(a),k=Math.cos(a)*.9+.1,nx=(sx*c-sz*s)*k,nz=(sx*s+sz*c)*k;
         if(free(pos.x+nx,pos.z+nz)){pos.x+=nx;pos.z+=nz;break;}
       }
+      if(pos.x===x0&&pos.z===z0&&!inSolid){
+        // どの向きにも50cm進めないなら、閉じ込められている
+        let out=false;
+        for(let k=0;k<16&&!out;k++){const a=k*Math.PI/8,c=Math.cos(a),s=Math.sin(a);out=true;for(let j=1;j<=5&&out;j++)out=free(pos.x+c*.1*j,pos.z+s*.1*j);}
+        const nx=pos.x+sx,nz=pos.z+sz;
+        if(!out&&!isWallAt(nx,nz)&&!tooHigh(nx,nz,0,feet,step)&&!arenaBlocksMove(pos,{x:nx,z:nz},r,team)){pos.x=nx;pos.z=nz;}
+      }
     }
   }
 }

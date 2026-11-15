@@ -109,7 +109,7 @@ export function gimmickNet(m) {
 export function updateGimmicks(dt, p, time) {
   for (const g of list) if (!g.used && g.mark) { g.mark.material.opacity = 0.45 + Math.sin(time * 2.4 + g.pos.x) * 0.25; g.mark.position.y = g.pos.y + KINDS[g.kind].h + Math.sin(time * 1.3 + g.pos.z) * 0.08; }
   if (!p) return;
-  const rm = roomAt(p.pos), theme = rm && rm.kind === 'room' ? rm.theme : null, a = theme && AURAS[theme];
+  const rm = roomAt(p.pos), theme = rm && rm.kind === 'room' ? rm.theme : null, a = null;
   if (theme !== lastTheme) {
     lastTheme = theme;
     let el = document.getElementById('roomLabel');

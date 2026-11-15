@@ -49,7 +49,6 @@ import { generate, buildMeshes, moveWithCollision, raycastGrid, lineOfSight, W, 
 import { Mage, Enemy, updateFlows, spawnEnemy, clearDying } from './entities.js';
 import { preloadModels, loadProgress } from './glbmodels.js';
 import { showLoading, hideLoading } from './loading.js';
-import { askElement as pickElement } from './elpick.js';
 import { initUpdates } from './updates.js';
 import { initDevices, openDevicePanel, openMic, applyOutput } from './devices.js';
 import { initLook, myLookStr, openLookEditor, grantRandomWear, clearWardrobe } from './lookedit.js';
@@ -311,9 +310,8 @@ async function startGame({ tutorial = false } = {}) {
   G.mages = [G.player];
   // ひとりで遊ぶ時も、NPC の魔導師は付けない(協力探索でも探索PvPでも)。他の魔導師は、つながった人だけ
   setupVoice();
-  // マルチプレイは迷宮の入口(祭壇で属性に誓う所)を通らず第1層から始まるので、ここで属性を選ばせる。
-  // すでに誓いを立てている旅なら聞かない
-  if (G.net && !tutorial && !BOOK.affinityChosen && floor > 0) { hideLoading(0); const el = await askElement(); showLoading('迷宮へ降りている'); BOOK.affinityChosen = el; chosenEl = el; try { localStorage.setItem('arcana_el', el); } catch {} saveBook(); }
+  // 仲間との旅は祭壇の間(待機所)から始まり、そこで属性に誓う。すでに潜っている部屋へ途中から加わった時だけ、前に使った属性のまま始める
+  if (G.net && !tutorial && !BOOK.affinityChosen && floor > 0) { BOOK.affinityChosen = chosenEl; saveBook(); }
   setupStarter(tutorial ? 'fire' : BOOK.affinityChosen || chosenEl);
   for(const it of [...Object.values(BOOK.equip||{}),...(BOOK.bag||[])])tuneEquipment(it);
   warmIcons([...Object.values(BOOK.equip || {}), ...(BOOK.bag || [])]);
@@ -727,7 +725,6 @@ function vowPillar(at, color) {
 }
 // 祭壇の前に立つと、その属性の札を出す
 // 属性を選ぶ画面(マルチプレイの始まりに出す)。六つの理の説明を並べ、選んだ属性を返す
-const askElement = () => pickElement({ info: EL_INFO, lore: EL_LORE, second: SECOND_TEXT });   // 画面は elpick.js
 let elCardKey = null;
 function showElCard(el) {
   const card = $('elCard');

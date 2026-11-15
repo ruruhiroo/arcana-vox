@@ -1,6 +1,6 @@
 // WebAudio による手続き的効果音・環境音 (3D定位つき)
 let ctx = null, master = null, sfxBus = null, musicIn = null, noiseBuf = null, listenerPos = { x: 0, z: 0 };
-let sfxVol = 1, ambGain = null;
+let sfxVol = 1, ambGain = null, stepSide = false;
 // 効果音(魔法・魔物・足音)の音量 0〜1
 export function setSfxVolume(v) { sfxVol = v; if (sfxBus) sfxBus.gain.setTargetAtTime(v, ctx.currentTime, 0.05); }
 // 環境音の音量 0〜1(設定画面の ％)。M キーの切り替えは、この値を 0 / 40% / 100% に動かす
@@ -19,9 +19,18 @@ export function initAudio() {
   // 石造りの残響
   const conv = ctx.createConvolver();
   const len = ctx.sampleRate * 2.2, ir = ctx.createBuffer(2, len, ctx.sampleRate);
-  for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c); let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / len, a = 0.5 * Math.pow(1 - t, 3) + 0.012;            // 時間がたつほど高い音を削る(石は高い音を早く吸う)
+      lp += a * ((Math.random() * 2 - 1) - lp);
+      d[i] = lp * Math.pow(1 - t, 2.6) * (i < ctx.sampleRate * 0.03 ? i / (ctx.sampleRate * 0.03) : 1) * 1.6;
+    }
+    // 初期反射: 壁・天井から返ってくる、はっきりした数回の響き(左右でずらして広がりを出す)
+    for (const [ms, g] of [[11, 0.5], [19, 0.42], [27, 0.36], [38, 0.3], [53, 0.24], [71, 0.18], [96, 0.13]]) { const k = Math.floor(ctx.sampleRate * (ms + (c ? 4 : 0)) / 1000); if (k < len) d[k] += g * (c ? -1 : 1) * (ms % 2 ? 1 : -1); }
+  }
   conv.buffer = ir;
-  const wet = ctx.createGain(); wet.gain.value = 0.28;
+  const wet = ctx.createGain(); wet.gain.value = 0.34;
   master.connect(comp); master.connect(conv); conv.connect(wet); wet.connect(comp); comp.connect(ctx.destination);
   // 音楽の出口: 全体の音量には従うが、効果音の圧縮は通さない
   musicIn = ctx.createGain(); musicIn.gain.value = 0.7 * masterVol;
@@ -93,13 +102,15 @@ function ambience() {
   const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain();
   o1.frequency.value = 55; o2.frequency.value = 55.4; o1.type = o2.type = 'sine';
   const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 120;
-  g.gain.value = 0.07; o1.connect(f); o2.connect(f); f.connect(g); g.connect(ambBus); o1.start(); o2.start();
+  g.gain.value = 0.035; o1.connect(f); o2.connect(f); f.connect(g); g.connect(ambBus); o1.start(); o2.start();
   const wind = ctx.createBufferSource(); wind.buffer = noiseBuf; wind.loop = true;
   const wf = ctx.createBiquadFilter(); wf.type = 'bandpass'; wf.frequency.value = 400; wf.Q.value = 0.6;
-  const wg = ctx.createGain(); wg.gain.value = 0.01; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
+  const wg = ctx.createGain(); wg.gain.value = 0; wind.connect(wf); wf.connect(wg); wg.connect(ambBus); wind.start();
   setInterval(() => {
     if (!ambLevel || Math.random() > 0.35) return;
-    tone(1800 + Math.random() * 900, 0.25, { gain: 0.02 * (ambGain ?? AMB_LEVELS[ambLevel]), to: 600, pos: { x: listenerPos.x + (Math.random() - 0.5) * 30, z: listenerPos.z + (Math.random() - 0.5) * 30, y: 3 } });
+    const dripLv = ambGain ?? AMB_LEVELS[ambLevel], dripF = 900 + Math.random() * 700;
+    setTimeout(() => { try { tone(dripF * 0.5, 0.18, { gain: 0.03 * dripLv, to: dripF * 0.42, pos: { x: listenerPos.x, z: listenerPos.z - 6, y: 0 } }); } catch {} }, 40);
+    tone(dripF, 0.07, { gain: 0.05 * dripLv, to: dripF * 1.9, pos: { x: listenerPos.x + (Math.random() - 0.5) * 30, z: listenerPos.z + (Math.random() - 0.5) * 30, y: 3 } });
   }, 3000);
   // 炎のはぜる音: 近くの松明・かがり火から、ぱちぱちと聞こえる(ザーという風の代わり)
   const crackle = () => {
@@ -140,7 +151,16 @@ export const sfx = {
   fizzle(pos) { if (!ctx) return; noise(0.4, { freq: 2000, type: 'highpass', gain: 0.2, pos }); tone(300, 0.3, { gain: 0.1, to: 120, pos }); },
   pickup() { if (!ctx) return; tone(990, 0.15, { gain: 0.15 }); setTimeout(() => tone(1480, 0.2, { gain: 0.12 }), 80); },
   learn() { if (!ctx) return; [392, 523, 659, 784, 1046].forEach((f, i) => setTimeout(() => tone(f, 0.8, { type: 'triangle', gain: 0.1 }), i * 110)); },
-  step(pos) { if (!ctx) return; noise(0.08, { freq: 350, gain: 0.08, pos }); },
+  step(pos, kind = 'walk') {
+    if (!ctx) return;
+    stepSide = !stepSide;
+    const v = kind === 'land' ? 2.2 : kind === 'run' ? 1.35 : 1, r = 0.85 + Math.random() * 0.3, own = !pos;
+    const at = pos || { x: listenerPos.x + (stepSide ? 0.25 : -0.25), y: 0, z: listenerPos.z };
+    tone((kind === 'land' ? 70 : 105) * r, 0.09, { gain: 0.16 * v * (own ? 1 : 1.4), to: 48, pos: at, attack: 0.002 });          // かかと
+    tone(310 * r, 0.035, { type: 'triangle', gain: 0.05 * v, to: 180, pos: at, attack: 0.001 });                                 // 石に当たる硬さ
+    noise(0.022, { freq: 1500 + Math.random() * 900, type: 'bandpass', q: 1.2, gain: 0.07 * v, attack: 0.001, pos: at });        // 靴底
+    if (kind !== 'land') setTimeout(() => { try { noise(0.03, { freq: 2600 + Math.random() * 800, type: 'bandpass', q: 1.5, gain: 0.025 * v, attack: 0.004, pos: at }); } catch {} }, 55 + Math.random() * 25);   // つま先が続く
+  },
   // 一節を唱え切るたびに上がっていく和音
   stage(n) { if (!ctx) return; const f = 330 * Math.pow(2, (n * 3) / 12); tone(f, 0.9, { type: 'triangle', gain: 0.09, attack: 0.01 }); tone(f * 1.5, 0.7, { type: 'sine', gain: 0.05, attack: 0.02 }); },
   meiei() { if (!ctx) return; [261, 329, 392, 523, 659].forEach((f, i) => setTimeout(() => tone(f, 1.6, { type: 'triangle', gain: 0.1 }), i * 45)); noise(1.2, { freq: 300, sweep: 5000, gain: 0.25 }); },

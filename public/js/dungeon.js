@@ -592,8 +592,11 @@ export function moveWithCollision(pos, dx, dz, r, team, step = STEP) {
   // Substeps also prevent sprint/knockback from tunnelling through thin furniture.
   const n=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/.2));
   for(let i=0;i<n;i++){
-    if(!arenaBlocksMove(pos,{x:pos.x+dx/n,z:pos.z},r,team)&&!collides(pos.x+dx/n,pos.z,r,team)&&!tooHigh(pos.x+dx/n,pos.z,r,feet,step))pos.x+=dx/n;
-    if(!arenaBlocksMove(pos,{x:pos.x,z:pos.z+dz/n},r,team)&&!collides(pos.x,pos.z+dz/n,r,team)&&!tooHigh(pos.x,pos.z+dz/n,r,feet,step))pos.z+=dz/n;
+    // 既にめり込んでいる(落ちた先の段の縁・柱や家具の中)時は、体の幅を見ると一歩も動けなくなる。中心だけで判定して抜け出させる
+    const inSolid=collides(pos.x,pos.z,r,team), onLedge=tooHigh(pos.x,pos.z,r,feet,step);
+    const hit=(x,z)=>inSolid?isWallAt(x,z):collides(x,z,r,team), high=(x,z)=>tooHigh(x,z,onLedge?0:r,feet,step);
+    if(!arenaBlocksMove(pos,{x:pos.x+dx/n,z:pos.z},r,team)&&!hit(pos.x+dx/n,pos.z)&&!high(pos.x+dx/n,pos.z))pos.x+=dx/n;
+    if(!arenaBlocksMove(pos,{x:pos.x,z:pos.z+dz/n},r,team)&&!hit(pos.x,pos.z+dz/n)&&!high(pos.x,pos.z+dz/n))pos.z+=dz/n;
   }
 }
 // 地面に沿わせる: 段差は上がり、高い所からは落ちる

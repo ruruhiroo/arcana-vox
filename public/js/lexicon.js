@@ -370,8 +370,56 @@ const skeleton = s => {
   return cs.filter((c, i) => !(i > 0 && VOWEL.test(c) && !VOWEL.test(cs[i - 1]))).join('');
 };
 
+// かな → 子音と母音の列。聞き違いは「子音だけ」「母音だけ」ずれることが多いので、分けて比べる
+const ROW = { あ: '', か: 'k', さ: 's', た: 't', な: 'n', は: 'h', ま: 'm', や: 'y', ら: 'r', わ: 'w', が: 'g', ざ: 'z', だ: 'd', ば: 'b', ぱ: 'p' };
+const KANA_ROWS = { '': 'あいうえお', k: 'かきくけこ', s: 'さしすせそ', t: 'たちつてと', n: 'なにぬねの', h: 'はひふへほ', m: 'まみむめも', r: 'らりるれろ', g: 'がぎぐげご', z: 'ざじずぜぞ', d: 'だぢづでど', b: 'ばびぶべぼ', p: 'ぱぴぷぺぽ' };
+const TABLE = {};
+for (const [c, row] of Object.entries(KANA_ROWS)) [...row].forEach((k, i) => { TABLE[k] = [c, 'aiueo'[i]]; });
+Object.assign(TABLE, { や: ['y', 'a'], ゆ: ['y', 'u'], よ: ['y', 'o'], わ: ['w', 'a'], を: ['', 'o'], ゔ: ['b', 'u'], し: ['sh', 'i'], ち: ['ch', 'i'], つ: ['ts', 'u'], ふ: ['f', 'u'], じ: ['j', 'i'], ぢ: ['j', 'i'], づ: ['z', 'u'] });
+const SMALL_V = { ぁ: 'a', ぃ: 'i', ぅ: 'u', ぇ: 'e', ぉ: 'o' }, SMALL_Y = { ゃ: 'a', ゅ: 'u', ょ: 'o' };
+function phonemes(s) {
+  const out = []; let prevCh = '';
+  for (const ch of s) {
+    const was = prevCh; prevCh = ch;
+    if (ch === 'ー') { const v = out[out.length - 1]; if (v && 'aiueo'.includes(v)) out.push(v); continue; }
+    if (ch === 'っ') { out.push('Q'); continue; }
+    if (ch === 'ん') { out.push('N'); continue; }
+    if (SMALL_V[ch]) { if (was === 'う' && ch !== 'ぅ') { out[out.length - 1] = 'w'; out.push(SMALL_V[ch]); } else if (out.length && 'aiueo'.includes(out[out.length - 1])) out[out.length - 1] = SMALL_V[ch]; else out.push(SMALL_V[ch]); continue; }   // でぃ → d i
+    if (SMALL_Y[ch]) { if (out.length && out[out.length - 1] === 'i') { out[out.length - 1] = 'y'; out.push(SMALL_Y[ch]); } else out.push('y', SMALL_Y[ch]); continue; }   // きゃ → k y a
+    const t = TABLE[ch]; if (!t) { out.push(ch); continue; }
+    if (t[0]) out.push(t[0]); out.push(t[1]);
+  }
+  return out;
+}
+const isV = p => p.length === 1 && 'aiueo'.includes(p);
+// 聞き違いやすい子音の組(同じ組なら、ずれても軽い)
+const GROUPS = [['r', 'd', 'n', 't', 'l'], ['b', 'm', 'p', 'w'], ['g', 'k'], ['s', 'z', 'sh', 'j', 'ch', 'ts'], ['h', 'f', 'p'], ['d', 'z', 'j', 't', 'ch', 'ts'], ['y', 'i'], ['N', 'm', 'n']];
+const subCost = (a, b) => {
+  if (a === b) return 0;
+  if (isV(a) && isV(b)) return (a + b === 'ie' || a + b === 'ei' || a + b === 'uo' || a + b === 'ou') ? 0.6 : 0.9;
+  if (isV(a) !== isV(b)) return 1;
+  return GROUPS.some(g => g.includes(a) && g.includes(b)) ? 0.4 : 1;
+};
+const gapCost = (p, prev) => p === 'Q' ? 0.2 : isV(p) && prev === p ? 0.25 : p === 'N' ? 0.6 : p === 'y' ? 0.5 : 1;   // 促音・伸ばす音の有無は軽い
+function phonSim(a, b) {
+  const A = phonemes(a), B = phonemes(b), m = A.length, n = B.length;
+  if (!m || !n) return 0;
+  let prev = [0]; for (let j = 1; j <= n; j++) prev[j] = prev[j - 1] + gapCost(B[j - 1], B[j - 2]);
+  for (let i = 1; i <= m; i++) {
+    const cur = [prev[0] + gapCost(A[i - 1], A[i - 2])];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + gapCost(A[i - 1], A[i - 2]), cur[j - 1] + gapCost(B[j - 1], B[j - 2]), prev[j - 1] + subCost(A[i - 1], B[j - 1]));
+    prev = cur;
+  }
+  return Math.max(0, 1 - prev[n] / Math.max(m, n));
+}
+const KANA_ONLY = /^[ぁ-ゟー]+$/;
 function similarity(a, b) {
   if (!a || !b) return 0;
+  // かな同士なら、子音と母音に分けた比べ方も使う(「ひーりんぐ」と「ひーでぃんぐ」は、子音が一つ違うだけ)
+  if (KANA_ONLY.test(a) && KANA_ONLY.test(b)) return Math.max(charSim(a, b), phonSim(a, b) - 0.15);
+  return charSim(a, b);
+}
+function charSim(a, b) {
   const m = a.length, n = b.length;
   let prev = Array.from({ length: n + 1 }, (_, j) => j);
   for (let i = 1; i <= m; i++) {

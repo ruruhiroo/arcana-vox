@@ -148,7 +148,7 @@ function renderBookPages() {
   const s = BOOK.spells[G.page];
   const sp = s ? compile(s.text, G.known) : null;
   const el = s ? eloquence(s.text, G.known) : null;
-  VM.renderPages(s, G.page, BOOK.spells.length, { formula: sp ? formula(sp) + (spiritsOf(sp).length ? ' ・ ' + spiritsOf(sp).map(id => `${SPIRITS[id].name}:${BOND_NAMES[bondLevel((BOOK.bonds || {})[id] || 0)]}`).join(' ') : '') : '', cost: sp?.cost ?? 0, tier: el?.tier });
+  VM.renderPages(s, G.page, BOOK.spells.length, { formula: sp ? formula(sp) + (false ? ' ・ ' + spiritsOf(sp).map(id => `${SPIRITS[id].name}:${BOND_NAMES[bondLevel((BOOK.bonds || {})[id] || 0)]}`).join(' ') : '') : '', cost: sp?.cost ?? 0, tier: el?.tier });
 }
 document.fonts?.ready.then(() => { if (G.player) renderBookPages(); });
 G.held = 'grimoire';
@@ -496,7 +496,7 @@ function setupFloor(seed, floor, reset = false) {
   }
   if (reset) { G.inv = { herb: 1, crystal: 1, bone: 0, iron: 0, ether: 1, amulet: 0, flash: 0, lantern: 0 }; G.quick = [...QUICK_DEFAULT]; }
   // 層の変異
-  G.mut = floor === 0 ? null : pickMutator(seed, floor);
+  G.mut = null;   // 層の変異は無し(遊びを絞った)
   scene.fog.density = G.mut?.id === 'dark' ? 0.075 : 0.042; hemi.intensity = G.mut?.id === 'dark' ? 0.18 : 0.6;
   if (G.mut?.id === 'frenzy') for (const e of G.enemies) { e.dmg *= 1.2; e.T = { ...e.T, speed: e.T.speed * 1.25 }; }
   if (G.mut?.id === 'plenty') { const rooms = d.rooms.filter(r => r !== d.start && r !== d.sanctRoom); for (let i = 0; i < 3 && rooms.length; i++) { const rm = rooms[Math.floor(Math.random() * rooms.length)]; addPickup(`kx${i}`, 'chest', new THREE.Vector3((rm.cx + 0.5) * CELL + (Math.random() - 0.5) * 2, d.hgt?.[rm.cy * W + rm.cx] || 0, (rm.cy + 0.5) * CELL + (Math.random() - 0.5) * 2)); } }
@@ -512,7 +512,7 @@ function setupFloor(seed, floor, reset = false) {
     },
   });
   clearTimeout(G.questTimer); G.quest = null;
-  G.questTimer = setTimeout(() => { if (!G.tutorial && G.floor > 0) offerQuest(QUEST_HOOKS); }, 12000);
+  // 精霊の頼みごとは無し(遊びを絞った)
   if ([3, 5, 8, 10, 15, 20].includes(floor) && !reset) setTimeout(() => UI.log(`第${floor}層に到達した — 目指す深さを越えた!`, '#ffe08a'), 4500);
   G.gameOverT = null;
   p.yaw = 0; p.pitch = 0;
@@ -2275,11 +2275,16 @@ function netTick(dt) {
 }
 
 // ---------- メインループ ----------
-let last = 0, exploreT = 0, stepT = 0, bob = 0;
+let last = 0, exploreT = 0, stepT = 0, bob = 0, loopErrs = 0;
 function loop(now) {
   requestAnimationFrame(loop);
   if (G.debugHold) return; // 撮影中は、時間を外から 1コマずつ進める
-  frame(now);
+  try { frame(now); loopErrs = 0; }
+  catch (e) {
+    console.error(e);
+    if (++loopErrs === 1 || loopErrs % 600 === 0) { try { UI.log('不具合: ' + String(e?.message || e).slice(0, 90) + ' @' + String(e?.stack || '').split(String.fromCharCode(10))[1]?.trim().slice(-48), '#ff9a8a'); } catch {} }
+    try { composer.render(); } catch {}
+  }
 }
 // 確かめる用: 画面の更新に頼らず、ゲームの時間を進める(秒)
 G.debugAdvance = sec => { let t = last; for (let s = 0; s < sec - 1e-6; s += 1 / 30) { t += 1000 / 30; frame(t); } if (!G.debugHold) last = performance.now(); };
@@ -2448,7 +2453,7 @@ function updatePlayer(dt) {
     if(p.status.levitate){const target=floatHeight(p.pos);p.vy=Math.max(-3,Math.min(3,(target-p.pos.y)*5));}
     p.pos.y += p.vy * dt;
     if (p.pos.y <= ground) {
-      if (!p.onGround && p.vy < -9) { G.shake = Math.min(1, (G.shake || 0) + 0.15); sfx.step(null); } // 高い所から着地
+      if (!p.onGround && p.vy < -9) { G.shake = Math.min(1, (G.shake || 0) + 0.15); sfx.step(null, 'land'); } // 高い所から着地
       p.pos.y = ground; p.vy = 0; p.onGround = true;
     } else if (p.pos.y > ground + 0.05) p.onGround = false;
     // 跳んでいる間に前へ押すと、目の前の縁(足元より1.3mまで)によじ登る
@@ -2484,7 +2489,7 @@ function updatePlayer(dt) {
   updateGoals();
   if (G.sanctuary && !G.sanctuaryGreeted && inSanctuary(p.pos)) { G.sanctuaryGreeted = true; UI.banner('聖域', '降り立った場所の結界。焚き火が残るあいだ傷と魔力が少しずつ癒える', 4.5); sfx.heal(p.pos); }
   bob += dt * speed * 2.2;
-  stepT -= dt * speed; if (stepT <= 0 && speed > 1) { stepT = 2.2; sfx.step(null); }
+  stepT -= dt * speed; if (stepT <= 0 && speed > 1 && p.onGround !== false) { stepT = 2.2; sfx.step(null, speed > 5.5 ? 'run' : 'walk'); }
   const eye = p.downed || !p.alive ? 0.4 : 1.62 + (opts.headBob ? Math.sin(bob) * 0.04 * Math.min(1, speed / 4) : 0);
   // 段差を上った時は目の高さを滑らかに追わせる(一瞬で段の高さ分カクッと上がらないように)。落ちる時と大きな移動はそのまま
   const eyeY = p.pos.y + eye * eyeScale(p);

@@ -34,7 +34,7 @@ class Particles {
       uniforms: { map: { value: glowSprite() }, scale: { value: innerHeight / 2 } },
       vertexShader: `attribute float size; attribute float alpha; varying vec3 vC; varying float vA;
         uniform float scale; void main(){ vC=color; vA=alpha; vec4 mv=modelViewMatrix*vec4(position,1.0);
-        gl_PointSize=size*scale/-mv.z; gl_Position=projectionMatrix*mv; }`,
+        float ps=size*scale/-mv.z; vA=alpha*min(1.0,ps/2.5); gl_PointSize=max(ps,2.5); gl_Position=projectionMatrix*mv; }`,
       fragmentShader: `uniform sampler2D map; varying vec3 vC; varying float vA;
         void main(){ vec4 t=texture2D(map,gl_PointCoord); gl_FragColor=vec4(vC*t.rgb*2.0, t.a*vA); }`,
       vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -46,7 +46,7 @@ class Particles {
     const i = this.cursor; this.cursor = (this.cursor + 1) % MAXP;
     this.pos.set([p.x, p.y, p.z], i * 3); this.vel.set([v.x, v.y, v.z], i * 3);
     const c = new THREE.Color(color); this.col.set([c.r, c.g, c.b], i * 3);
-    this.size[i] = size; this.s0[i] = size; this.life[i] = life; this.max[i] = life; this.grav[i] = grav; this.alpha[i] = 1;
+    this.size[i] = size; this.s0[i] = size; this.life[i] = life; this.max[i] = life; this.grav[i] = grav; this.alpha[i] = 0;
   }
   update(dt) {
     for (let i = 0; i < MAXP; i++) {
@@ -56,7 +56,7 @@ class Particles {
       this.vel[k + 1] -= this.grav[i] * dt;
       this.pos[k] += this.vel[k] * dt; this.pos[k + 1] += this.vel[k + 1] * dt; this.pos[k + 2] += this.vel[k + 2] * dt;
       const t = Math.max(0, this.life[i] / this.max[i]);
-      this.alpha[i] = t; this.size[i] = this.s0[i] * (0.4 + 0.6 * t);
+      this.alpha[i] = t * Math.min(1, (this.max[i] - this.life[i]) / 0.12); this.size[i] = this.s0[i] * (0.4 + 0.6 * t);
     }
     for (const a of ['position', 'color', 'size', 'alpha']) this.geo.attributes[a].needsUpdate = true;
   }
@@ -698,23 +698,26 @@ export class LightPool {
     const d = G.dungeon;
     if (d?.torchObjs) for (const t of d.torchObjs) {
       const dist = t.light.distanceTo(camPos); if (dist > 34) continue;
-      const fl = 0.8 + 0.2 * Math.sin(G.time * 13 + t.phase) * Math.sin(G.time * 7.3 + t.phase * 2) + Math.random() * 0.06;
+      const fl = 0.88 + 0.09 * Math.sin(G.time * 9 + t.phase) * Math.sin(G.time * 5.3 + t.phase * 2) + 0.03 * Math.sin(G.time * 21 + t.phase * 3);
       if (t.big) { t.flame.scale.set(1.2 * fl, 1.7 * fl, 1); t.core.scale.set(0.55 * fl, 0.8 * fl, 1); }
       else { t.flame.scale.set(0.7 * fl, 1.0 * fl, 1); t.core.scale.set(0.3 * fl, 0.45 * fl, 1); }
       cands.push({ pos: t.light, color: 0xff9a4a, intensity: (t.big ? 16 : 9) * fl, dist: t.big ? 22 : 15, score: dist - (t.big ? 6 : 0) });
       if (Math.random() < dt * 3) G.particles.emit(t.light.clone().add(new THREE.Vector3(0, 0.2, 0)), new THREE.Vector3(rand(-0.2, 0.2), rand(0.6, 1.4), rand(-0.2, 0.2)), 0xff8030, 0.12, 1.2);
     }
-    for (const p of G.projectiles) cands.push({ pos: p.pos, color: p.color, intensity: 12, dist: 10, score: p.pos.distanceTo(camPos) - 20 });
-    for (const e of G.effects) if (e.kind === 'flash') { const k = e.t / e.dur; cands.push({ pos: e.pos, color: e.color, intensity: e.intensity * k, dist: e.dist, score: e.pos.distanceTo(camPos) - 30 }); }
+    const dyn = [];
+    for (const p of G.projectiles) dyn.push({ pos: p.pos, color: p.color, intensity: 12, dist: 10, score: p.pos.distanceTo(camPos) - 20 });
+    for (const e of G.effects) if (e.kind === 'flash') { const k = e.t / e.dur; dyn.push({ pos: e.pos, color: e.color, intensity: e.intensity * k, dist: e.dist, score: e.pos.distanceTo(camPos) - 30 }); }
     for (const l of G.lumens) { const k = Math.min(1, l.t / 3) * (l.follow === G.player ? 1 - (G.readAmount || 0) * 0.85 : 1); cands.push({ pos: l.pos, color: l.color, intensity: (7 + 2 * l.power) * k, dist: 18 + 4 * l.power, score: l.pos.distanceTo(camPos) - 40 }); }
-    if (G.sanctuary) { const fp = G.sanctuary.firePos; cands.push({ pos: fp, color: 0xffa050, intensity: 10 + Math.random() * 1.5, dist: 18, score: fp.distanceTo(camPos) - 15 }); }
+    if (G.sanctuary) { const fp = G.sanctuary.firePos; cands.push({ pos: fp, color: 0xffa050, intensity: 10.7 + 0.6 * Math.sin(G.time * 7.1) + 0.35 * Math.sin(G.time * 16.3), dist: 18, score: fp.distanceTo(camPos) - 15 }); }
     if (G.portalObj) cands.push({ pos: G.portalObj.position.clone().setY(1.5), color: 0x8a6bff, intensity: 14, dist: 14, score: G.portalObj.position.distanceTo(camPos) - 5 });
     for (const pk of G.pickups) if (pk.kind === 'scroll' && pk.mesh) cands.push({ pos: pk.mesh.position, color: 0xffe6a0, intensity: 3, dist: 5, score: pk.mesh.position.distanceTo(camPos) + 5 });
-    cands.sort((a, b) => a.score - b.score);
+    cands.sort((a, b) => a.score - b.score); dyn.sort((a, b) => a.score - b.score);
+    const nDyn = 3, nSta = this.lights.length - nDyn, cut = cands[nSta] ? cands[nSta].score : Infinity;
     this.lights.forEach((l, i) => {
-      const c = cands[i];
+      const c = i < nSta ? cands[i] : dyn[i - nSta];
       if (!c) { l.intensity = 0; return; }
-      l.position.copy(c.pos); l.color.set(c.color); l.intensity = c.intensity; l.distance = c.dist;
+      const w = i < nSta && cut < Infinity ? Math.max(0, Math.min(1, (cut - c.score) / 5)) : 1;
+      l.position.copy(c.pos); l.color.set(c.color); l.intensity = c.intensity * w; l.distance = c.dist;
     });
     for (let i = G.effects.length - 1; i >= 0; i--) if (G.effects[i].kind === 'flash' && G.effects[i].t <= 0) G.effects.splice(i, 1);
   }

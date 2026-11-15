@@ -38,7 +38,8 @@ function roomAt(pos) {
   if (cellOf !== d) { cellOf = d; cellRoom = new Map(); for (const rm of d.rooms || []) for (const [x, y] of rm.cells || []) cellRoom.set(y * W + x, rm); }
   return cellRoom.get(Math.floor(pos.z / CELL) * W + Math.floor(pos.x / CELL)) || null;
 }
-export const auraOf = pos => { const rm = pos && roomAt(pos); return (rm && rm.kind === 'room' && AURAS[rm.theme]) || null; };
+export const auraOf = pos => { return null;   // 部屋ごとの場の力は無し(遊びを絞った)
+  const rm = pos && roomAt(pos); return (rm && rm.kind === 'room' && AURAS[rm.theme]) || null; };
 // 術の威力: 放った者のいる部屋で決まる
 export function spellMult(src, elements = []) {
   if (!src?.isMage) return 1;

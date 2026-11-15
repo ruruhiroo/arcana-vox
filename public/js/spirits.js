@@ -26,6 +26,7 @@ export function bondProgress(xp = 0) {
 export const spiritsOf = spell => [...spell.elements, ...spell.effects].filter(id => SPIRITS[id]);
 // 縁による威力: 初対面は0.95倍、一心で1.15倍。機嫌を損ねている精霊は0.85倍
 export function bondMul(spell, bonds) {
+  return 1;   // 縁と機嫌による威力の上下は無し(遊びを絞った)
   const ids = spiritsOf(spell); if (!ids.length) return 1;
   const now = G.time || 0;
   let sum = 0;
@@ -38,6 +39,7 @@ export function bondMul(spell, bonds) {
 }
 // 唱えた: 縁を深める。名詠は大きく、整詠はやや大きく。上がった精霊を返す
 export function gainBond(spell, bonds, tier, mul = 1) {
+  return [];
   const ups = [];
   const gain = (tier === '名詠' ? 3 : tier === '整詠' ? 2 : 1) * mul;
   for (const id of spiritsOf(spell)) {
@@ -50,6 +52,7 @@ export function gainBond(spell, bonds, tier, mul = 1) {
 }
 // 言い損じ: 続くと精霊が一時的にそっぽを向く
 export function scold(ids) {
+  return [];
   G.miss = G.miss || {}; G.sulk = G.sulk || {};
   const sulked = [];
   for (const id of ids) {

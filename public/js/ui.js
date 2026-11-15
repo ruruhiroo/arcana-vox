@@ -328,16 +328,12 @@ function renderBook() {
     pg.innerHTML = `<h3>精霊</h3>
       <div class="spguide">
         <p><b>精霊とは</b> — 属性(紅蓮・氷獄…)と、癒息・守護・神速・灯火の言霊は、それぞれ精霊の<b>真名の一部</b>。その言霊を含む術を唱えると、名を呼ばれた精霊が力を貸す。古文書で新しい言霊を覚えた時に、その精霊と出会う。</p>
-        <p><b>縁(えにし)</b> — その精霊の言霊を含む術を放つたびに縁が深まる。ふつうに唱えて +1、整詠で +2、名詠で +3。縁が深いほど、その精霊の術が強くなる。</p>
-        <table class="bondtable"><tr>${BOND_NAMES.map((n, i) => `<th>${n}</th>`).join('')}</tr><tr>${[0, 6, 18, 40, 75, 130].map(x => `<td>${x}</td>`).join('')}</tr><tr>${BOND_NAMES.map((n, i) => `<td>${Math.round((0.95 + 0.04 * i) * 100)}%</td>`).join('')}</tr></table>
-        <p class="muted" style="margin-top:-4px">上から: 縁の名 ・ 必要な縁 ・ 術の威力</p>
-        <p><b>機嫌</b> — その精霊の言霊を含む詠唱を<b>二度続けて言い損じる</b>(術にならない)と、精霊は25秒そっぽを向き、その間は術の威力が85%に落ちる。うまく唱えれば言い損じの数は消える。</p>
-        <p><b>頼み</b> — 出会った精霊は、ときどき頼みごとをしてくる(画面左の課題に出る)。叶えると縁が一気に +15 深まる。</p>
+
       </div>
       <div class="spirits">${Object.entries(SPIRITS).map(([id, sp]) => {
         const met = G.known.has(id), w = WORD_BY_ID[id], b = bondProgress(bonds[id] || 0);
         if (!met) return `<div class="spcard unmet"><h4>？？？</h4><div class="lore">まだ出会っていない精霊。古文書の中に、その名が眠っている。</div></div>`;
-        return `<div class="spcard"><h4 style="color:${sp.color}"><ruby>${sp.name}<rt>${sp.ruby}</rt></ruby></h4><div class="word">真名の言霊『${w.core}』(${w.ruby})</div><div class="lore">${sp.lore}</div><div class="bond">縁: ${BOND_NAMES[b.level]}${b.level < BOND_NAMES.length - 1 ? '' : '(極み)'} ・ 威力 ${Math.round((0.95 + 0.04 * b.level) * 100)}%</div><div class="bar"><i style="width:${Math.round(b.frac * 100)}%;background:${sp.color}"></i></div></div>`;
+        return `<div class="spcard"><h4 style="color:${sp.color}"><ruby>${sp.name}<rt>${sp.ruby}</rt></ruby></h4><div class="word">真名の言霊『${w.core}』(${w.ruby})</div><div class="lore">${sp.lore}</div></div>`;
       }).join('')}</div>`;
   } else if (tab === 'beasts') {
     // 魔物の記録: 倒した魔物の「なぜ、その姿なのか」が記される

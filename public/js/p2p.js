@@ -127,13 +127,15 @@ export class P2PNet {
     this.audioCtx = audioCtx;
     try {
       this.stream = window.G?.micStream || await openMic({ echoCancellation: true, noiseSuppression: true });
-    } catch (e) { console.warn('VC unavailable', e); return false; }
+    } catch (e) { console.warn('VC unavailable', e); this.flushStreams(); return false; }
     this.room?.addStream(this.stream);
+    this.flushStreams();
     return true;
   }
+  flushStreams() { for (const [peerId, s] of [...this.pendingStreams]) if (this.byPeer.has(peerId) && this.audioCtx) { this.pendingStreams.delete(peerId); this.onStream(s, peerId); } }
   onStream(stream, peerId) {
     const id = this.byPeer.get(peerId);
-    if (id == null) { this.pendingStreams.set(peerId, stream); return; }
+    if (id == null || !this.audioCtx) { this.pendingStreams.set(peerId, stream); return; }
     // Chrome は MediaStream を要素に繋がないと音が流れないため、無音の audio 要素にも割り当てる
     const el = new Audio(); el.srcObject = stream; el.muted = true; el.play().catch(() => {});
     const v = { el, panner: null };

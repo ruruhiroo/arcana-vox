@@ -474,7 +474,8 @@ function setupFloor(seed, floor, reset = false) {
   const p = G.player;
   let spawnRoom = d.start;
   if (G.mode === 'pvp' && G.net) spawnRoom = d.rooms[(G.netId * 3) % d.rooms.length];
-  G.spawnPoint = roomPos(spawnRoom, G.net ? G.netId % 4 : 0);
+  const slot = G.net ? Math.max(0, [...(G.net.players?.keys?.() || [])].sort((a, b) => a - b).indexOf(G.netId)) % 4 : 0;
+  G.spawnPoint = roomPos(spawnRoom, slot);
   p.pos.copy(G.spawnPoint);
   G.bots.forEach((b, i) => {
     const rm = G.mode === 'coop' ? d.start : d.rooms[(d.rooms.length - 2 - i * 2 + d.rooms.length) % d.rooms.length];
@@ -1505,6 +1506,7 @@ function digCells(pos, radius, max) {
 function applyDig(cells, fromNet = false) {
   if (!cells.length) return;
   for (const [x, y] of cells) G.dungeon.grid[y * W + x] = 1;
+  (G.dungeon.dug ||= []).push(...cells);   // 途中から加わる仲間へ伝えるために覚えておく
   rebuildStructure(G.dungeon, dungeonGroup);
   for (const [x, y] of cells) rubbleBurst(new THREE.Vector3((x + 0.5) * CELL, 0, (y + 0.5) * CELL));
   sfx.crumble?.(new THREE.Vector3((cells[0][0] + 0.5) * CELL, 1, (cells[0][1] + 0.5) * CELL));
@@ -2192,7 +2194,7 @@ function onNet(m) {
       G.hostId = m.hostId; const wasHost = G.isHost; G.isHost = G.net.isHost;
       if (!wasHost && G.isHost) UI.log('あなたが部屋の主になった', '#ffe08a');
       if (m.left) { const r = findMage('p' + m.left); if (r) { r.dispose(); G.mages.splice(G.mages.indexOf(r), 1); UI.log(`${r.name}が去った`); } }
-      if (m.joined) { const pl = m.players.find(x => x.id === m.joined); UI.log(`${pl?.name || '魔導師'}が迷宮に現れた`, '#cfe8ff'); if (G.isHost) G.net.send({ t: 'floor', seed: G.dungeon.seed, floor: G.floor, to: m.joined, sync: true }); }
+      if (m.joined) { const pl = m.players.find(x => x.id === m.joined); UI.log(`${pl?.name || '魔導師'}が迷宮に現れた`, '#cfe8ff'); if (G.isHost) { G.net.send({ t: 'floor', seed: G.dungeon.seed, floor: G.floor, to: m.joined, sync: true }); G.net.send(floorSyncMsg(m.joined)); } }
       break;
     }
     case 'st': {
@@ -2247,11 +2249,38 @@ function onNet(m) {
       showLoading(m.reset ? '迷宮の入口へ戻される' : m.floor === 0 ? '迷宮の入口へ' : `第${m.floor}層へ降りている`); setTimeout(() => hideLoading(600), 0);
       if (m.reset) wipeProgress(); setupFloor(m.seed, m.floor, !!m.reset); sfx.portal();
       if (m.reset && !G.noSave) UI.banner('全滅', '魔導書は白紙に戻った — 覚えた言霊も、書いた呪文も、装備も、すべて失った', 5); else if (m.floor > 0) UI.banner(`第${m.floor}層`, '迷宮は形を変えた', 3); break;
+    case 'fsync': applyFloorSync(m); break;
     case 'arenaOpen': {const who=findMage('p'+m.from);if(G.isHost&&who?.alive&&arenaDoorNear(who.pos)&&(G.floorStats?.kills||0)>=sealNeed())openArenaDoor();break;}
     case 'portalReq': if (G.isHost) nextFloor(); break;
     case 'flash': if (G.isHost) for (const e of G.enemies) if (e.alive && Math.hypot(e.pos.x - m.x, e.pos.z - m.z) < 10) e.stun = 2.5; break;
     case 'down': { const r = findMage('p' + m.from); if (r) UI.log(`${r.name}が${m.pvp ? '討たれた' : '倒れた'}`, '#ff9a8a'); if (m.pvp && m.by === G.player.id) G.player.kills++; break; }
   }
+}
+
+// 途中から加わった仲間へ、この層のいまの様子を伝える(倒した魔物・拾った物・落ちている戦利品・崩した壁)
+const SHARED_KINDS = ['herb', 'crystal', 'mushroom', 'oddshroom', 'loot'];
+function floorSyncMsg(to) {
+  return { t: 'fsync', to, floor: G.floor, seed: G.dungeon.seed, kills: G.floorStats?.kills || 0,
+    e: G.enemies.filter(e => e.alive).map(e => [e.id, e.type, +e.pos.x.toFixed(2), +e.pos.z.toFixed(2), e.maxHp, Math.round(e.hp), e.summoner?.id || null]),
+    k: G.pickups.filter(k => SHARED_KINDS.includes(k.kind)).map(k => k.id),
+    loot: G.pickups.filter(k => k.kind === 'loot').map(k => ({ id: k.id, mat: k.data.mat, gear: k.data.gear, x: k.pos.x, y: k.pos.y, z: k.pos.z })),
+    dug: G.dungeon.dug || [] };
+}
+function applyFloorSync(m) {
+  if (G.isHost || m.floor !== G.floor || m.seed !== G.dungeon.seed || !Array.isArray(m.e)) return;
+  const live = new Set(m.e.map(a => a[0]));
+  G.enemies = G.enemies.filter(e => { if (live.has(e.id)) return true; e.dispose(); return false; });
+  for (const [id, type, x, z, maxHp, hp] of m.e) {
+    const e = G.enemies.find(o => o.id === id) || spawnEnemy(id, type, new THREE.Vector3(x, 0, z), G.floor);
+    if (!e) continue;
+    e.maxHp = maxHp; e.hp = hp; e.updateHpBar?.();
+  }
+  const keep = new Set(m.k || []);
+  for (const k of [...G.pickups]) if (SHARED_KINDS.includes(k.kind) && !keep.has(k.id)) { scene.remove(k.mesh); G.pickups.splice(G.pickups.indexOf(k), 1); }
+  for (const l of m.loot || []) if (!G.pickups.some(k => k.id === l.id)) addPickup(l.id, 'loot', new THREE.Vector3(l.x, l.y || 0, l.z), { mat: l.mat, gear: l.gear });
+  const dug = (m.dug || []).filter(([x, y]) => !G.dungeon.grid[y * W + x]);
+  if (dug.length) applyDig(dug, true);
+  if (G.floorStats) G.floorStats.kills = Math.max(G.floorStats.kills || 0, m.kills || 0);
 }
 
 let netT = 0, esT = 0, knT = 0;

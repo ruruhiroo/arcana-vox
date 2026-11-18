@@ -5,6 +5,7 @@ import { makeVoiceFx } from './voicefx.js';
 export class Net {
   constructor(handlers) {
     this.h = handlers; this.ws = null; this.id = null; this.hostId = null; this.peers = new Map(); this.stream = null;
+    this.players = new Map();   // id -> { id, name }
     this.audioCtx = null;
   }
   connect(room, name, mode, host) {
@@ -20,6 +21,7 @@ export class Net {
       ws.onclose = () => this.h.close?.();
       ws.onmessage = ev => {
         const m = JSON.parse(ev.data);
+        if ((m.t === 'welcome' || m.t === 'roster') && Array.isArray(m.players)) this.players = new Map(m.players.map(p => [p.id, p]));
         if (m.t === 'welcome') { clearTimeout(to); this.id = m.id; this.hostId = m.hostId; resolve(m); }
         if (m.t === 'roster') this.hostId = m.hostId;
         if (m.t === 'rtc') return this.onRtc(m);
